@@ -16,20 +16,29 @@ const BOOK = 'fanduel';
 const APP_KEY = 'FhMFpcPWXMeyZxOx'; // public key embedded in the FanDuel web app
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const MARKET_MAP = { MONEY_LINE: 'moneyline', 'MATCH_HANDICAP_(2-WAY)': 'spread', 'TOTAL_POINTS_(OVER/UNDER)': 'total' };
+// FanDuel runs one site per jurisdiction. Ontario is a separate .ca site; US states share the .com API with a state code.
+// Same API shape everywhere; only hosts, region code and referer change. Default ON = same jurisdiction as our DraftKings feed.
+export function fanduelEndpoints(region) {
+  const r = region.toUpperCase();
+  if (r === 'ON') return { label: 'Ontario', site: 'https://on.sportsbook.fanduel.ca/', tz: 'America%2FToronto',
+    snapshot: 'https://sbapi.on.sportsbook.fanduel.ca/api/content-managed-page', prices: 'https://smp.on.sportsbook.fanduel.ca/api/sports/fixedodds/readonly/v1/getMarketPrices' };
+  return { label: r, site: 'https://sportsbook.fanduel.com/', tz: 'America%2FNew_York',
+    snapshot: 'https://api.sportsbook.fanduel.com/sbapi/content-managed-page', prices: `https://smp.${r.toLowerCase()}.sportsbook.fanduel.com/api/sports/fixedodds/readonly/v1/getMarketPrices` };
+}
 
 export class FanDuelSource {
   constructor(store, metrics, log, opts = {}) {
     this.store = store; this.metrics = metrics; this.log = log;
-    this.region = (opts.region || process.env.FD_REGION || 'NJ').toUpperCase();
+    this.region = (opts.region || process.env.FD_REGION || 'ON').toUpperCase();
+    this.ep = fanduelEndpoints(this.region);
     this.basePollMs = Number(opts.pollMs || process.env.FD_POLL_MS || 1000);
     this.maxPollMs = 30_000;
     this.pollMs = this.basePollMs;
     this.resnapshotMs = Number(opts.resnapshotMs || process.env.FD_RESNAPSHOT_MS || 60_000);
     // Overridable endpoints (tests point these at a local fake FanDuel).
     this.snapshotUrl = opts.snapshotUrl || process.env.FD_SNAPSHOT_URL ||
-      `https://api.sportsbook.fanduel.com/sbapi/content-managed-page?page=CUSTOM&customPageId=nfl&pbHorizontal=false&_ak=${APP_KEY}&timezone=America%2FNew_York`;
-    this.pricesUrl = opts.pricesUrl || process.env.FD_PRICES_URL ||
-      `https://smp.${this.region.toLowerCase()}.sportsbook.fanduel.com/api/sports/fixedodds/readonly/v1/getMarketPrices?priceHistory=0`;
+      `${this.ep.snapshot}?page=CUSTOM&customPageId=nfl&pbHorizontal=false&_ak=${APP_KEY}&timezone=${this.ep.tz}`;
+    this.pricesUrl = opts.pricesUrl || process.env.FD_PRICES_URL || `${this.ep.prices}?priceHistory=0`;
     this.marketIds = [];           // game-line markets we poll
     this.selIndex = new Map();     // `${marketId}:${selectionId}` -> { gameKey, market, side }
     this.marketIndex = new Map();  // marketId -> { gameKey, market }
@@ -37,12 +46,12 @@ export class FanDuelSource {
   }
 
   headers() {
-    return { accept: 'application/json', 'accept-language': 'en-CA', referer: 'https://sportsbook.fanduel.com/', origin: 'https://sportsbook.fanduel.com',
+    return { accept: 'application/json', 'accept-language': 'en-CA', referer: this.ep.site, origin: this.ep.site.replace(/\/$/, ''),
       'user-agent': UA, 'x-sportsbook-region': this.region, 'x-application': APP_KEY };
   }
 
   async start() {
-    this.store.setSource(BOOK, { mode: 'poll', state: 'connecting', pollMs: this.pollMs, detail: `region ${this.region}, poll every ${this.pollMs} ms` });
+    this.store.setSource(BOOK, { mode: 'poll', state: 'connecting', region: this.ep.label, pollMs: this.pollMs, detail: `region ${this.region}, poll every ${this.pollMs} ms` });
     await this.snapshot().catch((e) => this.fail('snapshot', e));
     this.snapTimer = setInterval(() => this.snapshot().catch((e) => this.fail('resnapshot', e)), this.resnapshotMs);
     this.loop();

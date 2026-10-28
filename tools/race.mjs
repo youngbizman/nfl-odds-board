@@ -106,7 +106,7 @@ const ourFd = await rctx.newPage(); await ourFd.addInitScript(RECORDER);
 
 await Promise.all([
   dkPage.goto('https://sportsbook.draftkings.com/leagues/football/nfl', { waitUntil: 'domcontentloaded', timeout: 60000 }),
-  fdPage.goto('https://sportsbook.fanduel.com/navigation/nfl', { waitUntil: 'domcontentloaded', timeout: 60000 }),
+  fdPage.goto(process.env.FD_SITE || 'https://on.sportsbook.fanduel.ca/navigation/nfl', { waitUntil: 'domcontentloaded', timeout: 60000 }),
   ourDk.goto(`${BOARD}/?view=draftkings`, { waitUntil: 'domcontentloaded' }),
   ourFd.goto(`${BOARD}/?view=fanduel`, { waitUntil: 'domcontentloaded' }),
 ]);

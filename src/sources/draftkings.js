@@ -78,7 +78,7 @@ export class DraftKingsSource {
   async pickSite() {
     for (const c of this.candidates) {
       Object.assign(this, c);
-      try { await this.snapshot(); this.log('dk', `using site ${c.site} (${c.siteName}, ${c.wsHost})`); return true; }
+      try { await this.snapshot(); this.store.setSource(BOOK, { region: regionLabel(c.site) }); this.log('dk', `using site ${c.site} (${c.siteName}, ${c.wsHost})`); return true; }
       catch (e) { this.log('dk', `site ${c.site} rejected: ${String(e.message).split('\n')[0].slice(0, 60)}`); }
       if (this.stopped) return false;
     }
@@ -252,6 +252,8 @@ export function lineFromId(id) {
   return m ? Number(m[1]) / 100 : null;
 }
 // 'US-NJ-SB' -> 'dkusnj' / 'sportsbook-ws-us-nj.draftkings.com' (pattern observed on the Ontario site: CA-ON-SB -> dkcaon / sportsbook-ws-ca-on)
+// 'CA-ON-SB' -> 'Ontario', 'US-NJ-SB' -> 'NJ'
+export function regionLabel(site) { const r = site.replace(/-SB$/, '').split('-').pop(); return r === 'ON' ? 'Ontario' : r; }
 function siteNameFor(site) { return 'dk' + site.replace(/-SB$/, '').replace(/-/g, '').toLowerCase(); }
 function wsHostFor(site) { return `sportsbook-ws-${site.replace(/-SB$/, '').toLowerCase()}.draftkings.com`; }
 

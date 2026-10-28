@@ -178,7 +178,7 @@ function renderFeeds() {
       ? (r.e2e.pregame.length + r.e2e.live.length ? `<span>Book to screen <b>${secs(pct(r.e2e.pregame.concat(r.e2e.live), .5))}</b> over ${r.e2e.pregame.length + r.e2e.live.length} moves</span>` : `<span>Book to screen <b>measuring</b> on the next move</span>`)
       : `<span>Any number is at most <b>${secs((s.pollMs || 1000) + (s.lastPollMs || 0))}</b> old</span>`;
     return `<div class="feed ${B.cls}${s.stale ? ' stale' : ''}${s.state === 'down' ? ' down' : ''}" title="${(s.detail || '') + (s.lastError ? '. Last error: ' + s.lastError : '')}">
-      <div class="feed-head"><b>${B.label}</b><span class="mode">${mode}</span><span class="state">${stateText}</span></div>
+      <div class="feed-head"><b>${B.label}</b><span class="mode">${s.region ? s.region + ' · ' : ''}${mode}</span><span class="state">${stateText}</span></div>
       <div class="feed-bar"><i style="width:${(fill * 100).toFixed(0)}%;background:${barColor}"></i></div>
       <div class="feed-meta"><span>Data <b>${ago(s.lastDataAt, now)}</b></span><span>Last move <b>${ago(s.lastChangeAt, now)}</b></span>${latency}${relay}${r[b].length ? `<span>Server to screen <b>${secs(pct(r[b], .5))}</b></span>` : ''}</div></div>`;
   }).join('');
@@ -187,6 +187,8 @@ function renderBanner() {
   const stale = ['draftkings', 'fanduel'].filter((b) => state.sources[b]?.stale);
   if (!state.connected && state.everConnected) { bannerEl.hidden = false; bannerEl.className = 'banner'; bannerEl.textContent = 'Lost the connection to the server. Reconnecting; prices on screen are from before the drop.'; return; }
   if (stale.length) { bannerEl.hidden = false; bannerEl.className = 'banner'; bannerEl.textContent = `${stale.map((b) => BOOK[b].label).join(' and ')} ${stale.length > 1 ? 'have' : 'has'} stopped answering. Those prices are greyed out and may be old; the other book keeps updating.`; return; }
+  const regions = ['draftkings', 'fanduel'].map((b) => state.sources[b]?.region).filter(Boolean);
+  if (regions.length === 2 && regions[0] !== regions[1]) { bannerEl.hidden = false; bannerEl.className = 'banner info'; bannerEl.textContent = `Heads up: DraftKings prices are from ${regions[0]} and FanDuel prices from ${regions[1]}. Books can price differently by jurisdiction.`; return; }
   bannerEl.hidden = true;
 }
 

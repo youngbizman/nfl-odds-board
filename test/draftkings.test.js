@@ -127,3 +127,9 @@ test('when every region refuses this IP, DraftKings is marked down and waits for
     assert.equal(fake.subs.length, 0, 'no WebSocket opened without a snapshot');
   } finally { dk.stop(); fake.close(); }
 });
+
+test('DraftKings region label comes from the site that answered', async () => {
+  const { regionLabel } = await import('../src/sources/draftkings.js');
+  assert.equal(regionLabel('CA-ON-SB'), 'Ontario');
+  assert.equal(regionLabel('US-NJ-SB'), 'NJ');
+});

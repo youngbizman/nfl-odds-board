@@ -90,3 +90,17 @@ test('backs off on 429 (honouring Retry-After), shows the error, and recovers', 
     assert.equal(store.sources.fanduel.lastError, null);
   } finally { fd.stop(); fake.close(); }
 });
+
+test('FanDuel endpoints: Ontario uses the .ca site with region ON; US states share the .com API', async () => {
+  const { fanduelEndpoints } = await import('../src/sources/fanduel.js');
+  const on = fanduelEndpoints('ON');
+  assert.equal(on.label, 'Ontario');
+  assert.match(on.snapshot, /^https:\/\/sbapi\.on\.sportsbook\.fanduel\.ca\//);
+  assert.match(on.prices, /^https:\/\/smp\.on\.sportsbook\.fanduel\.ca\//);
+  const nj = fanduelEndpoints('nj');
+  assert.match(nj.prices, /^https:\/\/smp\.nj\.sportsbook\.fanduel\.com\//);
+  const { store, fd } = source({ region: 'ON' });
+  assert.equal(fd.headers()['x-sportsbook-region'], 'ON');
+  assert.equal(fd.headers().referer, 'https://on.sportsbook.fanduel.ca/');
+  assert.match(fd.snapshotUrl, /timezone=America%2FToronto/);
+});
