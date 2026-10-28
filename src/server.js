@@ -67,6 +67,13 @@ app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0 }));
 
 const snapshot = () => ({ ...store.snapshot(), config: { staleMs: STALE_MS, batchMs: BATCH_MS } });
+// The snapshot is ~100 KB; serialising it per viewer would make a burst of joins CPU-bound. Serialise once per change.
+let boardVersion = 0, snapCache = { version: -1, sse: '' };
+for (const ev of ['quote', 'game', 'source']) store.on(ev, () => boardVersion++);
+function snapshotSse() {
+  if (snapCache.version !== boardVersion) snapCache = { version: boardVersion, sse: `retry: 2000\nevent: snapshot\ndata: ${JSON.stringify(snapshot())}\n\n` };
+  return snapCache.sse;
+}
 app.get('/api/board', (req, res) => res.json(snapshot()));
 app.get('/api/time', (req, res) => res.json({ serverTs: Date.now() }));
 app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS }));
@@ -86,7 +93,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
   res.socket?.setNoDelay(true); // small frames go out immediately (no Nagle delay)
-  res.write(`retry: 2000\nevent: snapshot\ndata: ${JSON.stringify(snapshot())}\n\n`);
+  res.write(snapshotSse());
   clients.add(res); metrics.sse.clients = clients.size;
   req.on('close', () => { clients.delete(res); metrics.sse.clients = clients.size; });
 });
