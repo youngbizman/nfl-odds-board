@@ -51,9 +51,11 @@ flowchart LR
   end
   subgraph ingestion["one worker per book"]
     DKW["DraftKings worker<br/>snapshot (REST) + deltas (WebSocket, JSON)"]
-    FDW["FanDuel worker<br/>snapshot (REST) + poll getMarketPrices every 1 s"]
+    FDW["FanDuel worker<br/>snapshot (REST) + poll getMarketPrices every 1 s<br/>(+ edge polls half a beat later → 0.5 s)"]
   end
   STORE["BoardStore (in memory)<br/>games · quotes · per-book status<br/>emits only real changes"]
+  REDIS[("Redis<br/>dk:state checkpoint<br/>dk:frames stream")]
+  DKW <-. "checkpoint 60 s + every frame (XADD); restore on boot" .-> REDIS
   SSE["SSE fan-out<br/>one event per upstream message, no wait"]
   B1[browser]:::b
   B2[browser]:::b
@@ -64,7 +66,8 @@ flowchart LR
   FDW --> STORE
   STORE --> SSE
   SSE --> B1 & B2 & B3
-  EDGE["edge (src/edge.js)<br/>fetches DK's REST snapshot where DK allows,<br/>relays it every 30 s + on request"] -. "snapshot only, when the server's IP is refused by the REST host" .-> DKW
+  EDGE["edge (src/edge.js), another IP<br/>DK REST snapshot every 30 s + on request<br/>FanDuel poll half a beat after ours"] -. "DK snapshot (only because the REST host refuses cloud IPs)" .-> DKW
+  EDGE -. "FanDuel markets that changed" .-> FDW
   classDef b fill:#223,stroke:#669
 ```
 
@@ -115,6 +118,12 @@ recovers by itself. I stopped at 1 s: the request is 16 ms, so the interval *is*
 would double the load on FanDuel for 0.25 s of average freshness — that is the first knob I would turn with
 FanDuel's blessing or more egress IPs, not before.
 I started at 2 s, measured it, and moved to 1 s after the tests below proved the back-off works.
+
+**Then 0.5 s, still one request per second per IP.** Half a beat after each of our polls, the server asks the edge
+machine (§6, another IP) to poll the same 87 markets; the edge sends back only the markets whose answer changed. The
+server applies a market only if that poll *started* later than the newest poll already applied to it, so a slow answer
+can never overwrite a fresher one. Measured: a fresh FanDuel answer every **523 ms** (median), was 1,000 ms. If the edge
+goes away, FanDuel simply falls back to the 1 s beat.
 
 ### Same jurisdiction for both books: Ontario
 Both books run a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
@@ -169,7 +178,13 @@ accepts, and relayed over one authenticated WebSocket (`/ingest/ws`, HTTPS fallb
 asks (after a reconnect, or when a push names an id it cannot place). My first version relayed *every price* through
 that machine (~26 ms extra, and the board depended on it); after testing the socket from the cloud I moved the socket
 to the cloud and left only the snapshot at the edge. If the edge stops now, pushes keep flowing and the board stays
-current; only brand-new games wait, the snapshot age is shown, and `/api/health` reports it. The cloud still tries the
+current; only brand-new games wait, the snapshot age is shown, and `/api/health` reports it.
+
+**Restarts without the edge.** The DraftKings board is durable in Redis (Render Key Value, same region): a
+checkpoint (`dk:state`: the DK prices plus the id indexes needed to apply future pushes) every 60 s and after every
+snapshot, and a **Redis Stream** (`dk:frames`, `XADD … MAXLEN ~5000`) of every socket frame since. On boot the server
+loads the checkpoint and replays the newer frames — the board as of the last frame received — before it even connects.
+Tested live: edge stopped, cloud restarted, **174/174 DraftKings prices back in < 1 s** from Redis, health green. The cloud still tries the
 REST host directly on start-up and takes over fully if the block ever lifts. A residential/ISP proxy for that one
 request a minute is the production answer (nothing latency-critical goes through it).
 
@@ -193,7 +208,8 @@ request a minute is the production answer (nothing latency-critical goes through
 
 ### How I measured
 * **DraftKings, book → our server:** every WS frame carries DK's own `publishedTime`; lag = time the cloud server
-  applied the change − publishedTime. Server clocks are NTP-synced; a few ms of skew is possible.
+  applied the change − publishedTime, with DK's clock offset removed. The offset is measured NTP-style on every
+  subscribe: the ack carries DK's send time, offset = DK time − midpoint(our send, our receive), error ≤ RTT/2.
 * **Relay hop (DK only, because of §6):** round trip of a ping over the relay WebSocket, edge ↔ cloud; one way ≈ half.
 * **Server → browser:** each quote is stamped `updatedAt` when the store learns it; the browser corrects its clock
   against `/api/time` (NTP-style, best of 3) and measures paint − `updatedAt`. The page shows it live in the feed cards;
@@ -205,17 +221,17 @@ request a minute is the production answer (nothing latency-critical goes through
 ### Numbers (live deployment, Wed Oct 28 evening, pregame)
 | Hop | DraftKings | FanDuel |
 | --- | --- | --- |
-| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly (earlier version via the Ontario relay: p50 88 ms over 26 moves) | wait for the next poll: **0.5 s avg, 1.0 s max** (beat p50 1000 ms, p95 1002 ms) + request **16 ms** p50 / 23 ms p95 |
+| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly; DK's clock is **−4 ms ± 19 ms** from ours (measured on subscribe), so this is real lag, not skew (earlier version via the Ontario relay: p50 88 ms over 26 moves) | wait for the next fresh answer: **~0.26 s avg, ~0.5 s max** (fresh answer every 523 ms median, two IPs interleaved) + request **16 ms** p50 / 23 ms p95 |
 | Edge snapshot relay (Ontario → Ohio) | not on the price path any more; 155 KB every 30 s, round trip p50 ~48 ms | — |
 | Our processing per update | **2.5 µs** per DK frame | **~0.25 ms** per 87-market poll (25 µs per 9 markets) |
 | Wait before sending to browsers | p50 0 ms | p50 0 ms |
 | Server → browser (Toronto) | ~30 ms | ~30 ms |
-| **Book → screen** | **≈ 75 ms** | **≈ 0.55 s average, ≈ 1.05 s worst** |
+| **Book → screen** | **≈ 75 ms** | **≈ 0.3 s average, ≈ 0.55 s worst** (1 s beat alone: 0.55 s / 1.05 s) |
 
 ### Before → after (what tuning bought)
 | Change | Before | After |
 | --- | --- | --- |
-| FanDuel poll | 2 s, delay-after-request | **1 s fixed beat** → average age 1.0 s → **0.5 s** |
+| FanDuel poll | 2 s, delay-after-request | **1 s fixed beat** → average age 1.0 s → 0.5 s → **two IPs interleaved, 0.5 s** → **~0.26 s** |
 | Batching to browsers | fixed 40 ms window | **flush per upstream message** → 40 ms → **0 ms** |
 | DK relay | every price via Ontario: HTTPS POST per batch, ~100–200 ms | one open WebSocket, ~26 ms one way → then **no relay on the price path at all**: cloud holds the socket, edge sends snapshots only |
 | DK line moves (spread −3 → −3.5) | waited for a re-snapshot, ~3 s | **mapped from the selection id**, same speed as a price move |
@@ -250,10 +266,13 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 28 tests, ~3 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 34 tests, ~6 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded).
 * **Store:** emits only real changes, tracks previous price/line, removals, stale flag on and off per book.
+* **Durability and timing:** a new process rebuilds the exact DraftKings board from checkpoint + frame log (line
+  moves and live status included) and keeps applying pushes; DK's clock offset from the subscribe ack converts publish
+  times to our clock; FanDuel interleave applies a newer edge answer and ignores a late, older one.
 * **DraftKings, on real recorded payloads** (`test/fixtures/`, made by `npm run fixtures` from the capture): snapshot →
   18 prices with mirrored spreads; JSON `change` frames apply with DK's publish time; a line move (`remove`+`add`) applies
   instantly with the new line; status changes flip games live; real recorded frames for unknown games are ignored and
@@ -271,7 +290,8 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 Running system: `/healthz` (liveness, used by Render) never fails because a *book* is down — restarting would not fix
 DraftKings. `/api/health` (readiness) returns 503 unless both books are fresh with prices. `tools/smoke.mjs <url>` checks
-it plus the live stream; GitHub Actions runs it against the deployment every 30 minutes (`live-health.yml`). The DK edge
+it plus the live stream; GitHub Actions runs it against the deployment every 30 minutes (`live-health.yml`) and
+pings it every 10 minutes so the free instance never sleeps (`keepalive.yml`). The DK edge
 runs under a restart-on-exit supervisor.
 
 ## 10. Keeping working when a book breaks
@@ -285,8 +305,8 @@ runs under a restart-on-exit supervisor.
 ## 11. A third book, or ten — and where AI helps
 * Add `src/sources/<book>.js` with `start/stop` that writes `Game`/`Quote` into the store; add the book to `BOOKS`.
   Nothing else changes: matching, best price, SSE and the UI are book-agnostic.
-* At ten books the in-memory store becomes a Redis Stream / pub-sub so ingestion workers scale independently of the
-  web tier, and each worker runs where its book allows (some will need residential egress, as DK does).
+* At ten books the in-memory store becomes a Redis Stream / pub-sub (the DraftKings frame log already is one) so
+  ingestion workers scale independently of the web tier, and each worker runs where its book allows (some will need residential egress, as DK does).
 * AI tooling helped most in the *discovery* loop here: recording a site's traffic and asking a model to explain
   the undocumented payload shapes, generating the normalization mapping, and drafting the test fixtures. Where I would
   wire it in for real: an agent that re-runs `capture-network` when a feed changes shape and proposes the adapter diff,
@@ -303,7 +323,8 @@ runs under a restart-on-exit supervisor.
 | What changes for a third book, or ten; where AI helps | §11 |
 
 ## 13. With more time
-* **FanDuel at 0.5 s** without being rude to one IP: a second poller on another IP, interleaved by half a beat.
+* **A residential/ISP proxy instead of a laptop** for the edge's two jobs (DK snapshot once per 30 s, FanDuel's second
+  poller). Nothing on DraftKings' price path depends on it any more.
 Residential/ISP egress (or a licensed-region VM) for DK instead of an edge laptop; a push chart to rank unlike lines;
 props/alt lines (both feeds already expose them under other subcategories/market types); line-history persistence;
 Prometheus metrics; a test suite around the two decoders using the recorded fixtures in `research/`.

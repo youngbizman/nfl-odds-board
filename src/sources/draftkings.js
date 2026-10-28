@@ -64,7 +64,8 @@ export class DraftKingsSource {
     if (!ok) {
       this.restBlocked = true;
       Object.assign(this, this.candidates[0]); // subscribe to the preferred site anyway: the socket is open to everyone
-      this.store.setSource(BOOK, { mode: 'websocket', region: regionLabel(this.site), snapshotVia: 'edge', detail: 'snapshot host refuses this IP; socket direct, snapshots from edge' });
+      const restored = this.store.sources[BOOK]?.snapshotVia === 'checkpoint';
+      this.store.setSource(BOOK, { mode: 'websocket', region: regionLabel(this.site), ...(restored ? {} : { snapshotVia: 'edge' }), detail: `snapshot host refuses this IP; socket direct, ${restored ? 'board restored from checkpoint, ' : ''}snapshots from edge` });
       this.log('dk', `snapshot host refuses this IP → socket direct (${this.wsHost}), waiting for a snapshot from the edge`);
     } else this.store.setSource(BOOK, { snapshotVia: 'direct' });
     this.connect();
