@@ -1,0 +1,131 @@
+{
+ "base": "https://nfl-odds-board-hgim.onrender.com",
+ "minutes": 45,
+ "measuredAt": "2026-10-28T22:05:16.273Z",
+ "clockOffsetMs": 98,
+ "rttMs": 51,
+ "batches": 394,
+ "bytes": 718818,
+ "changes": {
+  "draftkings": 174,
+  "fanduel": 14
+ },
+ "lineMoves": {
+  "draftkings": 0,
+  "fanduel": 0
+ },
+ "pushLagMs": {
+  "draftkings": {
+   "n": 174,
+   "p50": 173.5,
+   "p90": 173.5,
+   "p95": 173.5,
+   "max": 173.5
+  },
+  "fanduel": {
+   "n": 14,
+   "p50": 80.5,
+   "p90": 194.5,
+   "p95": 217.5,
+   "max": 217.5
+  }
+ },
+ "draftkingsEndToEndMs": {
+  "pregame": {
+   "n": 18,
+   "p50": 1168239.5,
+   "p90": 3358365.5,
+   "p95": 3358366.5,
+   "max": 3358366.5
+  },
+  "live": {
+   "n": 0
+  }
+ },
+ "serverSide": {
+  "draftkings": {
+   "ingestLagPregame": {
+    "count": 0
+   },
+   "ingestLagLive": {
+    "count": 0
+   },
+   "wsMessages": 0,
+   "selectionUpdates": 0,
+   "snapshots": 0,
+   "reconnects": 0,
+   "decodeMisses": 0,
+   "lineMovesMapped": 0,
+   "relayRtt": {
+    "count": 0
+   },
+   "relayMessages": 0
+  },
+  "fanduel": {
+   "pollDuration": {
+    "count": 5,
+    "min": 16,
+    "p50": 18,
+    "p90": 36,
+    "p95": 36,
+    "max": 36,
+    "mean": 22
+   },
+   "pollInterval": {
+    "count": 4,
+    "min": 1000,
+    "p50": 1001,
+    "p90": 1001,
+    "p95": 1001,
+    "max": 1001,
+    "mean": 1001
+   },
+   "changesPerPoll": {
+    "count": 5,
+    "min": 0,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+   },
+   "polls": 5,
+   "pollErrors": 0,
+   "rateLimited": 0,
+   "snapshots": 1,
+   "lastStatus": 200,
+   "bytes": {
+    "count": 5,
+    "min": 93148,
+    "p50": 93148,
+    "p90": 93148,
+    "p95": 93148,
+    "max": 93148,
+    "mean": 93148
+   }
+  },
+  "sse": {
+   "clients": 0,
+   "batchesSent": 5,
+   "bytesSent": 0,
+   "batchSize": {
+    "count": 5,
+    "min": 0,
+    "p50": 0,
+    "p90": 174,
+    "p95": 174,
+    "max": 174,
+    "mean": 35
+   },
+   "coalesceWait": {
+    "count": 5,
+    "min": 0,
+    "p50": 0,
+    "p90": 503,
+    "p95": 503,
+    "max": 503,
+    "mean": 119
+   }
+  }
+ }
+}
