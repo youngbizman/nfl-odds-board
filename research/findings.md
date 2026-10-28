@@ -33,3 +33,9 @@ Market types used: `MONEY_LINE`, `MATCH_HANDICAP_(2-WAY)` (spread), `TOTAL_POINT
 
 Both books name teams differently ("GB Packers" vs "Green Bay Packers"). NFL nicknames are unique, so a team is resolved by its nickname
 to a canonical `{abbr, city, nick}` table, and a game key is `AWAY@HOME:<US-Eastern game date>`. 29/29 games matched on the first run.
+
+## Jurisdictions (found later, Oct 28 evening)
+`sportsbook.fanduel.com` opened from Toronto calls the **NJ** API (`x-sportsbook-region: NJ`, `smp.nj.…`). FanDuel Ontario is a separate
+site, `on.sportsbook.fanduel.ca`, with the same API shape on `sbapi.on.sportsbook.fanduel.ca/api/content-managed-page` and
+`smp.on.sportsbook.fanduel.ca/…/getMarketPrices`, region `ON`, market ids prefixed `801.` instead of `734.`. Both answer from Toronto and from AWS Ohio.
+NJ vs ON on Oct 28 19:05 ET: 174/174 prices identical. The board now uses ON to match DraftKings `CA-ON-SB`.

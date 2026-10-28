@@ -99,9 +99,9 @@ the two shapes I need by their fields (a price row: `[selectionId, label, [ameri
 and treat everything else as "re-snapshot soon".
 
 ### FanDuel — snapshot + polling (pull)
-1. `GET api.sportsbook.fanduel.com/sbapi/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=<public app key>`
-   with `x-sportsbook-region: NJ` → ≈ 1.5 MB (includes futures and props I ignore). That is the whole page model.
-2. `POST smp.nj.sportsbook.fanduel.com/api/sports/fixedodds/readonly/v1/getMarketPrices  {marketIds:[…]}`
+1. `GET sbapi.on.sportsbook.fanduel.ca/api/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=<public app key>`
+   with `x-sportsbook-region: ON` → ≈ 1.5 MB (includes futures and props I ignore). That is the whole page model.
+2. `POST smp.on.sportsbook.fanduel.ca/api/sports/fixedodds/readonly/v1/getMarketPrices  {marketIds:[…]}`
    → fresh prices/handicaps for those markets. **There is no WebSocket and no SSE on the FanDuel page** — its own
    widgets poll this endpoint about every 5 s.
 
@@ -114,6 +114,15 @@ recovers by itself. I stopped at 1 s: the request is 16 ms, so the interval *is*
 would double the load on FanDuel for 0.25 s of average freshness — that is the first knob I would turn with
 FanDuel's blessing or more egress IPs, not before.
 I started at 2 s, measured it, and moved to 1 s after the tests below proved the back-off works.
+
+### Same jurisdiction for both books: Ontario
+Both books run a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
+Ontario (§6), so the board uses **Ontario for both books**: DraftKings `CA-ON-SB` and FanDuel Ontario
+(`on.sportsbook.fanduel.ca`, region `ON`). I found this the hard way: the brief's FanDuel link
+(`sportsbook.fanduel.com`) opened from Toronto serves **New Jersey** prices, so my first version compared DK Ontario
+with FD New Jersey. On Oct 28 FanDuel NJ and ON happened to be identical (174/174), but they are separate markets with
+separate ids and can diverge. Each book's region is shown on the page, and a banner appears if they ever differ.
+`FD_REGION=NJ` (or any US state code) switches FanDuel to a US feed; DraftKings US needs a US residential IP.
 
 ## 4. Snapshots vs deltas — who keeps the state
 
@@ -139,7 +148,7 @@ I started at 2 s, measured it, and moved to 1 s after the tests below proved the
 | | DraftKings | FanDuel |
 | --- | --- | --- |
 | Bot protection | **Akamai.** Headless Chromium → 403 on the HTML page. The old public API (`/sites/US-SB/api/v5/eventgroups/88808`) → 403. **Every datacenter IP → 403 on the data API** (AWS Ohio, reference ids in `/api/diag/draftkings`), while the HTML page still returns 200 from the same IP. Real Chrome and plain Node from a residential IP pass with the site's own `x-client-*`/`referer` headers. | **PerimeterX** (`_px3` token on API calls). Plain Node *without* the token gets 200 from a residential IP **and** from AWS Ohio (15 ms per poll — FD's API lives next door). |
-| Geo | **Fenced by IP per licensed region.** From Ontario only `CA-ON-SB` answers; `US-NJ-SB`, `US-OH-SB`, `US-SB` → 403, and vice-versa. The worker probes a list of regional sites at start-up and keeps the first that answers. | Region header `NJ` works from Ontario and Ohio for reading odds. |
+| Geo | **Fenced by IP per licensed region.** From Ontario only `CA-ON-SB` answers; `US-NJ-SB`, `US-OH-SB`, `US-SB` → 403, and vice-versa. The worker probes a list of regional sites at start-up and keeps the first that answers. | Not fenced for reading odds: both the Ontario (`.ca`, `ON`) and New Jersey (`.com`, `NJ`) APIs answer from Toronto *and* from AWS Ohio. Note the `.com` site shows NJ prices even from Canada. |
 | Rate limits | none hit (1 WS connection + 1 snapshot/min) | none hit at 1 poll / 2 s for hours, then 1 poll / s; back-off on 429/403 is implemented and tested |
 | Sessions / tokens | `jwt: default-token` — nothing to expire. If DK ever rejects it, the worker reconnects with backoff and re-snapshots; stale state is shown meanwhile. | `_ak` is a public app key baked into the site; no cookie needed. |
 
@@ -206,8 +215,9 @@ Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) i
 `tools/race.mjs` opens DraftKings' and FanDuel's NFL pages and our board side by side in real Chrome on one machine
 (one clock), then (1) compares every price and (2) times every change: when the book's own page *received* it
 (network layer, before it even paints) versus when our board *painted* it.
-* **Correctness, Wed Oct 28, two runs 20 min apart:** DraftKings 174/174 and FanDuel 174/174 prices identical to what the
-  books' own pages hold, at the start and the end of each run; screenshots in `research/race/`.
+* **Correctness, Wed Oct 28, three runs:** DraftKings 174/174 and FanDuel 174/174 prices identical to what the
+  books' own pages hold, at the start and the end of each run (the last run against FanDuel's Ontario site, after
+  switching to Ontario); screenshots in `research/race/`.
 * **Same channel as the book's own site, pregame and in-play.** Captured both books' live pages during games in other
   sports: DraftKings in-play uses the same WebSocket; FanDuel's in-play page still has **no push** and re-polls each
   market about every **5 s**. There is no faster hidden channel to switch to.
