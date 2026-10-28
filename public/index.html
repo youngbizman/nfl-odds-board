@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NFL Odds Board · DraftKings vs FanDuel</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>NFL Odds Board</h1>
+    <span class="sub">DraftKings vs FanDuel · moneyline, spread, total · pushes to you live</span>
+  </div>
+  <nav class="toggle" role="tablist" aria-label="Board view">
+    <button data-view="best" class="on">Best Price</button>
+    <button data-view="draftkings">DraftKings</button>
+    <button data-view="fanduel">FanDuel</button>
+  </nav>
+  <div class="status" id="status"></div>
+</header>
+
+<main>
+  <div class="conn" id="conn">connecting…</div>
+  <table class="board" id="board">
+    <thead><tr><th class="g">Game</th><th>Spread</th><th>Total</th><th>Moneyline</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="empty" id="empty" hidden>No NFL games with game lines right now.</p>
+</main>
+
+<footer>
+  <details id="latency">
+    <summary>Latency &amp; freshness (measured in this browser)</summary>
+    <div id="latencyBody" class="lat"></div>
+  </details>
+  <p class="note">Best Price = higher odds for the same number. When the two books post <em>different</em> lines (e.g. −3 −110 vs −3.5 +100) both are shown and neither is called "best". Prices flash when they move; the old price stays beside the new one for a moment. A book turns grey when its data is stale.</p>
+</footer>
+<script src="/app.js"></script>
+</body>
+</html>

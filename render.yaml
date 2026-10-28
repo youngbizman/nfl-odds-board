@@ -1,0 +1,23 @@
+# Render Blueprint: one small always-on Node web service in US-East (Ohio), close to both books' US infrastructure.
+services:
+  - type: web
+    name: nfl-odds-board
+    runtime: node
+    region: ohio
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: FD_POLL_MS
+        value: "2000"
+      - key: FD_REGION
+        value: NJ
+      - key: DK_SITE
+        value: CA-ON-SB
+      - key: DK_SITENAME
+        value: dkcaon
+      - key: DK_WS_HOST
+        value: sportsbook-ws-ca-on.draftkings.com

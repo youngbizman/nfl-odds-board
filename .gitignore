@@ -1,0 +1,11 @@
+node_modules/
+.agent/
+*.log
+.env
+research/captures/*/bodies/
+research/captures/*/page.html
+research/captures/*/requests.json
+research/captures/*/ws-frames.jsonl
+Start Helper.command
+start-helper.applescript
+.DS_Store
