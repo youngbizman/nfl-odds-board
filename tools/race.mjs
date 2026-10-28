@@ -98,7 +98,8 @@ const RECORDER = () => {
       if (prev !== undefined && prev !== v) window.__changes.push({ key, odds: el.dataset.odds === '' ? null : Number(el.dataset.odds), line: el.dataset.line === '' ? null : Number(el.dataset.line), t });
       window.__seen.set(key, v);
     } };
-  new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-odds', 'data-line'] });
+  // observe `document` (it exists when init scripts run; documentElement may not yet)
+  new MutationObserver(scan).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-odds', 'data-line'] });
 };
 const ourDk = await rctx.newPage(); await ourDk.addInitScript(RECORDER);
 const ourFd = await rctx.newPage(); await ourFd.addInitScript(RECORDER);
@@ -149,6 +150,7 @@ const stat = (a) => { if (!a.length) return 'n=0'; const x = a.map((p) => p.delt
 log('RACE (our paint − book page receive; negative = our board first)');
 log('  DraftKings', stat(pairs.filter((p) => p.book === 'draftkings')));
 log('  FanDuel   ', stat(pairs.filter((p) => p.book === 'fanduel')));
+for (const p of pairs) log(`   ${p.book === 'draftkings' ? 'DK' : 'FD'} ${p.key.split('|').slice(0, 3).join(' ')} ${p.prevOdds}→${p.odds}: book page ${new Date(p.t).toISOString().slice(11, 23)}, our board ${p.deltaMs >= 0 ? '+' : ''}${p.deltaMs} ms`);
 log(`  changes the book page got but our board never showed: ${siteOnly.length}  ·  board changes the book page never got (book page did not poll that market, or we were fresher): ${boardOnly.length}`);
 const c2 = [await compare('draftkings', ourDk), await compare('fanduel', ourFd)]; log('final correctness:'); c2.forEach(show);
 fs.writeFileSync(`${OUT}/result.json`, JSON.stringify({ board: BOARD, minutes: MINUTES, correctnessStart: c1, correctnessEnd: c2, pairs, siteOnly, boardOnly, dkFrames, fdPolls }, null, 1));

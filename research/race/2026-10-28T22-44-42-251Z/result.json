@@ -1,0 +1,45 @@
+{
+ "board": "https://nfl-odds-board-hgim.onrender.com",
+ "minutes": 15,
+ "correctnessStart": [
+  {
+   "book": "draftkings",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  },
+  {
+   "book": "fanduel",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  }
+ ],
+ "correctnessEnd": [
+  {
+   "book": "draftkings",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  },
+  {
+   "book": "fanduel",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  }
+ ],
+ "pairs": [],
+ "siteOnly": [],
+ "boardOnly": [],
+ "dkFrames": 4,
+ "fdPolls": 372
+}

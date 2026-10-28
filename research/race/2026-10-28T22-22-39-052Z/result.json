@@ -1,0 +1,262 @@
+{
+ "board": "https://nfl-odds-board-hgim.onrender.com",
+ "minutes": 20,
+ "correctnessStart": [
+  {
+   "book": "draftkings",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  },
+  {
+   "book": "fanduel",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  }
+ ],
+ "correctnessEnd": [
+  {
+   "book": "draftkings",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  },
+  {
+   "book": "fanduel",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  }
+ ],
+ "pairs": [],
+ "siteOnly": [
+  {
+   "book": "draftkings",
+   "key": "IND@JAX:2026-11-01|moneyline|home|draftkings",
+   "odds": -485,
+   "line": null,
+   "prevOdds": -500,
+   "prevLine": null,
+   "t": 1793226181239
+  },
+  {
+   "book": "draftkings",
+   "key": "IND@JAX:2026-11-01|moneyline|away|draftkings",
+   "odds": 370,
+   "line": null,
+   "prevOdds": 380,
+   "prevLine": null,
+   "t": 1793226181240
+  },
+  {
+   "book": "draftkings",
+   "key": "PHI@WAS:2026-11-01|moneyline|home|draftkings",
+   "odds": -238,
+   "line": null,
+   "prevOdds": -230,
+   "prevLine": null,
+   "t": 1793226186855
+  },
+  {
+   "book": "draftkings",
+   "key": "PHI@WAS:2026-11-01|moneyline|away|draftkings",
+   "odds": 195,
+   "line": null,
+   "prevOdds": 190,
+   "prevLine": null,
+   "t": 1793226186856
+  },
+  {
+   "book": "draftkings",
+   "key": "LAC@LAR:2026-11-01|moneyline|away|draftkings",
+   "odds": 225,
+   "line": null,
+   "prevOdds": 230,
+   "prevLine": null,
+   "t": 1793226458893
+  },
+  {
+   "book": "draftkings",
+   "key": "LAC@LAR:2026-11-01|moneyline|home|draftkings",
+   "odds": -278,
+   "line": null,
+   "prevOdds": -285,
+   "prevLine": null,
+   "t": 1793226458893
+  },
+  {
+   "book": "draftkings",
+   "key": "PHI@WAS:2026-11-01|moneyline|home|draftkings",
+   "odds": -225,
+   "line": null,
+   "prevOdds": -238,
+   "prevLine": null,
+   "t": 1793226548245
+  },
+  {
+   "book": "draftkings",
+   "key": "PHI@WAS:2026-11-01|moneyline|away|draftkings",
+   "odds": 185,
+   "line": null,
+   "prevOdds": 195,
+   "prevLine": null,
+   "t": 1793226548246
+  },
+  {
+   "book": "draftkings",
+   "key": "CAR@GB:2026-10-29|moneyline|home|draftkings",
+   "odds": -198,
+   "line": null,
+   "prevOdds": -192,
+   "prevLine": null,
+   "t": 1793226798095
+  },
+  {
+   "book": "draftkings",
+   "key": "CAR@GB:2026-10-29|moneyline|away|draftkings",
+   "odds": 164,
+   "line": null,
+   "prevOdds": 160,
+   "prevLine": null,
+   "t": 1793226798095
+  },
+  {
+   "book": "draftkings",
+   "key": "CAR@GB:2026-10-29|total|over|draftkings",
+   "odds": -108,
+   "line": 47.5,
+   "prevOdds": -112,
+   "prevLine": 47.5,
+   "t": 1793226798096
+  },
+  {
+   "book": "draftkings",
+   "key": "CAR@GB:2026-10-29|total|under|draftkings",
+   "odds": -112,
+   "line": 47.5,
+   "prevOdds": -108,
+   "prevLine": 47.5,
+   "t": 1793226798096
+  },
+  {
+   "book": "draftkings",
+   "key": "LV@NYJ:2026-11-01|moneyline|away|draftkings",
+   "odds": 102,
+   "line": null,
+   "prevOdds": 105,
+   "prevLine": null,
+   "t": 1793226981684
+  },
+  {
+   "book": "draftkings",
+   "key": "LV@NYJ:2026-11-01|moneyline|home|draftkings",
+   "odds": -122,
+   "line": null,
+   "prevOdds": -125,
+   "prevLine": null,
+   "t": 1793226981684
+  },
+  {
+   "book": "draftkings",
+   "key": "LAR@WAS:2026-11-08|moneyline|home|draftkings",
+   "odds": 190,
+   "line": null,
+   "prevOdds": 195,
+   "prevLine": null,
+   "t": 1793227117984
+  },
+  {
+   "book": "draftkings",
+   "key": "LAR@WAS:2026-11-08|moneyline|away|draftkings",
+   "odds": -230,
+   "line": null,
+   "prevOdds": -238,
+   "prevLine": null,
+   "t": 1793227117985
+  },
+  {
+   "book": "draftkings",
+   "key": "LV@NYJ:2026-11-01|moneyline|home|draftkings",
+   "odds": -125,
+   "line": null,
+   "prevOdds": -122,
+   "prevLine": null,
+   "t": 1793227268781
+  },
+  {
+   "book": "draftkings",
+   "key": "LV@NYJ:2026-11-01|moneyline|away|draftkings",
+   "odds": 105,
+   "line": null,
+   "prevOdds": 102,
+   "prevLine": null,
+   "t": 1793227268783
+  },
+  {
+   "book": "draftkings",
+   "key": "LAR@WAS:2026-11-08|moneyline|home|draftkings",
+   "odds": 185,
+   "line": null,
+   "prevOdds": 190,
+   "prevLine": null,
+   "t": 1793227298743
+  },
+  {
+   "book": "draftkings",
+   "key": "LAR@WAS:2026-11-08|moneyline|away|draftkings",
+   "odds": -225,
+   "line": null,
+   "prevOdds": -230,
+   "prevLine": null,
+   "t": 1793227298743
+  },
+  {
+   "book": "draftkings",
+   "key": "LAR@WAS:2026-11-08|moneyline|home|draftkings",
+   "odds": 190,
+   "line": null,
+   "prevOdds": 185,
+   "prevLine": null,
+   "t": 1793227359393
+  },
+  {
+   "book": "draftkings",
+   "key": "LAR@WAS:2026-11-08|moneyline|away|draftkings",
+   "odds": -230,
+   "line": null,
+   "prevOdds": -225,
+   "prevLine": null,
+   "t": 1793227359394
+  },
+  {
+   "book": "draftkings",
+   "key": "PHI@WAS:2026-11-01|moneyline|home|draftkings",
+   "odds": -230,
+   "line": null,
+   "prevOdds": -225,
+   "prevLine": null,
+   "t": 1793227364263
+  },
+  {
+   "book": "draftkings",
+   "key": "PHI@WAS:2026-11-01|moneyline|away|draftkings",
+   "odds": 190,
+   "line": null,
+   "prevOdds": 185,
+   "prevLine": null,
+   "t": 1793227364264
+  }
+ ],
+ "boardOnly": [],
+ "dkFrames": 40,
+ "fdPolls": 492
+}

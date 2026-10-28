@@ -202,6 +202,22 @@ a small VM in a licensed region, instead of a laptop.
 Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) is measured automatically; results land in
 `research/latency/` and this table is updated from them.
 
+### Checked against the books' own websites
+`tools/race.mjs` opens DraftKings' and FanDuel's NFL pages and our board side by side in real Chrome on one machine
+(one clock), then (1) compares every price and (2) times every change: when the book's own page *received* it
+(network layer, before it even paints) versus when our board *painted* it.
+* **Correctness, Wed Oct 28, two runs 20 min apart:** DraftKings 174/174 and FanDuel 174/174 prices identical to what the
+  books' own pages hold, at the start and the end of each run; screenshots in `research/race/`.
+* **Same channel as the book's own site, pregame and in-play.** Captured both books' live pages during games in other
+  sports: DraftKings in-play uses the same WebSocket; FanDuel's in-play page still has **no push** and re-polls each
+  market about every **5 s**. There is no faster hidden channel to switch to.
+* **What that means:** our FanDuel prices are polled every 1 s, so the board shows a FanDuel move on average about
+  **2 s before FanDuel's own website** does. For DraftKings we receive the very same push as DK's page, then add the
+  relay to Ohio and back (~50 ms), so DK's own page is ahead of us by roughly that much.
+* Wednesday evening was too quiet to time many moves (FanDuel's NFL lines did not move for 20+ minutes; DraftKings
+  moved 26 times in the hour, 0 times during the second run). The race runs again during the live Thursday game and
+  the timings will be added here.
+
 ### Would Go or Redis Streams make it faster?
 Not for latency. Our processing is microseconds; the time is network hops and FanDuel's poll beat. Go would cut CPU
 and memory at Betstamp's scale (hundreds of books, thousands of connections), and Redis Streams would give durable,
