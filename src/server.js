@@ -42,7 +42,10 @@ store.on('quote', (q) => queue('quotes', q, q.id));
 store.on('game', (g) => queue('games', g, g.key));
 store.on('source', (s) => queue('sources', s, s.book));
 setInterval(() => store.refreshStaleness(STALE_MS), 1000);
-setInterval(() => { for (const res of clients) res.write(`: ping ${Date.now()}\n\n`); }, 15_000); // keep proxies from closing idle streams
+setInterval(() => { // status heartbeat: "data 3s ago" style counters, and keeps proxies from closing idle streams
+  const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources })}\n\n`;
+  for (const res of clients) res.write(payload);
+}, 5_000);
 
 // ---------- HTTP ----------
 const app = express();

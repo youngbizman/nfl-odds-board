@@ -54,10 +54,14 @@ export class BoardStore extends EventEmitter {
     }
   }
 
+  /** Update a book's status. Emits only when something a viewer cares about changed (state, stale, mode, error, snapshot);
+   *  counters like lastDataAt change on every poll and are delivered by the periodic status heartbeat instead. */
   setSource(book, patch) {
     const s = this.sources[book]; if (!s) return;
+    const before = JSON.stringify([s.state, s.stale, s.mode, s.lastError, s.lastSnapshotAt, s.reconnects]);
     Object.assign(s, patch);
-    this.emit('source', { ...s });
+    const after = JSON.stringify([s.state, s.stale, s.mode, s.lastError, s.lastSnapshotAt, s.reconnects]);
+    if (before !== after) this.emit('source', { ...s });
   }
 
   /** Mark data as stale when a book has gone quiet for longer than its own threshold. Called on a timer. */
