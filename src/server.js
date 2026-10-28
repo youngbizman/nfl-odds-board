@@ -126,6 +126,14 @@ app.post('/ingest/draftkings', (req, res) => {
   res.json({ ok: true, changed: ingestDraftKings(req.body) });
 });
 
+// Diagnostics: can THIS server hold DraftKings' push socket? (socket host and REST host are different Akamai products)
+app.get('/api/diag/dk-socket', async (req, res) => {
+  const { probeDkSocket } = await import('../tools/probe-dk-ws.mjs');
+  const out = {};
+  for (const [region, siteName] of [['us-oh', 'dkusoh'], ['us-nj', 'dkusnj'], ['ca-on', 'dkcaon']]) out[region] = await probeDkSocket({ region, siteName, seconds: 5 });
+  res.json(out);
+});
+
 // Diagnostics: what does DraftKings say to THIS server's IP? (documents geo / bot blocking honestly)
 app.get('/api/diag/draftkings', async (req, res) => {
   const out = { serverTs: Date.now(), lastEdgeAt: lastEdgeAt || null, sites: {} };
