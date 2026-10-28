@@ -1,0 +1,498 @@
+[
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "subscribed",
+  "data": "",
+  "websocketPublishTimestamp": "2026-10-28T23:23:11.1587678+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [],
+     "markets": [],
+     "selections": [
+      {
+       "id": "0ML84695632_1",
+       "label": "NY Jets",
+       "displayOdds": {
+        "american": "−122",
+        "decimal": "1.81",
+        "fractional": "50/61",
+        "percentage": "54%",
+        "priceGraphPercentage": "53%",
+        "multiplier": "1.81x"
+       },
+       "trueOdds": 1.81967214,
+       "sortOrder": 34984853,
+       "tags": [
+        "SGP",
+        "OSB"
+       ]
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:23:14.210Z",
+    "receivedTime": "2026-10-28T23:23:14.220Z",
+    "publishedTime": "2026-10-28T23:23:14.248Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:23:14.2780725Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:23:14.2780782+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [],
+     "markets": [],
+     "selections": [
+      {
+       "id": "0ML84695632_3",
+       "label": "LV Raiders",
+       "displayOdds": {
+        "american": "+102",
+        "decimal": "2.02",
+        "fractional": "51/50",
+        "percentage": "49%",
+        "priceGraphPercentage": "47%",
+        "multiplier": "2.02x"
+       },
+       "trueOdds": 2.02,
+       "sortOrder": 14984857,
+       "tags": [
+        "SGP",
+        "OSB"
+       ]
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:23:14.210Z",
+    "receivedTime": "2026-10-28T23:23:14.220Z",
+    "publishedTime": "2026-10-28T23:23:14.248Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:23:14.2781182Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:23:14.2781208+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [],
+     "markets": [],
+     "selections": [
+      {
+       "id": "0ML84695478_1",
+       "label": "WAS Commanders",
+       "displayOdds": {
+        "american": "−230",
+        "decimal": "1.43",
+        "fractional": "10/23",
+        "percentage": "69%",
+        "priceGraphPercentage": "67%",
+        "multiplier": "1.43x"
+       },
+       "trueOdds": 1.43478261,
+       "sortOrder": 34983775,
+       "tags": [
+        "SGP",
+        "OSB"
+       ]
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:23:14.617Z",
+    "receivedTime": "2026-10-28T23:23:14.626Z",
+    "publishedTime": "2026-10-28T23:23:14.650Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:23:14.6859768Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:23:14.6859806+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [],
+     "markets": [],
+     "selections": [
+      {
+       "id": "0ML84695478_3",
+       "label": "PHI Eagles",
+       "displayOdds": {
+        "american": "+190",
+        "decimal": "2.90",
+        "fractional": "19/10",
+        "percentage": "34%",
+        "priceGraphPercentage": "33%",
+        "multiplier": "2.90x"
+       },
+       "trueOdds": 2.9,
+       "sortOrder": 14983779,
+       "tags": [
+        "SGP",
+        "OSB"
+       ]
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:23:14.617Z",
+    "receivedTime": "2026-10-28T23:23:14.626Z",
+    "publishedTime": "2026-10-28T23:23:14.651Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:23:14.686021Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:23:14.6860218+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [],
+     "markets": [],
+     "selections": [
+      {
+       "id": "0HC84695478N600_1",
+       "label": "WAS Commanders",
+       "displayOdds": {
+        "american": "−108",
+        "decimal": "1.92",
+        "fractional": "25/27",
+        "percentage": "51%",
+        "priceGraphPercentage": "52%",
+        "multiplier": "1.92x"
+       },
+       "trueOdds": 1.92592593,
+       "points": -6,
+       "sortOrder": 6001,
+       "tags": [
+        "MainPointLine",
+        "SGP",
+        "OSB"
+       ]
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:24:19.296Z",
+    "receivedTime": "2026-10-28T23:24:19.302Z",
+    "publishedTime": "2026-10-28T23:24:19.364Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:24:19.4019687Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:24:19.401977+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [],
+     "markets": [],
+     "selections": [
+      {
+       "id": "0HC84695478P600_3",
+       "label": "PHI Eagles",
+       "displayOdds": {
+        "american": "−112",
+        "decimal": "1.89",
+        "fractional": "25/28",
+        "percentage": "52%",
+        "priceGraphPercentage": "53%",
+        "multiplier": "1.89x"
+       },
+       "trueOdds": 1.89285715,
+       "points": 6,
+       "sortOrder": 5999,
+       "tags": [
+        "MainPointLine",
+        "SGP",
+        "OSB"
+       ]
+      }
+     ]
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:24:19.296Z",
+    "receivedTime": "2026-10-28T23:24:19.302Z",
+    "publishedTime": "2026-10-28T23:24:19.364Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:24:19.4020265Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:24:19.4020284+00:00"
+ },
+ {
+  "id": "bbd156c6-62ae-4c29-8555-c2593d646858",
+  "event": "update",
+  "data": {
+   "data": {
+    "add": {
+     "events": [],
+     "markets": [],
+     "selections": [],
+     "leagues": [],
+     "sports": []
+    },
+    "remove": {
+     "events": [],
+     "markets": [],
+     "selections": []
+    },
+    "change": {
+     "events": [
+      {
+       "id": "34118045",
+       "startEventDate": "2026-11-02T01:20:00Z",
+       "participants": [
+        {
+         "id": "18480",
+         "name": "WAS Commanders",
+         "venueRole": "Home",
+         "type": "Team",
+         "metadata": {
+          "retailRotNumber": "131",
+          "rosettaTeamId": "18480",
+          "rosettaTeamName": "Commanders",
+          "shortName": "WAS",
+          "teamColor": "#5A1414",
+          "teamColorSecondary": "#FFB612",
+          "teamColorTertiary": "#000000"
+         },
+         "sortOrder": 2,
+         "seoIdentifier": "Commanders",
+         "tags": [],
+         "isNationalTeam": false,
+         "countryCode": "US"
+        },
+        {
+         "id": "18448",
+         "name": "PHI Eagles",
+         "venueRole": "Away",
+         "type": "Team",
+         "metadata": {
+          "retailRotNumber": "130",
+          "rosettaTeamId": "18448",
+          "rosettaTeamName": "Eagles",
+          "shortName": "PHI",
+          "teamColor": "#004851",
+          "teamColorSecondary": "#A2AAAD",
+          "teamColorTertiary": "#ACC0C6"
+         },
+         "sortOrder": 1,
+         "seoIdentifier": "Eagles",
+         "tags": [],
+         "isNationalTeam": false,
+         "countryCode": "US"
+        }
+       ],
+       "status": "NOT_STARTED",
+       "eventScorecard": {
+        "scorecardComponentId": 1
+       },
+       "tags": [
+        "EarlyExit",
+        "EarlyExitPlus",
+        "FeaturedSubcategory",
+        "MatchTracker",
+        "OSB",
+        "PlayerStack",
+        "PrePack",
+        "SGP",
+        "Scoreboard",
+        "SgpDynamicOdds",
+        "Stats",
+        "YourBetEligible"
+       ],
+       "metadata": {
+        "masterLeagueId": "40",
+        "numberOfParts": "4",
+        "secondsInOnePart": "900"
+       },
+       "sortOrder": 169541045
+      }
+     ],
+     "markets": [],
+     "selections": []
+    }
+   },
+   "metadata": {
+    "createdTime": "2026-10-28T23:24:24.055Z",
+    "receivedTime": "2026-10-28T23:24:24.065Z",
+    "publishedTime": "2026-10-28T23:24:24.142Z"
+   }
+  },
+  "context": {
+   "messageTags": [
+    "entity:events",
+    "initialdata:False",
+    "projection:sportsbook",
+    "language:en",
+    "connectiontype:WS",
+    "format:application/json",
+    "messageType:update"
+   ],
+   "receivedAt": "2026-10-28T23:24:24.1692776Z"
+  },
+  "websocketPublishTimestamp": "2026-10-28T23:24:24.1692812+00:00"
+ }
+]

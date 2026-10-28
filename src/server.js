@@ -29,7 +29,10 @@ const log = (tag, ...a) => console.log(new Date().toISOString(), `[${tag}]`, ...
 const store = new BoardStore();
 const metrics = new Metrics();
 const sources = [];
-if (SOURCES.includes('draftkings')) sources.push(new DraftKingsSource(store, metrics, log));
+const edges = new Set(); // relay sockets from edge machines (snapshot providers)
+const askEdgeForSnapshot = (why) => { for (const ws of edges) if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'need-snapshot', why })); };
+const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics, log, { onNeedSnapshot: askEdgeForSnapshot }) : null;
+if (dk) sources.push(dk);
 if (SOURCES.includes('fanduel')) sources.push(new FanDuelSource(store, metrics, log));
 
 // ---------- SSE fan-out ----------
@@ -60,7 +63,7 @@ setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps prox
 // ---------- HTTP ----------
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0 }));
 
 const snapshot = () => ({ ...store.snapshot(), config: { staleMs: STALE_MS, batchMs: BATCH_MS } });
@@ -74,7 +77,7 @@ app.get('/api/health', (req, res) => {
   const now = Date.now();
   const books = Object.fromEntries(BOOKS.map((b) => {
     const s = store.sources[b];
-    return [b, { state: s.state, mode: s.mode, stale: s.stale, dataAgeMs: s.lastDataAt ? now - s.lastDataAt : null, quotes: [...store.quotes.values()].filter((q) => q.book === b).length, lastError: s.lastError }];
+    return [b, { state: s.state, mode: s.mode, region: s.region, stale: s.stale, dataAgeMs: s.lastDataAt ? now - s.lastDataAt : null, snapshotAgeMs: s.lastSnapshotAt ? now - s.lastSnapshotAt : null, snapshotVia: s.snapshotVia, quotes: [...store.quotes.values()].filter((q) => q.book === b).length, lastError: s.lastError }];
   }));
   const ok = store.games.size > 0 && BOOKS.every((b) => !books[b].stale && books[b].quotes > 0);
   res.status(ok ? 200 : 503).json({ ok, version: VERSION, games: store.games.size, books, clients: clients.size });
@@ -97,33 +100,24 @@ app.post('/api/report', (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- DraftKings relay (DK collected on an edge machine, see src/edge.js) ----------
+// ---------- DraftKings snapshot relay (edge machine → here, see src/edge.js) ----------
+// The cloud holds DK's socket itself; what it cannot fetch is the REST snapshot (403 for datacenter IPs).
+// An edge machine on an accepted IP sends the raw snapshot JSON every 30 s and whenever we ask.
 let lastEdgeAt = 0;
-function ingestDraftKings(body, now = Date.now()) {
-  const { quotes = [], games = [], source, edgeTs, rttMs } = body || {};
+function ingestSnapshot(body, now = Date.now()) {
+  if (!dk) return { error: 'draftkings source disabled' };
+  const { snapshot, edgeTs, rttMs } = body || {};
+  if (!snapshot?.events) return { error: 'no snapshot' };
   lastEdgeAt = now; metrics.dk.relayMessages++;
   if (Number.isFinite(rttMs)) metrics.dk.relayRtt.push(rttMs);
-  for (const g of games) if (g?.key) store.upsertGame(g);
-  let changed = 0;
-  for (const q of quotes) {
-    if (q?.book !== 'draftkings' || !q.gameKey) continue;
-    if (q.removed) { store.removeQuotes('draftkings', q.gameKey, q.market); continue; }
-    const did = store.upsertQuote({ gameKey: q.gameKey, market: q.market, side: q.side, book: q.book, line: q.line ?? null, odds: q.odds ?? null, suspended: q.suspended, sourceTs: q.sourceTs ?? null }, now);
-    // book→cloud lag only for real changes that just happened (the edge also re-sends the whole board periodically)
-    if (did) { changed++; if (q.sourceTs && now - q.sourceTs < 60_000) { const g = store.games.get(q.gameKey); (g?.status === 'live' ? metrics.dk.ingestLagLive : metrics.dk.ingestLagPregame).push(now - q.sourceTs); } }
-  }
-  if (source) {
-    // Times measured on the edge are converted with a difference taken on the edge's own clock, so clock skew cancels.
-    const shift = (ts) => (ts && edgeTs ? now - Math.max(0, edgeTs - ts) : ts ?? null);
-    const { stale, lastDataAt, lastChangeAt, lastSnapshotAt, ...rest } = source; // staleness is judged here, not at the edge
-    store.setSource('draftkings', { ...rest, mode: 'websocket (via edge)', lastDataAt: shift(lastDataAt) ?? now, lastChangeAt: shift(lastChangeAt), lastSnapshotAt: shift(lastSnapshotAt), relayRttMs: Number.isFinite(rttMs) ? rttMs : undefined });
-  }
-  return changed;
+  const n = dk.applySnapshot(snapshot, now, 'edge');
+  store.setSource('draftkings', { lastError: null, relayRttMs: Number.isFinite(rttMs) ? rttMs : undefined, edgeLagMs: edgeTs ? now - edgeTs : undefined, detail: `${n.games} games, ${n.selections} prices, snapshot via edge` });
+  return n;
 }
 const authorized = (h) => !!INGEST_TOKEN && h === `Bearer ${INGEST_TOKEN}`;
-app.post('/ingest/draftkings', (req, res) => {
+app.post('/ingest/dk-snapshot', (req, res) => {
   if (!authorized(req.headers.authorization)) return res.status(401).json({ error: 'bad token' });
-  res.json({ ok: true, changed: ingestDraftKings(req.body) });
+  res.json({ ok: true, ...ingestSnapshot(req.body) });
 });
 
 // Diagnostics: can THIS server hold DraftKings' push socket? (socket host and REST host are different Akamai products)
@@ -151,21 +145,22 @@ app.get('/api/diag/draftkings', async (req, res) => {
 const server = app.listen(PORT, () => log('http', `listening on :${PORT} · sources=${SOURCES.join('+') || 'none'} · batch=${BATCH_MS || 'immediate'} · stale dk=${STALE_MS.draftkings} fd=${STALE_MS.fanduel} · v${VERSION}`));
 
 // Relay over ONE long-lived WebSocket (no per-batch HTTP request). Edge sends {type:'batch',…} and {type:'ping',t}.
-const relay = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 2 * 1024 * 1024 });
+const relay = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 8 * 1024 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   if (new URL(req.url, 'http://x').pathname !== '/ingest/ws') return socket.destroy();
   if (!authorized(req.headers.authorization)) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); return socket.destroy(); }
   relay.handleUpgrade(req, socket, head, (ws) => relay.emit('connection', ws, req));
 });
 relay.on('connection', (ws, req) => {
-  ws._socket?.setNoDelay(true);
+  ws._socket?.setNoDelay(true); edges.add(ws);
   log('relay', `edge connected from ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}`);
+  if (dk?.restBlocked) ws.send(JSON.stringify({ type: 'need-snapshot', why: 'edge connected' }));
   ws.on('message', (data) => {
     let msg; try { msg = JSON.parse(data); } catch { return; }
     if (msg.type === 'ping') return ws.send(JSON.stringify({ type: 'pong', t: msg.t }));
-    if (msg.type === 'batch') ingestDraftKings(msg);
+    if (msg.type === 'snapshot') ingestSnapshot(msg);
   });
-  ws.on('close', () => log('relay', 'edge disconnected'));
+  ws.on('close', () => { edges.delete(ws); log('relay', 'edge disconnected'); });
 });
 
 for (const s of sources) s.start().catch((e) => log('src', 'start failed', e));

@@ -15,11 +15,11 @@ function bench(label, setup, run) {
   const us = ((performance.now() - t) / N) * 1000;
   console.log(`${label.padEnd(58)} ${us.toFixed(1).padStart(7)} µs per update`);
 }
-// DK: decode msgpack + walk + apply one price change (alternate the price so every run is a real change)
-const frame = Buffer.from(fx('dk-frames.json')[1], 'base64');
-bench('DraftKings: decode + apply one WebSocket frame (1 price)', () => {
+// DK: parse + apply one JSON socket frame (1 price change; alternate the price so every run is a real change)
+const frame = Buffer.from(JSON.stringify({ event: 'update', data: { data: { add: {}, remove: {}, change: { selections: [{ id: '0ML84695689_1', displayOdds: { american: '\u2212499' } }] } }, metadata: { publishedTime: '2026-10-28T23:23:14.248Z' } } }));
+bench('DraftKings: parse + apply one socket frame (1 price)', () => {
   const store = new BoardStore(); const dk = new DraftKingsSource(store, new Metrics(), () => {}); dk.applySnapshot(fx('dk-snapshot.json')); return { store, dk };
-}, ({ store, dk }, i) => { store.quotes.get('IND@JAX:2026-11-01|moneyline|home|draftkings').odds = i % 2 ? -499 : -501; dk.onMessage(frame); });
+}, ({ store, dk }, i) => { store.quotes.get('IND@JAX:2026-11-01|moneyline|home|draftkings').odds = i % 2 ? -498 : -500; dk.onMessage(frame); });
 // FD: parse JSON + apply a full 9-market response
 const pricesText = JSON.stringify(fx('fd-prices.json'));
 bench('FanDuel: parse + apply one poll response (9 markets)', () => {

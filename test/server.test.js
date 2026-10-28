@@ -9,6 +9,7 @@ import WebSocket from 'ws';
 import { fixture, waitFor } from './helpers.js';
 
 const SNAP = fixture('fd-snapshot.json');
+const DK_SNAP = fixture('dk-snapshot.json');
 const PRICES = fixture('fd-prices.json');
 const TOKEN = 'test-token';
 const GAME = 'BAL@BUF:2026-11-01';
@@ -51,7 +52,9 @@ function sse(url) {
 let fake, proc, base, port;
 test.before(async () => {
   fake = await fakeFanDuel(); port = await freePort(); base = `http://127.0.0.1:${port}`;
-  proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'fanduel', INGEST_TOKEN: TOKEN,
+  const dead = await freePort();
+  proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'draftkings,fanduel', INGEST_TOKEN: TOKEN,
+    DK_NASH_BASE: `http://127.0.0.1:${dead}`, DK_WS_URL: `ws://127.0.0.1:${dead}/websocket`,
     FD_SNAPSHOT_URL: `${fake.base}/snapshot`, FD_PRICES_URL: `${fake.base}/prices`, FD_POLL_MS: '100', FD_STALE_MS: '1200', DK_STALE_MS: '1200' }, stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.resume(); proc.stderr.resume();
   await waitFor(async () => { try { return (await fetch(`${base}/healthz`)).ok; } catch { return false; } }, 5000);
@@ -80,14 +83,14 @@ test('a FanDuel price change reaches an SSE viewer within one poll', async () =>
 });
 
 test('the relay rejects a wrong token, both over WebSocket and HTTP', async () => {
-  const r = await fetch(`${base}/ingest/draftkings`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer nope' }, body: '{}' });
+  const r = await fetch(`${base}/ingest/dk-snapshot`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer nope' }, body: '{}' });
   assert.equal(r.status, 401);
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ingest/ws`, { headers: { authorization: 'Bearer nope' } });
   const code = await new Promise((res) => { ws.on('unexpected-response', (_, resp) => res(resp.statusCode)); ws.on('error', () => res('error')); ws.on('open', () => res('open')); });
   assert.notEqual(code, 'open');
 });
 
-test('DraftKings data relayed over the WebSocket reaches viewers immediately, with DK\'s publish time', async () => {
+test('a DraftKings snapshot relayed from an edge fills the board, and viewers get it at once', async () => {
   const s = sse(`${base}/api/stream`);
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ingest/ws`, { headers: { authorization: `Bearer ${TOKEN}` } });
   try {
@@ -96,26 +99,23 @@ test('DraftKings data relayed over the WebSocket reaches viewers immediately, wi
     ws.send(JSON.stringify({ type: 'ping', t: 42 }));
     assert.equal((await pong).t, 42);
     await waitFor(() => s.events.some((e) => e.ev === 'snapshot'));
-    const now = Date.now();
     const sentAt = Date.now();
-    ws.send(JSON.stringify({ type: 'batch', edgeTs: now, rttMs: 30, games: [],
-      quotes: [{ gameKey: GAME, market: 'moneyline', side: 'away', book: 'draftkings', line: null, odds: 155, sourceTs: now - 90, updatedAt: now - 5 }],
-      source: { book: 'draftkings', state: 'live', lastDataAt: now - 1000, lastChangeAt: now - 5 } }));
-    const hit = await waitFor(() => s.events.find((e) => e.ev === 'batch' && e.data.quotes.some((q) => q.book === 'draftkings' && q.odds === 155)), 2000);
-    assert.ok(hit.at - sentAt < 150, `relay → viewer took ${hit.at - sentAt} ms`);
+    ws.send(JSON.stringify({ type: 'snapshot', why: 'test', edgeTs: Date.now(), rttMs: 30, snapshot: DK_SNAP }));
+    const hit = await waitFor(() => s.events.find((e) => e.ev === 'batch' && e.data.quotes.some((q) => q.book === 'draftkings')), 3000);
+    assert.ok(hit.at - sentAt < 300, `relay → viewer took ${hit.at - sentAt} ms`);
+    assert.equal(hit.data.quotes.filter((q) => q.book === 'draftkings').length, 18);
+    const h = await (await fetch(`${base}/api/health`)).json();
+    assert.equal(h.books.draftkings.quotes, 18); assert.equal(h.books.draftkings.snapshotVia, 'edge');
+    assert.ok(h.books.draftkings.snapshotAgeMs < 2000);
     const m = await (await fetch(`${base}/api/metrics`)).json();
-    assert.equal(m.draftkings.ingestLagPregame.count, 1);
     assert.equal(m.draftkings.relayRtt.count, 1);
-    const src = (await (await fetch(`${base}/api/board`)).json()).sources.draftkings;
-    assert.match(src.mode, /edge/);
-    assert.ok(Date.now() - src.lastDataAt >= 900, 'edge-side data age is preserved (clock-skew free)');
   } finally { ws.close(); s.close(); }
 });
 
 test('one book failing never stops the other, and stale is reported per book', async () => {
   const health = async () => { const r = await fetch(`${base}/api/health`); return { status: r.status, ...(await r.json()) }; };
-  // DraftKings stopped relaying in the previous test → stale after 1.2 s; FanDuel keeps polling fine
-  const h1 = await waitFor(async () => { const h = await health(); return h.books.draftkings.stale && !h.books.fanduel.stale ? h : null; }, 4000);
+  // DraftKings (whose socket cannot connect in this test) is stale; FanDuel keeps polling fine
+  const h1 = await waitFor(async () => { const h = await health(); return h.books.draftkings.stale && !h.books.fanduel.stale ? h : null; }, 6000);
   assert.equal(h1.status, 503);
   assert.ok(h1.books.fanduel.dataAgeMs < 1000);
   // now FanDuel breaks: it goes stale too, but its last prices are kept (greyed in the UI), not deleted
