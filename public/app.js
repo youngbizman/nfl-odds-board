@@ -130,7 +130,7 @@ function ago(ts) { if (!ts) return 'never'; const s = Math.max(0, Math.round((se
 function renderStatus() {
   $('#status').innerHTML = Object.values(state.sources).map((s) => {
     const cls = s.stale ? 'stale' : s.state === 'down' ? 'down' : '';
-    const mode = s.mode === 'websocket' ? 'push' : s.mode === 'poll' ? 'poll' : s.mode ? s.mode.replace('websocket', 'push') : '';
+    const mode = s.mode === 'websocket' ? 'push' : s.mode === 'poll' ? 'poll' : s.mode ? s.mode.replace('websocket', 'push').replace(' (via edge)', ' · edge') : '';
     return `<div class="pill ${BOOK_CLS[s.book]} ${cls}" title="${(s.detail || '') + (s.lastError ? ' · last error: ' + s.lastError : '')}"><span class="dot"></span><b>${BOOK_LABEL[s.book]}</b><small>${mode} · ${s.stale ? 'STALE' : s.state} · data ${ago(s.lastDataAt)}</small></div>`;
   }).join('');
 }

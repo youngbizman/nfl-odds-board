@@ -8,8 +8,8 @@ header.top { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding
 .toggle button { background:transparent; color:var(--muted); border:0; padding:8px 14px; font-weight:600; cursor:pointer; }
 .toggle button.on { background:#232b38; color:var(--text); }
 .toggle button[data-view=draftkings].on { color:var(--dk); } .toggle button[data-view=fanduel].on { color:var(--fd); }
-.status { margin-left:auto; display:flex; gap:10px; font-size:12px; }
-.pill { display:flex; gap:6px; align-items:center; padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:#111620; }
+.status { margin-left:auto; display:flex; gap:10px; font-size:12px; flex-wrap:wrap; }
+.pill { display:flex; gap:6px; align-items:center; padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:#111620; white-space:nowrap; }
 .pill .dot { width:8px; height:8px; border-radius:50%; background:var(--up); }
 .pill.stale .dot, .pill.down .dot { background:var(--down); }
 .pill.stale, .pill.down { border-color:#5a2a2a; }
