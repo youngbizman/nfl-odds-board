@@ -104,3 +104,18 @@ test('FanDuel endpoints: Ontario uses the .ca site with region ON; US states sha
   assert.equal(fd.headers().referer, 'https://on.sportsbook.fanduel.ca/');
   assert.match(fd.snapshotUrl, /timezone=America%2FToronto/);
 });
+
+test('interleave: an edge answer applies, but a late answer older than what the board shows is ignored', () => {
+  const { store, metrics, fd } = source();
+  fd.applySnapshot(SNAP, 1000);
+  const p = (odds) => { const x = structuredClone(PRICES.filter((m) => m.marketId === '734.192676407')); x[0].runnerDetails[0].winRunnerOdds.americanDisplayOdds.americanOdds = odds; return x; };
+  const key = 'BAL@BUF:2026-11-01|moneyline|away|fanduel';
+  fd.applyPrices(p(150), 10_000, 10_000);                      // our poll that started at t=10.0 s
+  assert.equal(fd.applyEdgePrices(p(155), 10_500, 10_530), 1); // edge poll started at 10.5 s → newer → applied
+  assert.equal(store.quotes.get(key).odds, 155);
+  assert.equal(fd.applyEdgePrices(p(148), 10_200, 10_600), 0); // a slow edge answer from 10.2 s arrives late → ignored
+  assert.equal(store.quotes.get(key).odds, 155);
+  assert.equal(metrics.fd.edgeStale, 1);
+  assert.equal(fd.applyPrices(p(160), 11_020, 11_000), 1);     // our next poll (11.0 s) applies normally
+  assert.equal(store.sources.fanduel.interleave, true);
+});

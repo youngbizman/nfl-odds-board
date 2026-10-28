@@ -43,6 +43,11 @@ export class FanDuelSource {
     this.selIndex = new Map();     // `${marketId}:${selectionId}` -> { gameKey, market, side }
     this.marketIndex = new Map();  // marketId -> { gameKey, market }
     this.stopped = false; this.lastPollAt = null; this.inFlight = false;
+    // Interleave: a second poller on another IP (the edge) polls half a beat after us. Each IP stays at 1 request/s,
+    // the board gets a fresh FanDuel answer every 0.5 s. onMidBeat(marketIds) returns true if an edge was asked.
+    this.onMidBeat = opts.onMidBeat || null;
+    this.marketPolledAt = new Map(); // marketId -> start time of the newest poll applied (any poller), on our clock
+    this.lastFreshAt = 0; this.edgeLastAt = 0;
   }
 
   headers() {
@@ -57,7 +62,7 @@ export class FanDuelSource {
     this.loop();
   }
 
-  stop() { this.stopped = true; clearInterval(this.snapTimer); clearTimeout(this.pollTimer); }
+  stop() { this.stopped = true; clearInterval(this.snapTimer); clearTimeout(this.pollTimer); clearTimeout(this.midTimer); }
 
   fail(where, e) {
     const msg = `${where}: ${e?.message || e}`;
@@ -130,16 +135,35 @@ export class FanDuelSource {
     if (this.stopped) return;
     this.pollTimer = setTimeout(async () => {
       const t0 = Date.now();
+      if (this.onMidBeat && this.marketIds.length) { clearTimeout(this.midTimer); this.midTimer = setTimeout(() => this.onMidBeat(this.marketIds), this.pollMs / 2); }
       await this.poll();
       this.loop(Math.max(0, this.pollMs - (Date.now() - t0))); // a 16 ms request does not stretch a 1 s beat to 1.016 s
     }, delay);
   }
 
+  /** A fresh answer arrived (from us or the edge): track how often the board gets one. */
+  markFresh(now) { if (this.lastFreshAt) this.metrics.fd.freshInterval.push(now - this.lastFreshAt); this.lastFreshAt = now; }
+
+  /**
+   * Prices polled by the edge (another IP, half a beat after us). Only markets whose answer changed on the edge are sent.
+   * polledAt = when the edge's request started, on our clock. A market is applied only if this poll is newer than the
+   * newest poll already applied to it, so an answer that arrives late can never overwrite a fresher one.
+   */
+  applyEdgePrices(markets, polledAt, now = Date.now()) {
+    this.metrics.fd.edgePolls++; this.edgeLastAt = now; this.markFresh(now);
+    const changes = this.applyPrices(markets, now, polledAt);
+    this.metrics.fd.edgeChanges += changes;
+    this.store.setSource(BOOK, { interleave: true, lastDataAt: now });
+    return changes;
+  }
+
   /** Apply one getMarketPrices response. Returns the number of prices that changed. */
-  applyPrices(list, now = Date.now()) {
+  applyPrices(list, now = Date.now(), polledAt = now) {
     let changes = 0;
     for (const m of list || []) {
       const mi = this.marketIndex.get(m.marketId); if (!mi) continue;
+      if (polledAt < (this.marketPolledAt.get(m.marketId) ?? 0)) { this.metrics.fd.edgeStale++; continue; } // older than what we show
+      this.marketPolledAt.set(m.marketId, polledAt);
       const game = this.store.games.get(mi.gameKey);
       if (game && !!m.inplay !== !!game.books[BOOK]?.live) this.store.upsertGame({ key: mi.gameKey, books: { [BOOK]: { ...game.books[BOOK], live: !!m.inplay } } });
       for (const rd of m.runnerDetails || []) {
@@ -172,9 +196,10 @@ export class FanDuelSource {
         throw new Error(`HTTP ${r.status} → polling every ${this.pollMs} ms`);
       }
       this.pollMs = Math.max(this.basePollMs, Math.round(this.pollMs * 0.7)); // recover gradually after an error
-      const changes = this.applyPrices(JSON.parse(text), now);
-      this.metrics.fd.changesPerPoll.push(changes);
-      this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, pollMs: this.pollMs, lastPollMs: now - t0,
+      const changes = this.applyPrices(JSON.parse(text), now, t0);
+      this.metrics.fd.changesPerPoll.push(changes); this.markFresh(now);
+      const interleave = now - this.edgeLastAt < 3 * this.pollMs;
+      this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, pollMs: this.pollMs, lastPollMs: now - t0, interleave,
         detail: `${this.marketIds.length} markets/poll, ${now - t0} ms, every ${this.pollMs} ms` });
     } catch (e) {
       this.fail('poll', e);

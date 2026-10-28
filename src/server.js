@@ -13,6 +13,7 @@ import { Metrics } from './metrics.js';
 import { DraftKingsSource } from './sources/draftkings.js';
 import { FanDuelSource } from './sources/fanduel.js';
 import { BOOKS } from './model.js';
+import { makeCheckpoint } from './checkpoint.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -31,9 +32,14 @@ const metrics = new Metrics();
 const sources = [];
 const edges = new Set(); // relay sockets from edge machines (snapshot providers)
 const askEdgeForSnapshot = (why) => { for (const ws of edges) if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'need-snapshot', why })); };
-const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics, log, { onNeedSnapshot: askEdgeForSnapshot }) : null;
+const firstEdge = () => [...edges].find((ws) => ws.readyState === 1);
+// FanDuel interleave: half a beat after our own poll, ask the edge (another IP) to poll the same markets
+const askEdgeToPollFanDuel = (marketIds) => { const ws = firstEdge(); if (!ws || process.env.FD_INTERLEAVE === '0') return false; ws.send(JSON.stringify({ type: 'fd-poll', t: Date.now(), region: fd.region, marketIds })); return true; };
+const checkpoint = SOURCES.includes('draftkings') ? await makeCheckpoint(log) : null;
+const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics, log, { onNeedSnapshot: askEdgeForSnapshot, checkpoint }) : null;
+const fd = SOURCES.includes('fanduel') ? new FanDuelSource(store, metrics, log, { onMidBeat: askEdgeToPollFanDuel }) : null;
 if (dk) sources.push(dk);
-if (SOURCES.includes('fanduel')) sources.push(new FanDuelSource(store, metrics, log));
+if (fd) sources.push(fd);
 
 // ---------- SSE fan-out ----------
 const clients = new Set();
@@ -166,10 +172,15 @@ relay.on('connection', (ws, req) => {
     let msg; try { msg = JSON.parse(data); } catch { return; }
     if (msg.type === 'ping') return ws.send(JSON.stringify({ type: 'pong', t: msg.t }));
     if (msg.type === 'snapshot') ingestSnapshot(msg);
+    if (msg.type === 'fd-prices' && fd && Array.isArray(msg.markets)) {
+      // the edge started its request ~RTT/2 after we sent the trigger
+      const rtt = Number.isFinite(msg.rttMs) ? msg.rttMs : 0;
+      fd.applyEdgePrices(msg.markets, msg.t + rtt / 2, Date.now());
+    }
   });
   ws.on('close', () => { edges.delete(ws); log('relay', 'edge disconnected'); });
 });
 
 for (const s of sources) s.start().catch((e) => log('src', 'start failed', e));
-const shutdown = () => { for (const s of sources) s.stop(); server.close(); process.exit(0); };
+const shutdown = async () => { for (const s of sources) s.stop(); await dk?.saveCheckpoint(); await checkpoint?.close(); server.close(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

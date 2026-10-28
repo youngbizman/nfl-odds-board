@@ -112,6 +112,28 @@ test('a DraftKings snapshot relayed from an edge fills the board, and viewers ge
   } finally { ws.close(); s.close(); }
 });
 
+test('FanDuel interleave: half a beat after its own poll the server asks the edge, and the edge\'s answer reaches viewers', async () => {
+  const s = sse(`${base}/api/stream`);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ingest/ws`, { headers: { authorization: `Bearer ${TOKEN}` } });
+  try {
+    await new Promise((r, j) => { ws.on('open', r); ws.on('error', j); });
+    const asks = [];
+    ws.on('message', (d) => { const m = JSON.parse(d); if (m.type === 'fd-poll') asks.push({ ...m, at: Date.now() }); });
+    await waitFor(() => asks.length >= 3, 2000);
+    assert.equal(asks[0].marketIds.length, 9); assert.equal(asks[0].region, 'ON');
+    const gaps = asks.slice(1).map((a, i) => a.at - asks[i].at);
+    assert.ok(gaps.every((g) => g > 60 && g < 160), `one ask per 100 ms beat: ${gaps}`);
+    await waitFor(() => s.events.some((e) => e.ev === 'snapshot'));
+    const changed = structuredClone(PRICES.filter((m) => m.marketId === '734.192676407')); changed[0].runnerDetails[1].winRunnerOdds.americanDisplayOdds.americanOdds = -171;
+    const ask = asks[asks.length - 1];
+    ws.send(JSON.stringify({ type: 'fd-prices', t: Date.now(), rttMs: 0, markets: changed }));
+    const hit = await waitFor(() => s.events.find((e) => e.ev === 'batch' && e.data.quotes.some((q) => q.book === 'fanduel' && q.odds === -171)), 2000);
+    assert.ok(hit);
+    const m = await (await fetch(`${base}/api/metrics`)).json();
+    assert.ok(m.fanduel.edgePolls >= 1);
+  } finally { ws.close(); s.close(); }
+});
+
 test('one book failing never stops the other, and stale is reported per book', async () => {
   const health = async () => { const r = await fetch(`${base}/api/health`); return { status: r.status, ...(await r.json()) }; };
   // DraftKings (whose socket cannot connect in this test) is stale; FanDuel keeps polling fine

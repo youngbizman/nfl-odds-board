@@ -161,3 +161,46 @@ test('when the snapshot host refuses this IP, the socket still runs and snapshot
     await waitFor(() => asks.some((w) => w === 'reconnect'), 5000);
   } finally { dk.stop(); fake.close(); }
 });
+
+test('clock: the subscribe ack gives DraftKings\' clock offset, and publish times are converted to ours', () => {
+  const { store, metrics, dk } = source();
+  dk.applySnapshot(SNAP, 1000);
+  // DK's clock runs 5 s ahead of ours; round trip 40 ms
+  const sentAt = Date.parse('2026-10-28T23:00:00.000Z'); dk.subSentAt = sentAt;
+  dk.onMessage(Buffer.from(JSON.stringify({ id: 'x', event: 'subscribed', data: '', websocketPublishTimestamp: '2026-10-28T23:00:05.0200000+00:00' })), sentAt + 40);
+  assert.equal(dk.clock.offsetMs, 5000); assert.equal(metrics.dk.clockUncertaintyMs, 20);
+  assert.equal(store.sources.draftkings.clockOffsetMs, 5000);
+  // DK publishes at 23:00:10.000 on ITS clock = 23:00:05.000 on ours; we receive it 60 ms later
+  const recv = Date.parse('2026-10-28T23:00:05.060Z');
+  dk.onMessage(frame({ change: { selections: [{ id: '0ML84695689_1', displayOdds: { american: '−470' } }] } }, '2026-10-28T23:00:10.000Z'), recv);
+  assert.equal(store.quotes.get(`${JAX}|moneyline|home|draftkings`).sourceTs, Date.parse('2026-10-28T23:00:05.000Z'));
+  assert.equal(metrics.dk.ingestLagPregame.stats().p50, 60, 'lag is measured on one clock');
+  dk.stop();
+});
+
+test('durability: a new process rebuilds the exact DraftKings board from the checkpoint + frame log, no snapshot needed', async () => {
+  const { MemoryCheckpoint } = await import('../src/checkpoint.js');
+  const cp = new MemoryCheckpoint();
+  const a = source({ checkpoint: cp });
+  a.dk.applySnapshot(SNAP, 1000);                    // checkpoint saved here
+  await new Promise((r) => setImmediate(r));
+  const old = sel('0HC84695689N1000_1');
+  a.dk.onMessage(frame({ change: { selections: [{ id: '0ML84695689_1', displayOdds: { american: '−470' } }] } }), 2000);
+  a.dk.onMessage(frame({ remove: { selections: [old.id] }, add: { selections: [{ ...old, id: '0HC84695689N1050_1', points: -10.5 }] } }), 3000);
+  a.dk.onMessage(frame({ change: { events: [{ id: '34118246', status: 'STARTED' }] } }), 4000);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(cp.frames.length, 3, 'every frame since the checkpoint is logged');
+  a.dk.stop();
+
+  const b = source({ checkpoint: cp, candidates: [{ site: 'CA-ON-SB', siteName: 'dkcaon', wsHost: 'x' }] });
+  await b.dk.restore();
+  const view = (st) => [...st.quotes.values()].filter((q) => q.book === 'draftkings').map((q) => `${q.id}=${q.line}/${q.odds}`).sort();
+  assert.deepEqual(view(b.store), view(a.store));
+  assert.equal(b.store.quotes.get(`${JAX}|spread|home|draftkings`).line, -10.5);
+  assert.equal(b.store.games.get(JAX).status, 'live');
+  assert.equal(b.store.sources.draftkings.snapshotVia, 'checkpoint');
+  // and it keeps working: a later change on the moved line applies
+  assert.equal(b.dk.onMessage(frame({ change: { selections: [{ id: '0HC84695689N1050_1', displayOdds: { american: '−102' } }] } }), 5000), 1);
+  assert.equal(b.dk.seq, 4, 'sequence continues after the restored frames');
+  b.dk.stop();
+});

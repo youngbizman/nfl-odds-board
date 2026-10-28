@@ -45,6 +45,9 @@ export class DraftKingsSource {
     this.eventIndex = new Map();  // DK event id -> gameKey
     this.restBlocked = false;     // this machine's IP is refused by the snapshot host → snapshots come from the edge
     this.onNeedSnapshot = opts.onNeedSnapshot || null; // called when we want a fresh snapshot but cannot fetch one
+    this.checkpoint = opts.checkpoint || null;         // durable board + frame log (src/checkpoint.js)
+    this.seq = 0; this.replaying = false;
+    this.clock = null;                                 // { offsetMs, rttMs }: DK clock − our clock, from the subscribe ack
     this.ws = null; this.stopped = false; this.backoff = 1000; this.pendingResnap = null; this.pongTimer = null;
   }
 
@@ -55,6 +58,7 @@ export class DraftKingsSource {
 
   async start() {
     this.store.setSource(BOOK, { mode: 'websocket', state: 'connecting', region: regionLabel(this.site), detail: 'probing snapshot access' });
+    await this.restore();               // board from the durable checkpoint + frame log, if there is one
     const ok = await this.pickSite();   // loads the first snapshot when this IP is allowed
     if (this.stopped) return;
     if (!ok) {
@@ -65,11 +69,50 @@ export class DraftKingsSource {
     } else this.store.setSource(BOOK, { snapshotVia: 'direct' });
     this.connect();
     this.timer = setInterval(() => this.refreshSnapshot('periodic'), this.resnapshotMs);
+    if (this.checkpoint) this.saveTimer = setInterval(() => this.saveCheckpoint(), 60_000);
+  }
+
+  // ---------- durability ----------
+  exportState() {
+    const games = [...this.store.games.values()].filter((g) => g.books?.[BOOK]);
+    const quotes = [...this.store.quotes.values()].filter((q) => q.book === BOOK);
+    return { v: 1, savedAt: Date.now(), seq: this.seq, site: this.site, games, quotes,
+      selIndex: [...this.selIndex], familyIndex: [...this.familyIndex], eventIndex: [...this.eventIndex],
+      marketIndex: [...this.marketIndex].map(([id, r]) => [id, { market: r.market, gameKey: r.gameKey }]) };
+  }
+
+  importState(st) {
+    for (const g of st.games || []) this.store.upsertGame(g);
+    for (const q of st.quotes || []) this.store.upsertQuote(q, q.updatedAt || st.savedAt);
+    this.selIndex = new Map(st.selIndex); this.familyIndex = new Map(st.familyIndex); this.eventIndex = new Map(st.eventIndex);
+    this.marketIndex = new Map(st.marketIndex);
+    this.seq = st.seq || 0;
+  }
+
+  async restore() {
+    if (!this.checkpoint) return;
+    try {
+      const { state, frames } = await this.checkpoint.load();
+      if (!state) return;
+      this.importState(state);
+      const newer = frames.filter((f) => f.seq > state.seq).sort((a, b) => a.seq - b.seq);
+      this.replaying = true;
+      for (const f of newer) { this.onMessage(Buffer.from(f.frame), f.ts); this.seq = Math.max(this.seq, f.seq); }
+      this.replaying = false;
+      this.seq = Math.max(this.seq, ...frames.map((f) => f.seq), 0);
+      this.store.setSource(BOOK, { lastSnapshotAt: state.savedAt, snapshotVia: 'checkpoint', detail: `restored ${state.quotes?.length ?? 0} prices from checkpoint + ${newer.length} frames` });
+      this.log('dk', `restored board from checkpoint (${Math.round((Date.now() - state.savedAt) / 1000)} s old) + ${newer.length} frames`);
+    } catch (e) { this.replaying = false; this.log('dk', `checkpoint restore failed: ${e.message}`); }
+  }
+
+  saveCheckpoint() {
+    if (!this.checkpoint || !this.selIndex.size) return Promise.resolve();
+    return this.checkpoint.save(this.exportState()).catch((e) => this.log('dk', `checkpoint save failed: ${e.message}`));
   }
 
   stop() {
     this.stopped = true;
-    clearInterval(this.timer); clearTimeout(this.pendingResnap); clearTimeout(this.reconnectTimer);
+    clearInterval(this.timer); clearInterval(this.saveTimer); clearTimeout(this.pendingResnap); clearTimeout(this.reconnectTimer);
     clearInterval(this.pingTimer); clearTimeout(this.pongTimer);
     this.ws?.terminate();
   }
@@ -137,6 +180,7 @@ export class DraftKingsSource {
     }
     this.metrics.dk.snapshots++;
     this.store.setSource(BOOK, { lastSnapshotAt: now, lastDataAt: now, snapshotVia: via });
+    this.saveCheckpoint();
     return { games: games.size, selections: (data.selections || []).length };
   }
 
@@ -169,7 +213,7 @@ export class DraftKingsSource {
     return ref;
   }
 
-  recordLag(ref, lag) { const g = this.store.games.get(ref.gameKey); (g?.status === 'live' ? this.metrics.dk.ingestLagLive : this.metrics.dk.ingestLagPregame).push(lag); }
+  recordLag(ref, lag) { if (this.replaying) return; const g = this.store.games.get(ref.gameKey); (g?.status === 'live' ? this.metrics.dk.ingestLagLive : this.metrics.dk.ingestLagPregame).push(lag); }
 
   sideOf(market, sel, game) {
     if (market === 'total') return sel.outcomeType === 'Over' ? 'over' : sel.outcomeType === 'Under' ? 'under' : (/^over/i.test(sel.label) ? 'over' : /^under/i.test(sel.label) ? 'under' : null);
@@ -189,6 +233,7 @@ export class DraftKingsSource {
     ws.on('open', () => {
       ws._socket?.setNoDelay(true);
       this.backoff = 1000;
+      this.subSentAt = Date.now();
       ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'subscribe', id: randomUUID(), params: {
         entity: 'events',
         queryParams: { query: `$filter=leagueId eq '${LEAGUE}' AND clientMetadata/Subcategories/any(s: s/Id eq '${SUBCATEGORY}') and tags/any(t: t eq 'OSB')`,
@@ -219,14 +264,34 @@ export class DraftKingsSource {
     });
   }
 
+  /** NTP-style: the ack carries DK's send time; offset = dkTime − midpoint(our send, our receive), error ≤ RTT/2. */
+  syncClock(msg, now) {
+    const dkTs = Date.parse(msg.websocketPublishTimestamp || '');
+    if (!Number.isFinite(dkTs) || !this.subSentAt) return;
+    const rttMs = now - this.subSentAt;
+    const offsetMs = Math.round(dkTs - (this.subSentAt + now) / 2);
+    if (Math.abs(offsetMs) > 10_000) return; // nonsense; keep raw timestamps
+    if (!this.clock || rttMs <= this.clock.rttMs || now - this.clock.at > 30 * 60_000) {
+      this.clock = { offsetMs, rttMs, at: now };
+      this.metrics.dk.clockOffsetMs = offsetMs; this.metrics.dk.clockUncertaintyMs = Math.ceil(rttMs / 2);
+      this.store.setSource(BOOK, { clockOffsetMs: offsetMs, clockUncertaintyMs: Math.ceil(rttMs / 2) });
+    }
+  }
+
   /** Apply one socket frame (JSON). Returns the number of prices that changed. */
   onMessage(buf, now = Date.now()) {
     this.metrics.dk.wsMessages++;
-    let msg; try { msg = JSON.parse(buf.toString()); } catch { this.metrics.dk.decodeMisses++; return 0; }
-    if (msg.event !== 'update') return 0; // "subscribed" ack etc.
-    this.store.setSource(BOOK, { lastDataAt: now, updates: this.metrics.dk.wsMessages });
+    const text = buf.toString();
+    let msg; try { msg = JSON.parse(text); } catch { this.metrics.dk.decodeMisses++; return 0; }
+    if (msg.event === 'subscribed') { this.syncClock(msg, now); return 0; }
+    if (msg.event !== 'update') return 0;
+    if (!this.replaying) {
+      this.store.setSource(BOOK, { lastDataAt: now, updates: this.metrics.dk.wsMessages });
+      if (this.checkpoint) { this.seq++; this.checkpoint.append(this.seq, text, now).catch(() => {}); }
+    }
     const stamp = msg.data?.metadata?.publishedTime || msg.websocketPublishTimestamp;
-    const sourceTs = stamp ? Date.parse(stamp) : null;
+    // DraftKings' publish time, converted to OUR clock with the offset measured on subscribe (± half the round trip)
+    const sourceTs = stamp ? Date.parse(stamp) - (this.clock?.offsetMs ?? 0) : null;
     const d = msg.data?.data || {};
     let applied = 0, unknown = 0;
     const list = (x) => Array.isArray(x) ? x : [];

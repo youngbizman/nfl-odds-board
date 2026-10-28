@@ -58,9 +58,9 @@ export class BoardStore extends EventEmitter {
    *  counters like lastDataAt change on every poll and are delivered by the periodic status heartbeat instead. */
   setSource(book, patch) {
     const s = this.sources[book]; if (!s) return;
-    const before = JSON.stringify([s.state, s.stale, s.mode, s.region, s.lastError, s.lastSnapshotAt, s.reconnects]);
+    const before = JSON.stringify([s.state, s.stale, s.mode, s.region, s.interleave, s.lastError, s.lastSnapshotAt, s.reconnects]);
     Object.assign(s, patch);
-    const after = JSON.stringify([s.state, s.stale, s.mode, s.region, s.lastError, s.lastSnapshotAt, s.reconnects]);
+    const after = JSON.stringify([s.state, s.stale, s.mode, s.region, s.interleave, s.lastError, s.lastSnapshotAt, s.reconnects]);
     if (before !== after) this.emit('source', { ...s });
   }
 
