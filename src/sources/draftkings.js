@@ -46,8 +46,7 @@ export class DraftKingsSource {
 
   async start() {
     this.store.setSource(BOOK, { mode: 'websocket', state: 'connecting', detail: 'probing regional sites' });
-    await this.pickSite();
-    await this.snapshot().catch((e) => this.fail('snapshot', e));
+    await this.pickSite();   // also loads the first snapshot
     this.connect();
     this.timer = setInterval(() => this.snapshot().catch((e) => this.fail('resnapshot', e)), this.resnapshotMs);
   }

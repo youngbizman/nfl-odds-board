@@ -7,7 +7,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "capture": "node tools/capture-network.mjs",
-    "measure": "node tools/measure-latency.mjs"
+    "measure": "node tools/measure-latency.mjs",
+    "edge": "node src/edge.js"
   },
   "keywords": [],
   "author": "",

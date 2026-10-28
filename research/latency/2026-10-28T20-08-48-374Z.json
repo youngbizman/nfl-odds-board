@@ -1,0 +1,119 @@
+{
+ "base": "http://localhost:3000",
+ "minutes": 10,
+ "measuredAt": "2026-10-28T20:08:48.371Z",
+ "clockOffsetMs": 1,
+ "rttMs": 1,
+ "batches": 1,
+ "bytes": 98158,
+ "changes": {
+  "draftkings": 0,
+  "fanduel": 0
+ },
+ "lineMoves": {
+  "draftkings": 0,
+  "fanduel": 0
+ },
+ "pushLagMs": {
+  "draftkings": {
+   "n": 0
+  },
+  "fanduel": {
+   "n": 0
+  }
+ },
+ "draftkingsEndToEndMs": {
+  "pregame": {
+   "n": 0
+  },
+  "live": {
+   "n": 0
+  }
+ },
+ "serverSide": {
+  "draftkings": {
+   "ingestLagPregame": {
+    "count": 2,
+    "min": 106,
+    "p50": 107,
+    "p90": 107,
+    "p95": 107,
+    "max": 107,
+    "mean": 107
+   },
+   "ingestLagLive": {
+    "count": 0
+   },
+   "wsMessages": 15,
+   "selectionUpdates": 2,
+   "snapshots": 8,
+   "reconnects": 0,
+   "decodeMisses": 0
+  },
+  "fanduel": {
+   "pollDuration": {
+    "count": 195,
+    "min": 30,
+    "p50": 60,
+    "p90": 170,
+    "p95": 263,
+    "max": 785,
+    "mean": 89
+   },
+   "pollInterval": {
+    "count": 195,
+    "min": 2033,
+    "p50": 2063,
+    "p90": 2172,
+    "p95": 2266,
+    "max": 2789,
+    "mean": 2091
+   },
+   "changesPerPoll": {
+    "count": 195,
+    "min": 0,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+   },
+   "polls": 195,
+   "pollErrors": 1,
+   "snapshots": 7,
+   "lastStatus": 200,
+   "bytes": {
+    "count": 195,
+    "min": 93139,
+    "p50": 93139,
+    "p90": 93139,
+    "p95": 93139,
+    "max": 93139,
+    "mean": 93139
+   }
+  },
+  "sse": {
+   "clients": 2,
+   "batchesSent": 223,
+   "bytesSent": 409803,
+   "batchSize": {
+    "count": 223,
+    "min": 0,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "max": 174,
+    "mean": 2
+   },
+   "coalesceWait": {
+    "count": 223,
+    "min": 39,
+    "p50": 41,
+    "p90": 42,
+    "p95": 42,
+    "max": 546,
+    "mean": 43
+   }
+  }
+ }
+}
