@@ -142,7 +142,13 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
   so a `setImmediate` flush already groups it into one event without adding delay. Measured wait before sending:
   **p50 0 ms, p95 1 ms** (it was a fixed 40 ms window in the first version). A typical event is 1–2 prices, ~300 bytes,
   written with Nagle off. Status counters ("data 3 s ago") ride on a 5 s heartbeat instead of every poll.
-* Adding viewers adds zero requests to the books: one ingestion, N listeners.
+* Adding viewers adds zero requests to the books: one ingestion, N listeners. The ~100 KB snapshot is serialised once
+  per board change, not once per viewer.
+* **Many viewers, measured** (`node tools/load-sse.mjs <url> 500 60 25`, from one laptop against the free Render
+  instance, 0.1 CPU): 500 concurrent viewers, 0 errors; updates delivered **p50 75 ms, p95 354 ms** after the server
+  stamped them; joining at 25 viewers/s, time-to-snapshot p50 0.4 s. All 500 joining in the same second queued up to
+  ~14 s for their snapshot (CPU + one home uplink receiving 50 MB) — the first thing a paid instance, gzip on the
+  snapshot, or a CDN in front would fix.
 
 ## 6. What I hit (geo, bot protection, rate limits) — and what I did
 
@@ -297,6 +303,7 @@ runs under a restart-on-exit supervisor.
 | What changes for a third book, or ten; where AI helps | §11 |
 
 ## 13. With more time
+* **FanDuel at 0.5 s** without being rude to one IP: a second poller on another IP, interleaved by half a beat.
 Residential/ISP egress (or a licensed-region VM) for DK instead of an edge laptop; a push chart to rank unlike lines;
 props/alt lines (both feeds already expose them under other subcategories/market types); line-history persistence;
 Prometheus metrics; a test suite around the two decoders using the recorded fixtures in `research/`.
