@@ -8,6 +8,18 @@ browser without a refresh. Toggle at the top: **Best Price / DraftKings / FanDue
 
 ![board](docs/board.png)
 
+What is on the page, beyond the board itself:
+* **Line moves tape** — every price or line change as it happens (old → new, which book, how long ago).
+* **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
+* **Per-book feed cards** — how the book is read (push vs poll), a freshness bar that drains as data ages, last
+  data / last move, and the latency *this browser* measured (DraftKings book→screen; FanDuel worst-case age).
+* **Stale handling** — a book that stops answering turns red, its prices grey out, a banner says so; the other book
+  keeps moving. Lost server connection → "reconnecting" banner, then a fresh snapshot.
+* Games grouped by kickoff slot, live games first; the single-book views show "updated N s ago" on every number.
+
+The scraping is read-only and login-free: the same public odds endpoints the sites' own pages call, at or below
+the rate the pages themselves use, one connection per book.
+
 ---
 
 ## 1. Run it locally
@@ -201,7 +213,16 @@ Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29 8:15 pm ET) is
   plus an alert that fires when a book's accepted-field rate drops. I built this with Claude as a pair programmer and
   reviewed every line I am submitting.
 
-## 11. With more time
+## 11. Above & beyond checklist
+| Asked for | Done |
+| --- | --- |
+| Show the odds moving (flash / previous price) | Yes — flash + struck-through previous value + the moves tape |
+| Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen (DK) and worst-case age (FD) |
+| Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
+| Props, alt lines, other leagues | Not built. Both feeds expose them (DK other subcategories, FD other market types / `customPageId`); the adapters take a league id and market map, so NBA is a config change plus a team table. |
+| What changes for a third book, or ten; where AI helps | §10 |
+
+## 12. With more time
 Residential/ISP egress (or a licensed-region VM) for DK instead of an edge laptop; a push chart to rank unlike lines;
 props/alt lines (both feeds already expose them under other subcategories/market types); line-history persistence;
 Prometheus metrics; a test suite around the two decoders using the recorded fixtures in `research/`.

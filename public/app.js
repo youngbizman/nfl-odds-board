@@ -170,7 +170,7 @@ function renderFeeds() {
     const age = s.lastDataAt ? now - s.lastDataAt : threshold;
     const fill = Math.max(0, Math.min(1, 1 - age / threshold));
     const barColor = s.stale || s.state === 'down' ? 'var(--down)' : fill < .35 ? 'var(--best)' : 'var(--up)';
-    const mode = b === 'draftkings' ? (s.mode?.includes('edge') ? 'push over WebSocket, relayed from Ontario' : 'push over WebSocket') : `polled every ${s.pollMs ? (s.pollMs / 1000).toFixed(0) : '2'} s`;
+    const mode = b === 'draftkings' ? (s.mode?.includes('edge') ? 'push via Ontario relay' : 'push over WebSocket') : `polled every ${s.pollMs ? (s.pollMs / 1000).toFixed(0) : '2'} s`;
     const stateText = s.stale ? 'stale' : s.state === 'down' ? 'down, reconnecting' : s.state === 'connecting' ? 'connecting' : 'live';
     const r = lat.recent;
     const latency = b === 'draftkings'
