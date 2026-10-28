@@ -147,7 +147,7 @@ export class FanDuelSource {
         }
       }
       this.metrics.fd.changesPerPoll.push(changes);
-      this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, detail: `${this.marketIds.length} markets/poll, ${now - t0} ms, every ${this.pollMs} ms` });
+      this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, pollMs: this.pollMs, lastPollMs: now - t0, detail: `${this.marketIds.length} markets/poll, ${now - t0} ms, every ${this.pollMs} ms` });
     } catch (e) {
       this.fail('poll', e);
     } finally { this.inFlight = false; }

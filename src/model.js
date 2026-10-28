@@ -14,16 +14,16 @@ export const BOOK_LABEL = { draftkings: 'DraftKings', fanduel: 'FanDuel' };
 // Canonical NFL teams. Both books use different names ("GB Packers" vs "Green Bay Packers"),
 // but nicknames are unique in the NFL, so we match on the nickname.
 const TEAMS = [
-  ['ARI', 'Arizona', 'Cardinals'], ['ATL', 'Atlanta', 'Falcons'], ['BAL', 'Baltimore', 'Ravens'], ['BUF', 'Buffalo', 'Bills'],
-  ['CAR', 'Carolina', 'Panthers'], ['CHI', 'Chicago', 'Bears'], ['CIN', 'Cincinnati', 'Bengals'], ['CLE', 'Cleveland', 'Browns'],
-  ['DAL', 'Dallas', 'Cowboys'], ['DEN', 'Denver', 'Broncos'], ['DET', 'Detroit', 'Lions'], ['GB', 'Green Bay', 'Packers'],
-  ['HOU', 'Houston', 'Texans'], ['IND', 'Indianapolis', 'Colts'], ['JAX', 'Jacksonville', 'Jaguars'], ['KC', 'Kansas City', 'Chiefs'],
-  ['LV', 'Las Vegas', 'Raiders'], ['LAC', 'Los Angeles', 'Chargers'], ['LAR', 'Los Angeles', 'Rams'], ['MIA', 'Miami', 'Dolphins'],
-  ['MIN', 'Minnesota', 'Vikings'], ['NE', 'New England', 'Patriots'], ['NO', 'New Orleans', 'Saints'], ['NYG', 'New York', 'Giants'],
-  ['NYJ', 'New York', 'Jets'], ['PHI', 'Philadelphia', 'Eagles'], ['PIT', 'Pittsburgh', 'Steelers'], ['SF', 'San Francisco', '49ers'],
-  ['SEA', 'Seattle', 'Seahawks'], ['TB', 'Tampa Bay', 'Buccaneers'], ['TEN', 'Tennessee', 'Titans'], ['WAS', 'Washington', 'Commanders'],
+  ['ARI', 'Arizona', 'Cardinals', '#97233F'], ['ATL', 'Atlanta', 'Falcons', '#A71930'], ['BAL', 'Baltimore', 'Ravens', '#241773'], ['BUF', 'Buffalo', 'Bills', '#00338D'],
+  ['CAR', 'Carolina', 'Panthers', '#0085CA'], ['CHI', 'Chicago', 'Bears', '#C83803'], ['CIN', 'Cincinnati', 'Bengals', '#FB4F14'], ['CLE', 'Cleveland', 'Browns', '#FF3C00'],
+  ['DAL', 'Dallas', 'Cowboys', '#869397'], ['DEN', 'Denver', 'Broncos', '#FB4F14'], ['DET', 'Detroit', 'Lions', '#0076B6'], ['GB', 'Green Bay', 'Packers', '#FFB612'],
+  ['HOU', 'Houston', 'Texans', '#A71930'], ['IND', 'Indianapolis', 'Colts', '#4C8CD6'], ['JAX', 'Jacksonville', 'Jaguars', '#9F792C'], ['KC', 'Kansas City', 'Chiefs', '#E31837'],
+  ['LV', 'Las Vegas', 'Raiders', '#A5ACAF'], ['LAC', 'Los Angeles', 'Chargers', '#0080C6'], ['LAR', 'Los Angeles', 'Rams', '#FFA300'], ['MIA', 'Miami', 'Dolphins', '#008E97'],
+  ['MIN', 'Minnesota', 'Vikings', '#4F2683'], ['NE', 'New England', 'Patriots', '#C60C30'], ['NO', 'New Orleans', 'Saints', '#D3BC8D'], ['NYG', 'New York', 'Giants', '#0B2265'],
+  ['NYJ', 'New York', 'Jets', '#125740'], ['PHI', 'Philadelphia', 'Eagles', '#004C54'], ['PIT', 'Pittsburgh', 'Steelers', '#FFB612'], ['SF', 'San Francisco', '49ers', '#AA0000'],
+  ['SEA', 'Seattle', 'Seahawks', '#69BE28'], ['TB', 'Tampa Bay', 'Buccaneers', '#D50A0A'], ['TEN', 'Tennessee', 'Titans', '#4B92DB'], ['WAS', 'Washington', 'Commanders', '#5A1414'],
 ];
-const BY_NICK = new Map(TEAMS.map(([abbr, city, nick]) => [nick.toLowerCase(), { abbr, city, nick, name: `${city} ${nick}` }]));
+const BY_NICK = new Map(TEAMS.map(([abbr, city, nick, color]) => [nick.toLowerCase(), { abbr, city, nick, name: `${city} ${nick}`, color }]));
 
 /** "GB Packers" | "Green Bay Packers" | "Packers" -> canonical team or null */
 export function resolveTeam(raw) {

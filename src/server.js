@@ -53,14 +53,15 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '200kb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0 }));
 
-app.get('/api/board', (req, res) => res.json(store.snapshot()));
+const snapshot = () => ({ ...store.snapshot(), config: { staleMs: STALE_MS, batchMs: BATCH_MS } });
+app.get('/api/board', (req, res) => res.json(snapshot()));
 app.get('/api/time', (req, res) => res.json({ serverTs: Date.now() }));
 app.get('/api/metrics', (req, res) => res.json({ ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS }));
 app.get('/healthz', (req, res) => res.json({ ok: true, games: store.games.size, quotes: store.quotes.size, clients: clients.size }));
 
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
-  res.write(`retry: 2000\nevent: snapshot\ndata: ${JSON.stringify(store.snapshot())}\n\n`);
+  res.write(`retry: 2000\nevent: snapshot\ndata: ${JSON.stringify(snapshot())}\n\n`);
   clients.add(res); metrics.sse.clients = clients.size;
   req.on('close', () => { clients.delete(res); metrics.sse.clients = clients.size; });
 });
@@ -86,8 +87,9 @@ app.post('/ingest/draftkings', (req, res) => {
     if (q?.book !== 'draftkings') continue;
     if (q.removed) { store.removeQuotes('draftkings', q.gameKey, q.market); continue; }
     // keep DK's publishedTime (sourceTs) and remember when the edge saw it, so latency can be split per hop
-    store.upsertQuote({ gameKey: q.gameKey, market: q.market, side: q.side, book: q.book, line: q.line, odds: q.odds, suspended: q.suspended, sourceTs: q.sourceTs ?? null, edgeAt: q.updatedAt ?? null }, now);
-    if (q.sourceTs) { const g = store.games.get(q.gameKey); (g?.status === 'live' ? metrics.dk.ingestLagLive : metrics.dk.ingestLagPregame).push(now - q.sourceTs); }
+    const changed = store.upsertQuote({ gameKey: q.gameKey, market: q.market, side: q.side, book: q.book, line: q.line, odds: q.odds, suspended: q.suspended, sourceTs: q.sourceTs ?? null, edgeAt: q.updatedAt ?? null }, now);
+    // book→cloud lag only for real changes that just happened (the edge also re-sends the whole board every 20 s)
+    if (changed && q.sourceTs && now - q.sourceTs < 60_000) { const g = store.games.get(q.gameKey); (g?.status === 'live' ? metrics.dk.ingestLagLive : metrics.dk.ingestLagPregame).push(now - q.sourceTs); }
   }
   if (source) { const { stale, ...rest } = source; store.setSource('draftkings', { ...rest, mode: 'websocket (via edge)', lastDataAt: now, edgeLagMs: edgeTs ? now - edgeTs : null }); } // staleness is judged here, not at the edge
   res.json({ ok: true, quotes: quotes.length });

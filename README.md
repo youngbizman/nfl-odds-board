@@ -66,7 +66,7 @@ flowchart LR
   `probe-*.mjs`, `measure-latency.mjs`. Findings in [`research/findings.md`](research/findings.md).
 
 A third book = one more file in `src/sources/` that writes `Game`/`Quote` objects into the store. Nothing else changes
-(the UI reads books from the data). See §9.
+(the UI reads books from the data). See §10.
 
 ## 3. How I get data from each book, and why
 

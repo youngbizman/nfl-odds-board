@@ -27,8 +27,13 @@ let games = new Map(), batches = 0, bytes = 0;
 const res = await fetch(`${base}/api/stream`, { headers: { accept: 'text/event-stream' } });
 const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
 const stopAt = Date.now() + minutes * 60_000;
+let pendingRead = null; // keep ONE read in flight; a timed-out read must not be thrown away or its chunk is lost
 while (Date.now() < stopAt) {
-  const { value, done } = await Promise.race([reader.read(), new Promise((r) => setTimeout(() => r({ value: null, done: false }), 1000))]);
+  pendingRead ??= reader.read();
+  const r = await Promise.race([pendingRead, new Promise((res) => setTimeout(() => res(null), 1000))]);
+  if (!r) continue;
+  pendingRead = null;
+  const { value, done } = r;
   if (done) break; if (!value) continue;
   buf += dec.decode(value, { stream: true }); bytes += value.length;
   let i; while ((i = buf.indexOf('\n\n')) >= 0) {

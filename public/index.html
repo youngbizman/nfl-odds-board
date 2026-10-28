@@ -3,38 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NFL Odds Board · DraftKings vs FanDuel</title>
+<title>NFL Odds Board</title>
+<meta name="description" content="DraftKings and FanDuel NFL lines side by side, updated the moment they move.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header class="top">
+<header class="bar">
   <div class="brand">
-    <h1>NFL Odds Board</h1>
-    <span class="sub">DraftKings vs FanDuel · moneyline, spread, total · pushes to you live</span>
+    <h1>NFL odds board</h1>
+    <p>DraftKings and FanDuel, side by side, the moment a line moves</p>
   </div>
-  <nav class="toggle" role="tablist" aria-label="Board view">
-    <button data-view="best" class="on">Best Price</button>
-    <button data-view="draftkings">DraftKings</button>
-    <button data-view="fanduel">FanDuel</button>
-  </nav>
-  <div class="status" id="status"></div>
+  <div class="views" role="tablist" aria-label="Which prices to show">
+    <button role="tab" aria-selected="true" data-view="best">Best price</button>
+    <button role="tab" aria-selected="false" data-view="draftkings">DraftKings</button>
+    <button role="tab" aria-selected="false" data-view="fanduel">FanDuel</button>
+  </div>
+  <div class="feeds" id="feeds" aria-live="polite"></div>
 </header>
 
-<main>
-  <div class="conn" id="conn">connecting…</div>
-  <table class="board" id="board">
-    <thead><tr><th class="g">Game</th><th>Spread</th><th>Total</th><th>Moneyline</th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
-  <p class="empty" id="empty" hidden>No NFL games with game lines right now.</p>
-</main>
+<div class="banner" id="banner" hidden></div>
 
-<footer>
-  <details id="latency">
-    <summary>Latency &amp; freshness (measured in this browser)</summary>
-    <div id="latencyBody" class="lat"></div>
-  </details>
-  <p class="note">Best Price = higher odds for the same number. When the two books post <em>different</em> lines (e.g. −3 −110 vs −3.5 +100) both are shown and neither is called "best". Prices flash when they move; the old price stays beside the new one for a moment. A book turns grey when its data is stale.</p>
+<section class="tape" aria-label="Recent line moves">
+  <div class="tape-label"><span class="pulse"></span>Line moves</div>
+  <div class="tape-track" id="tape"><span class="tape-empty">Waiting for the first move. Lines are quiet midweek; Sunday mornings and live games move constantly.</span></div>
+</section>
+
+<main id="board" class="board"></main>
+
+<footer class="foot">
+  <p><strong>Best price</strong> is the higher odds on the same number. When the two books post different numbers, for example −3 −110 against −3.5 +100, both are shown and neither is called best: a half point is worth money and the board will not pretend otherwise.</p>
+  <p>A price flashes when it moves and keeps its old value beside it for a few seconds. Each book shows how fresh its data is; a book that stops answering turns stale and its prices grey out while the other keeps updating. <a href="https://github.com/youngbizman/nfl-odds-board">How it works and what was measured</a></p>
 </footer>
 <script src="/app.js"></script>
 </body>
