@@ -81,7 +81,7 @@ export function fmtLine(market, side, line) {
  * quotes: Quote[] for one game/market/side, one per book.
  */
 export function bestPrice(quotes) {
-  const live = quotes.filter((q) => q && q.odds != null);
+  const live = quotes.filter((q) => q && q.odds != null && !q.suspended); // a suspended price cannot be bet, so it cannot be best
   if (!live.length) return null;
   const lines = new Set(live.map((q) => q.line ?? 'ml'));
   if (lines.size > 1) return { conflict: true, offers: live.slice().sort((a, b) => (b.odds ?? -Infinity) - (a.odds ?? -Infinity)) };

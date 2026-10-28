@@ -8,7 +8,10 @@
     "dev": "node --watch src/server.js",
     "capture": "node tools/capture-network.mjs",
     "measure": "node tools/measure-latency.mjs",
-    "edge": "node src/edge.js"
+    "edge": "node src/edge.js",
+    "test": "node --test --test-reporter=spec test/*.test.js",
+    "smoke": "node tools/smoke.mjs",
+    "fixtures": "node tools/record-fixtures.mjs"
   },
   "keywords": [],
   "author": "",

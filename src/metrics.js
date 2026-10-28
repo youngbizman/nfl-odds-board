@@ -16,12 +16,14 @@ export class Metrics {
     this.dk = {
       // book → backend: DraftKings stamps every push with publishedTime; this is receive − published.
       ingestLagPregame: new Ring(), ingestLagLive: new Ring(),
-      wsMessages: 0, selectionUpdates: 0, snapshots: 0, reconnects: 0, decodeMisses: 0,
+      wsMessages: 0, selectionUpdates: 0, snapshots: 0, reconnects: 0, decodeMisses: 0, lineMovesMapped: 0,
+      // edge relay (when DK is collected on another machine): round trip edge ↔ cloud over the relay WebSocket
+      relayRtt: new Ring(), relayMessages: 0,
     };
     this.fd = {
       // book → backend for a poller is bounded by (interval + request time); FanDuel sends no change timestamp.
       pollDuration: new Ring(), pollInterval: new Ring(), changesPerPoll: new Ring(),
-      polls: 0, pollErrors: 0, snapshots: 0, lastStatus: null, bytes: new Ring(),
+      polls: 0, pollErrors: 0, rateLimited: 0, snapshots: 0, lastStatus: null, bytes: new Ring(),
     };
     this.sse = { clients: 0, batchesSent: 0, bytesSent: 0, batchSize: new Ring(), coalesceWait: new Ring() };
     // browser-reported: push lag (server updatedAt → browser paint) and DK end-to-end (publishedTime → browser paint)

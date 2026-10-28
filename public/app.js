@@ -170,16 +170,17 @@ function renderFeeds() {
     const age = s.lastDataAt ? now - s.lastDataAt : threshold;
     const fill = Math.max(0, Math.min(1, 1 - age / threshold));
     const barColor = s.stale || s.state === 'down' ? 'var(--down)' : fill < .35 ? 'var(--best)' : 'var(--up)';
-    const mode = b === 'draftkings' ? (s.mode?.includes('edge') ? 'push via Ontario relay' : 'push over WebSocket') : `polled every ${s.pollMs ? (s.pollMs / 1000).toFixed(0) : '2'} s`;
+    const mode = b === 'draftkings' ? (s.mode?.includes('edge') ? 'push via Ontario relay' : 'push over WebSocket') : `polled every ${s.pollMs ? (s.pollMs >= 1000 ? (s.pollMs / 1000).toFixed(s.pollMs % 1000 ? 1 : 0) + ' s' : s.pollMs + ' ms') : '1 s'}`;
     const stateText = s.stale ? 'stale' : s.state === 'down' ? 'down, reconnecting' : s.state === 'connecting' ? 'connecting' : 'live';
     const r = lat.recent;
+    const relay = b === 'draftkings' && s.relayRttMs != null ? `<span>Relay <b>${Math.round(s.relayRttMs / 2)} ms</b></span>` : '';
     const latency = b === 'draftkings'
       ? (r.e2e.pregame.length + r.e2e.live.length ? `<span>Book to screen <b>${secs(pct(r.e2e.pregame.concat(r.e2e.live), .5))}</b> over ${r.e2e.pregame.length + r.e2e.live.length} moves</span>` : `<span>Book to screen <b>measuring</b> on the next move</span>`)
-      : `<span>Any number is at most <b>${secs((s.pollMs || 2000) + (s.lastPollMs || 0))}</b> old</span>`;
+      : `<span>Any number is at most <b>${secs((s.pollMs || 1000) + (s.lastPollMs || 0))}</b> old</span>`;
     return `<div class="feed ${B.cls}${s.stale ? ' stale' : ''}${s.state === 'down' ? ' down' : ''}" title="${(s.detail || '') + (s.lastError ? '. Last error: ' + s.lastError : '')}">
       <div class="feed-head"><b>${B.label}</b><span class="mode">${mode}</span><span class="state">${stateText}</span></div>
       <div class="feed-bar"><i style="width:${(fill * 100).toFixed(0)}%;background:${barColor}"></i></div>
-      <div class="feed-meta"><span>Data <b>${ago(s.lastDataAt, now)}</b></span><span>Last move <b>${ago(s.lastChangeAt, now)}</b></span>${latency}${r[b].length ? `<span>Server to screen <b>${secs(pct(r[b], .5))}</b></span>` : ''}</div></div>`;
+      <div class="feed-meta"><span>Data <b>${ago(s.lastDataAt, now)}</b></span><span>Last move <b>${ago(s.lastChangeAt, now)}</b></span>${latency}${relay}${r[b].length ? `<span>Server to screen <b>${secs(pct(r[b], .5))}</b></span>` : ''}</div></div>`;
   }).join('');
 }
 function renderBanner() {

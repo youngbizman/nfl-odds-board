@@ -1,0 +1,16 @@
+name: live health
+# Checks the deployed board every 30 minutes: both books fresh, games present, live stream delivering.
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/smoke.mjs https://nfl-odds-board-hgim.onrender.com

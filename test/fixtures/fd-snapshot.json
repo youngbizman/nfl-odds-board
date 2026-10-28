@@ -1,0 +1,1653 @@
+{
+ "attachments": {
+  "events": {
+   "36215313": {
+    "eventId": 36215313,
+    "name": "Baltimore Ravens @ Buffalo Bills",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "countryCode": "GB",
+    "openDate": "2026-11-01T18:01:00.000Z",
+    "videoAvailable": false,
+    "statsAvailable": true
+   },
+   "36215318": {
+    "eventId": 36215318,
+    "name": "Minnesota Vikings @ Detroit Lions",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "countryCode": "GB",
+    "openDate": "2026-11-01T18:01:00.000Z",
+    "videoAvailable": false,
+    "statsAvailable": true
+   },
+   "36215319": {
+    "eventId": 36215319,
+    "name": "Atlanta Falcons @ Tampa Bay Buccaneers",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "countryCode": "GB",
+    "openDate": "2026-11-01T18:01:00.000Z",
+    "videoAvailable": false,
+    "statsAvailable": true
+   }
+  },
+  "markets": {
+   "734.192676407": {
+    "marketId": "734.192676407",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215313,
+    "exchangeMarketId": "1.264549689",
+    "marketName": "Moneyline",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "MONEY_LINE",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -900,
+    "bettingType": "ODDS",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 50205,
+      "handicap": 0,
+      "runnerName": "Baltimore Ravens",
+      "sortPriority": 1,
+      "result": {
+       "type": "AWAY"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/baltimore_ravens.png",
+      "nameAbbr": "BAL Ravens",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 150,
+        "americanOddsInt": 150
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2.5
+        },
+        "fractionalOdds": {
+         "numerator": 150,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 50203,
+      "handicap": 0,
+      "runnerName": "Buffalo Bills",
+      "sortPriority": 2,
+      "result": {
+       "type": "HOME"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/buffalo_bills.png",
+      "nameAbbr": "BUF Bills",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -178,
+        "americanOddsInt": -178
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.561797752808989
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 178
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215313,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889701"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676408": {
+    "marketId": "734.192676408",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215313,
+    "exchangeMarketId": "1.264549792",
+    "marketName": "Total Points",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "TOTAL_POINTS_(OVER/UNDER)",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -880,
+    "bettingType": "MOVING_HANDICAP",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 7017916,
+      "handicap": 54.5,
+      "runnerName": "Over",
+      "sortPriority": 1,
+      "result": {
+       "type": "OVER"
+      },
+      "runnerStatus": "ACTIVE",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -106,
+        "americanOddsInt": -106
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.943396226415094
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 106
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 7017917,
+      "handicap": 54.5,
+      "runnerName": "Under",
+      "sortPriority": 2,
+      "result": {
+       "type": "UNDER"
+      },
+      "runnerStatus": "ACTIVE",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -114,
+        "americanOddsInt": -114
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.87719298245614
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 114
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215313,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889704"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676648": {
+    "marketId": "734.192676648",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215319,
+    "exchangeMarketId": "1.264550854",
+    "marketName": "Spread",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "MATCH_HANDICAP_(2-WAY)",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -890,
+    "bettingType": "MOVING_HANDICAP",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 50199,
+      "handicap": 2.5,
+      "runnerName": "Atlanta Falcons",
+      "sortPriority": 1,
+      "result": {
+       "type": "AWAY"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/atlanta_falcons.png",
+      "nameAbbr": "ATL Falcons",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -110,
+        "americanOddsInt": -110
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.909090909090909
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 110
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 50190,
+      "handicap": -2.5,
+      "runnerName": "Tampa Bay Buccaneers",
+      "sortPriority": 2,
+      "result": {
+       "type": "HOME"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/tampa_bay_buccaneers.png",
+      "nameAbbr": "TB Buccaneers",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -110,
+        "americanOddsInt": -110
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.909090909090909
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 110
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215319,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889772"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676609": {
+    "marketId": "734.192676609",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215318,
+    "exchangeMarketId": "1.264550627",
+    "marketName": "Spread",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "MATCH_HANDICAP_(2-WAY)",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -890,
+    "bettingType": "MOVING_HANDICAP",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 50191,
+      "handicap": 3.5,
+      "runnerName": "Minnesota Vikings",
+      "sortPriority": 1,
+      "result": {
+       "type": "AWAY"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "nameAbbr": "MIN Vikings",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -120,
+        "americanOddsInt": -120
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.833333333333333
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 120
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 50193,
+      "handicap": -3.5,
+      "runnerName": "Detroit Lions",
+      "sortPriority": 2,
+      "result": {
+       "type": "HOME"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "nameAbbr": "DET Lions",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -102,
+        "americanOddsInt": -102
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.980392156862745
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 102
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215318,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889732"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676608": {
+    "marketId": "734.192676608",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215318,
+    "exchangeMarketId": "1.264550768",
+    "marketName": "Total Points",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "TOTAL_POINTS_(OVER/UNDER)",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -880,
+    "bettingType": "MOVING_HANDICAP",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 7017916,
+      "handicap": 46.5,
+      "runnerName": "Over",
+      "sortPriority": 1,
+      "result": {
+       "type": "OVER"
+      },
+      "runnerStatus": "ACTIVE",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -104,
+        "americanOddsInt": -104
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.961538461538462
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 104
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 7017917,
+      "handicap": 46.5,
+      "runnerName": "Under",
+      "sortPriority": 2,
+      "result": {
+       "type": "UNDER"
+      },
+      "runnerStatus": "ACTIVE",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -118,
+        "americanOddsInt": -118
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.847457627118644
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 118
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215318,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889734"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676646": {
+    "marketId": "734.192676646",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215319,
+    "exchangeMarketId": "1.264551000",
+    "marketName": "Total Points",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "TOTAL_POINTS_(OVER/UNDER)",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -880,
+    "bettingType": "MOVING_HANDICAP",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 7017916,
+      "handicap": 45.5,
+      "runnerName": "Over",
+      "sortPriority": 1,
+      "result": {
+       "type": "OVER"
+      },
+      "runnerStatus": "ACTIVE",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -105,
+        "americanOddsInt": -105
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.952380952380952
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 105
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 7017917,
+      "handicap": 45.5,
+      "runnerName": "Under",
+      "sortPriority": 2,
+      "result": {
+       "type": "UNDER"
+      },
+      "runnerStatus": "ACTIVE",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -115,
+        "americanOddsInt": -115
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.869565217391304
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 115
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215319,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889774"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676410": {
+    "marketId": "734.192676410",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215313,
+    "exchangeMarketId": "1.264549690",
+    "marketName": "Spread",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "MATCH_HANDICAP_(2-WAY)",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -890,
+    "bettingType": "MOVING_HANDICAP",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 50205,
+      "handicap": 3,
+      "runnerName": "Baltimore Ravens",
+      "sortPriority": 1,
+      "result": {
+       "type": "AWAY"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/baltimore_ravens.png",
+      "nameAbbr": "BAL Ravens",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 100,
+        "americanOddsInt": 100
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 50203,
+      "handicap": -3,
+      "runnerName": "Buffalo Bills",
+      "sortPriority": 2,
+      "result": {
+       "type": "HOME"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/buffalo_bills.png",
+      "nameAbbr": "BUF Bills",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -122,
+        "americanOddsInt": -122
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.819672131147541
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 122
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215313,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889702"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676650": {
+    "marketId": "734.192676650",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215319,
+    "exchangeMarketId": "1.264550852",
+    "marketName": "Moneyline",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "MONEY_LINE",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -900,
+    "bettingType": "ODDS",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 50199,
+      "handicap": 0,
+      "runnerName": "Atlanta Falcons",
+      "sortPriority": 1,
+      "result": {
+       "type": "AWAY"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/atlanta_falcons.png",
+      "nameAbbr": "ATL Falcons",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 118,
+        "americanOddsInt": 118
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2.18
+        },
+        "fractionalOdds": {
+         "numerator": 118,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 50190,
+      "handicap": 0,
+      "runnerName": "Tampa Bay Buccaneers",
+      "sortPriority": 2,
+      "result": {
+       "type": "HOME"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/tampa_bay_buccaneers.png",
+      "nameAbbr": "TB Buccaneers",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -138,
+        "americanOddsInt": -138
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.72463768115942
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 138
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215319,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889771"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.192676610": {
+    "marketId": "734.192676610",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215318,
+    "exchangeMarketId": "1.264550625",
+    "marketName": "Moneyline",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "MONEY_LINE",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 2,
+    "numberOfActiveRunners": 2,
+    "numberOfWinners": 1,
+    "sortPriority": -900,
+    "bettingType": "ODDS",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 50191,
+      "handicap": 0,
+      "runnerName": "Minnesota Vikings",
+      "sortPriority": 1,
+      "result": {
+       "type": "AWAY"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "nameAbbr": "MIN Vikings",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 142,
+        "americanOddsInt": 142
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2.42
+        },
+        "fractionalOdds": {
+         "numerator": 142,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 50193,
+      "handicap": 0,
+      "runnerName": "Detroit Lions",
+      "sortPriority": 2,
+      "result": {
+       "type": "HOME"
+      },
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "nameAbbr": "DET Lions",
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -172,
+        "americanOddsInt": -172
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.581395348837209
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 172
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215318,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.617889731"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": false,
+    "shouldDisplayStatsInRunner": true,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   },
+   "734.194133133": {
+    "marketId": "734.194133133",
+    "eventTypeId": 6423,
+    "competitionId": 12282733,
+    "eventId": 36215318,
+    "marketName": "Any Time Touchdown Scorer",
+    "marketTime": "2026-11-01T18:01:00.000Z",
+    "marketType": "ANY_TIME_TOUCHDOWN_SCORER",
+    "bspMarket": false,
+    "sgmMarket": true,
+    "inPlay": false,
+    "numberOfRunners": 24,
+    "numberOfActiveRunners": 24,
+    "numberOfWinners": 1,
+    "sortPriority": -870,
+    "bettingType": "ODDS",
+    "marketStatus": "OPEN",
+    "marketLevels": [
+     "AVB_EVENT"
+    ],
+    "runners": [
+     {
+      "selectionId": 42323726,
+      "handicap": 0,
+      "runnerName": "Jahmyr Gibbs",
+      "sortPriority": 1,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "0",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": -290,
+        "americanOddsInt": -290
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 1.344827586206897
+        },
+        "fractionalOdds": {
+         "numerator": 10,
+         "denominator": 29
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 14786686,
+      "handicap": 0,
+      "runnerName": "Aaron Jones",
+      "sortPriority": 2,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "33",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 100,
+        "americanOddsInt": 100
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 48532076,
+      "handicap": 0,
+      "runnerName": "Jordan Mason",
+      "sortPriority": 3,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "27",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 100,
+        "americanOddsInt": 100
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2
+        },
+        "fractionalOdds": {
+         "numerator": 100,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 27531335,
+      "handicap": 0,
+      "runnerName": "Amon-Ra St. Brown",
+      "sortPriority": 4,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "14",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 130,
+        "americanOddsInt": 130
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2.3
+        },
+        "fractionalOdds": {
+         "numerator": 130,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 26809167,
+      "handicap": 0,
+      "runnerName": "Justin Jefferson",
+      "sortPriority": 5,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "18",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 170,
+        "americanOddsInt": 170
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 2.7
+        },
+        "fractionalOdds": {
+         "numerator": 170,
+         "denominator": 100
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 36914887,
+      "handicap": 0,
+      "runnerName": "Jameson Williams",
+      "sortPriority": 6,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "1",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 210,
+        "americanOddsInt": 210
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 3.1
+        },
+        "fractionalOdds": {
+         "numerator": 21,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 42218091,
+      "handicap": 0,
+      "runnerName": "Sam LaPorta",
+      "sortPriority": 7,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "87",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 230,
+        "americanOddsInt": 230
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 3.3
+        },
+        "fractionalOdds": {
+         "numerator": 23,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 25935770,
+      "handicap": 0,
+      "runnerName": "T.J. Hockenson",
+      "sortPriority": 8,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "87",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 260,
+        "americanOddsInt": 260
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 3.6
+        },
+        "fractionalOdds": {
+         "numerator": 26,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 38093934,
+      "handicap": 0,
+      "runnerName": "Jordan Addison",
+      "sortPriority": 9,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "3",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 310,
+        "americanOddsInt": 310
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 4.1
+        },
+        "fractionalOdds": {
+         "numerator": 31,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 60529863,
+      "handicap": 0,
+      "runnerName": "Isaac TeSlaa",
+      "sortPriority": 10,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "18",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 410,
+        "americanOddsInt": 410
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 5.1
+        },
+        "fractionalOdds": {
+         "numerator": 41,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 11054725,
+      "handicap": 0,
+      "runnerName": "Kyler Murray",
+      "sortPriority": 11,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "1",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 500,
+        "americanOddsInt": 500
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 6
+        },
+        "fractionalOdds": {
+         "numerator": 50,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 28236251,
+      "handicap": 0,
+      "runnerName": "Jauan Jennings",
+      "sortPriority": 12,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "14",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 600,
+        "americanOddsInt": 600
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 7
+        },
+        "fractionalOdds": {
+         "numerator": 60,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 48219164,
+      "handicap": 0,
+      "runnerName": "Minnesota Defense",
+      "sortPriority": 13,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 750,
+        "americanOddsInt": 750
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 8.5
+        },
+        "fractionalOdds": {
+         "numerator": 75,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 48515043,
+      "handicap": 0,
+      "runnerName": "Tai Felton",
+      "sortPriority": 14,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "13",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 800,
+        "americanOddsInt": 800
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 9
+        },
+        "fractionalOdds": {
+         "numerator": 80,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 66500202,
+      "handicap": 0,
+      "runnerName": "Sione Vaki",
+      "sortPriority": 15,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "33",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 850,
+        "americanOddsInt": 850
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 9.5
+        },
+        "fractionalOdds": {
+         "numerator": 85,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 48233185,
+      "handicap": 0,
+      "runnerName": "Detroit Defense",
+      "sortPriority": 16,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 950,
+        "americanOddsInt": 950
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 10.5
+        },
+        "fractionalOdds": {
+         "numerator": 95,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 42208000,
+      "handicap": 0,
+      "runnerName": "Gavin Bartholomew",
+      "sortPriority": 17,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "86",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 950,
+        "americanOddsInt": 950
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 10.5
+        },
+        "fractionalOdds": {
+         "numerator": 95,
+         "denominator": 10
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 10910206,
+      "handicap": 0,
+      "runnerName": "Jared Goff",
+      "sortPriority": 18,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "16",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 1000,
+        "americanOddsInt": 1000
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 11
+        },
+        "fractionalOdds": {
+         "numerator": 10,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 41702033,
+      "handicap": 0,
+      "runnerName": "Brock Wright",
+      "sortPriority": 19,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "89",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 1100,
+        "americanOddsInt": 1100
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 12
+        },
+        "fractionalOdds": {
+         "numerator": 11,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 78488507,
+      "handicap": 0,
+      "runnerName": "Ben Yurosek",
+      "sortPriority": 20,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/minnesota_vikings.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "85",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 1500,
+        "americanOddsInt": 1500
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 16
+        },
+        "fractionalOdds": {
+         "numerator": 15,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 10220939,
+      "handicap": 0,
+      "runnerName": "DeAndre Carter",
+      "sortPriority": 21,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "86",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 1800,
+        "americanOddsInt": 1800
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 19
+        },
+        "fractionalOdds": {
+         "numerator": 18,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 16503651,
+      "handicap": 0,
+      "runnerName": "Tyler Conklin",
+      "sortPriority": 22,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "83",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 2200,
+        "americanOddsInt": 2200
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 23
+        },
+        "fractionalOdds": {
+         "numerator": 22,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 48103498,
+      "handicap": 0,
+      "runnerName": "Jackson Meeks",
+      "sortPriority": 23,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "13",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 2200,
+        "americanOddsInt": 2200
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 23
+        },
+        "fractionalOdds": {
+         "numerator": 22,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     },
+     {
+      "selectionId": 42225580,
+      "handicap": 0,
+      "runnerName": "Tay Martin",
+      "sortPriority": 24,
+      "result": {},
+      "runnerStatus": "ACTIVE",
+      "logo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions_jersey.png",
+      "secondaryLogo": "https://assets.sportsbook.fanduel.com/images/team/nfl/detroit_lions.png",
+      "isPlayerSelection": true,
+      "jersey": {
+       "jerseyNumber": "17",
+       "jerseyBg": "dark"
+      },
+      "winRunnerOdds": {
+       "americanDisplayOdds": {
+        "americanOdds": 2700,
+        "americanOddsInt": 2700
+       },
+       "trueOdds": {
+        "decimalOdds": {
+         "decimalOdds": 28
+        },
+        "fractionalOdds": {
+         "numerator": 27,
+         "denominator": 1
+        }
+       }
+      },
+      "previousWinRunnerOdds": []
+     }
+    ],
+    "canTurnInPlay": true,
+    "associatedMarkets": [
+     {
+      "eventId": 36215318,
+      "eventTypeId": 6423,
+      "externalMarketId": "42.620040211"
+     }
+    ],
+    "isSuperSubEnabled": false,
+    "isBetProtectEligible": true,
+    "shouldDisplayStatsInRunner": false,
+    "eachwayAvailable": false,
+    "legTypes": [
+     "SIMPLE_SELECTION"
+    ]
+   }
+  }
+ }
+}
