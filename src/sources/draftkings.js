@@ -25,9 +25,14 @@ const LIVE_STATES = new Set(['STARTED', 'IN_PROGRESS', 'LIVE', 'INPLAY', 'IN_PLA
 export class DraftKingsSource {
   constructor(store, metrics, log, opts = {}) {
     this.store = store; this.metrics = metrics; this.log = log;
-    this.site = opts.site || process.env.DK_SITE || 'CA-ON-SB';           // Ontario site used during development
-    this.siteName = opts.siteName || process.env.DK_SITENAME || 'dkcaon';
-    this.wsHost = opts.wsHost || process.env.DK_WS_HOST || 'sportsbook-ws-ca-on.draftkings.com';
+    // DK serves one site per licensed region and refuses other regions' sites by IP (403 from Akamai).
+    // From Ontario only CA-ON-SB answers; from a US server it is the other way round. So we probe candidates
+    // in order at startup and keep the first one that returns a snapshot. The env vars put your preferred one first.
+    this.candidates = [
+      ...(process.env.DK_SITE ? [{ site: process.env.DK_SITE, siteName: process.env.DK_SITENAME || siteNameFor(process.env.DK_SITE), wsHost: process.env.DK_WS_HOST || wsHostFor(process.env.DK_SITE) }] : []),
+      ...['CA-ON-SB', 'US-OH-SB', 'US-NJ-SB', 'US-PA-SB', 'US-MI-SB', 'US-VA-SB', 'US-SB'].map((site) => ({ site, siteName: siteNameFor(site), wsHost: wsHostFor(site) })),
+    ].filter((c, i, a) => a.findIndex((x) => x.site === c.site) === i);
+    Object.assign(this, this.candidates[0]);
     this.resnapshotMs = Number(process.env.DK_RESNAPSHOT_MS || 60_000);
     this.selIndex = new Map();   // DK selection id -> { gameKey, market, side }
     this.eventIndex = new Map(); // DK event id -> gameKey
@@ -40,13 +45,24 @@ export class DraftKingsSource {
   }
 
   async start() {
-    this.store.setSource(BOOK, { mode: 'websocket', state: 'connecting', detail: `site ${this.site}` });
+    this.store.setSource(BOOK, { mode: 'websocket', state: 'connecting', detail: 'probing regional sites' });
+    await this.pickSite();
     await this.snapshot().catch((e) => this.fail('snapshot', e));
     this.connect();
     this.timer = setInterval(() => this.snapshot().catch((e) => this.fail('resnapshot', e)), this.resnapshotMs);
   }
 
   stop() { this.stopped = true; clearInterval(this.timer); this.ws?.terminate(); }
+
+  /** Try each regional site until one gives us a snapshot (geo-fencing is by IP, see README). */
+  async pickSite() {
+    for (const c of this.candidates) {
+      Object.assign(this, c);
+      try { await this.snapshot(); this.log('dk', `using site ${c.site} (${c.siteName}, ${c.wsHost})`); return; }
+      catch (e) { this.log('dk', `site ${c.site} rejected: ${e.message}`); }
+    }
+    this.fail('pickSite', new Error('no DraftKings regional site accepted this server\'s IP'));
+  }
 
   fail(where, e) {
     const msg = `${where}: ${e?.message || e}`;
@@ -182,6 +198,10 @@ export class DraftKingsSource {
     if (unknown && !this.pendingResnap) this.pendingResnap = setTimeout(() => { this.pendingResnap = null; this.snapshot().catch((e) => this.fail('resnapshot', e)); }, 1500);
   }
 }
+
+// 'US-NJ-SB' -> 'dkusnj' / 'sportsbook-ws-us-nj.draftkings.com' (pattern observed on the Ontario site: CA-ON-SB -> dkcaon / sportsbook-ws-ca-on)
+function siteNameFor(site) { return 'dk' + site.replace(/-SB$/, '').replace(/-/g, '').toLowerCase(); }
+function wsHostFor(site) { return `sportsbook-ws-${site.replace(/-SB$/, '').toLowerCase()}.draftkings.com`; }
 
 function walk(node, fn) {
   if (!Array.isArray(node)) return;
