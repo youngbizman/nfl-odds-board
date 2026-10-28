@@ -86,7 +86,7 @@ app.post('/ingest/draftkings', (req, res) => {
     store.upsertQuote({ gameKey: q.gameKey, market: q.market, side: q.side, book: q.book, line: q.line, odds: q.odds, suspended: q.suspended, sourceTs: q.sourceTs ?? null, edgeAt: q.updatedAt ?? null }, now);
     if (q.sourceTs) { const g = store.games.get(q.gameKey); (g?.status === 'live' ? metrics.dk.ingestLagLive : metrics.dk.ingestLagPregame).push(now - q.sourceTs); }
   }
-  if (source) store.setSource('draftkings', { ...source, mode: 'websocket (via edge)', lastDataAt: now, edgeLagMs: edgeTs ? now - edgeTs : null });
+  if (source) { const { stale, ...rest } = source; store.setSource('draftkings', { ...rest, mode: 'websocket (via edge)', lastDataAt: now, edgeLagMs: edgeTs ? now - edgeTs : null }); } // staleness is judged here, not at the edge
   res.json({ ok: true, quotes: quotes.length });
 });
 
@@ -97,7 +97,7 @@ app.get('/api/diag/draftkings', async (req, res) => {
   for (const site of ['US-OH-SB', 'US-NJ-SB', 'CA-ON-SB']) {
     try {
       const r = await fetch(`https://sportsbook-nash.draftkings.com/sites/${site}/api/sportscontent/controldata/league/leagueSubcategory/v1/markets?isBatchable=false&templateVars=88808&entity=events&include=Events&eventsQuery=%24filter%3DleagueId%20eq%20%2788808%27&marketsQuery=%24filter%3DclientMetadata%2FsubCategoryId%20eq%20%274518%27`, { headers: { accept: 'application/json', referer: 'https://sportsbook.draftkings.com/', 'x-client-name': 'web' }, signal: AbortSignal.timeout(8000) });
-      const t = await r.text(); out.sites[site] = { status: r.status, akamaiRef: /Reference&#32;&#35;([\w.]+)/.exec(t)?.[1] || null, bytes: t.length };
+      const t = await r.text(); const plain = t.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))); out.sites[site] = { status: r.status, akamaiRef: /Reference #([\w.]+)/.exec(plain)?.[1] || null, bytes: t.length };
     } catch (e) { out.sites[site] = { error: String(e) }; }
   }
   try { const r = await fetch('https://sportsbook.draftkings.com/leagues/football/nfl', { headers: { 'user-agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }); out.page = { status: r.status, bytes: (await r.text()).length }; } catch (e) { out.page = String(e); }
