@@ -87,7 +87,7 @@ function cellHtml(q, { chip, other, age } = {}) {
   const cls = ['cell', chip === 'both' ? 'both' : BOOK[q.book].cls, flash, isStale(q.book) ? 'stale' : '', q.suspended ? 'suspended' : ''].join(' ');
   const chipText = chip === 'both' ? 'DK = FD' : chip ? BOOK[chip].label : '';
   const sub = chipText || other || age ? `<span class="sub"><span class="chip">${chipText || ''}</span><span class="other">${other || ''}${age ? `<span class="age" data-ts="${q.updatedAt}">updated ${ago(q.updatedAt)}</span>` : ''}</span></span>` : '';
-  return `<div class="${cls}" title="${BOOK[q.book].label}, updated ${new Date(q.updatedAt).toLocaleTimeString()}${q.suspended ? ', suspended' : ''}">
+  return `<div class="${cls}" data-q="${q.gameKey}|${q.market}|${q.side}|${q.book}" data-odds="${q.odds ?? ''}" data-line="${q.line ?? ''}" title="${BOOK[q.book].label}, updated ${new Date(q.updatedAt).toLocaleTimeString()}${q.suspended ? ', suspended' : ''}">
     <span class="line">${fmtLine(q.market, q.side, q.line)}</span><span class="odds">${prev}<b>${fmtOdds(q.odds)}</b>${arrow}</span>${sub}</div>`;
 }
 function marketHtml(g, market, sides) {
@@ -204,5 +204,7 @@ setInterval(async () => { // send measured samples to the server so /api/metrics
   const body = { pushLag: { draftkings: lat.pushLag.draftkings.splice(0), fanduel: lat.pushLag.fanduel.splice(0) }, endToEnd: { draftkings: { pregame: lat.endToEnd.draftkings.pregame.splice(0), live: lat.endToEnd.draftkings.live.splice(0) } } };
   if (Object.values(body.pushLag).some((a) => a.length) || Object.values(body.endToEnd.draftkings).some((a) => a.length)) fetch('/api/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
 }, 30000);
+// ?view=draftkings | fanduel | best — shareable links to one book's board
+{ const v = new URLSearchParams(location.search).get('view'); const btn = v && document.querySelector(`.views button[data-view="${v}"]`); if (btn) btn.click(); }
 syncClock().finally(connect);
 setInterval(syncClock, 120000);

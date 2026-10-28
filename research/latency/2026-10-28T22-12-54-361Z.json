@@ -1,0 +1,127 @@
+{
+ "base": "https://nfl-odds-board-hgim.onrender.com",
+ "minutes": 8,
+ "measuredAt": "2026-10-28T22:12:54.356Z",
+ "clockOffsetMs": 145,
+ "rttMs": 47,
+ "batches": 190,
+ "bytes": 365880,
+ "changes": {
+  "draftkings": 2,
+  "fanduel": 0
+ },
+ "lineMoves": {
+  "draftkings": 0,
+  "fanduel": 0
+ },
+ "pushLagMs": {
+  "draftkings": {
+   "n": 2,
+   "p50": 37.5,
+   "p90": 37.5,
+   "p95": 37.5,
+   "max": 37.5
+  },
+  "fanduel": {
+   "n": 0
+  }
+ },
+ "draftkingsEndToEndMs": {
+  "pregame": {
+   "n": 2,
+   "p50": 112.5,
+   "p90": 112.5,
+   "p95": 112.5,
+   "max": 112.5
+  },
+  "live": {
+   "n": 0
+  }
+ },
+ "serverSide": {
+  "draftkings": {
+   "ingestLagPregame": {
+    "count": 0
+   },
+   "ingestLagLive": {
+    "count": 0
+   },
+   "wsMessages": 0,
+   "selectionUpdates": 0,
+   "snapshots": 0,
+   "reconnects": 0,
+   "decodeMisses": 0,
+   "lineMovesMapped": 0,
+   "relayRtt": {
+    "count": 0
+   },
+   "relayMessages": 0
+  },
+  "fanduel": {
+   "pollDuration": {
+    "count": 5,
+    "min": 13,
+    "p50": 15,
+    "p90": 101,
+    "p95": 101,
+    "max": 101,
+    "mean": 32
+   },
+   "pollInterval": {
+    "count": 4,
+    "min": 1000,
+    "p50": 1001,
+    "p90": 1001,
+    "p95": 1001,
+    "max": 1001,
+    "mean": 1001
+   },
+   "changesPerPoll": {
+    "count": 5,
+    "min": 0,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+   },
+   "polls": 5,
+   "pollErrors": 0,
+   "rateLimited": 0,
+   "snapshots": 1,
+   "lastStatus": 200,
+   "bytes": {
+    "count": 5,
+    "min": 93148,
+    "p50": 93148,
+    "p90": 93148,
+    "p95": 93148,
+    "max": 93148,
+    "mean": 93148
+   }
+  },
+  "sse": {
+   "clients": 0,
+   "batchesSent": 5,
+   "bytesSent": 0,
+   "batchSize": {
+    "count": 5,
+    "min": 0,
+    "p50": 0,
+    "p90": 174,
+    "p95": 174,
+    "max": 174,
+    "mean": 35
+   },
+   "coalesceWait": {
+    "count": 5,
+    "min": 0,
+    "p50": 1,
+    "p90": 393,
+    "p95": 393,
+    "max": 393,
+    "mean": 79
+   }
+  }
+ }
+}
