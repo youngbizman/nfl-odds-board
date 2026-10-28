@@ -50,7 +50,7 @@ flowchart LR
     FD[(FanDuel)]
   end
   subgraph ingestion["one worker per book"]
-    DKW["DraftKings worker<br/>snapshot (REST) + deltas (WebSocket, msgpack)"]
+    DKW["DraftKings worker<br/>snapshot (REST) + deltas (WebSocket, JSON)"]
     FDW["FanDuel worker<br/>snapshot (REST) + poll getMarketPrices every 1 s"]
   end
   STORE["BoardStore (in memory)<br/>games · quotes · per-book status<br/>emits only real changes"]
@@ -64,7 +64,7 @@ flowchart LR
   FDW --> STORE
   STORE --> SSE
   SSE --> B1 & B2 & B3
-  EDGE["edge worker (src/edge.js)<br/>same DK worker, run where DK allows,<br/>one open WebSocket /ingest/ws"] -. "only when the server's IP is refused" .-> STORE
+  EDGE["edge (src/edge.js)<br/>fetches DK's REST snapshot where DK allows,<br/>relays it every 30 s + on request"] -. "snapshot only, when the server's IP is refused by the REST host" .-> DKW
   classDef b fill:#223,stroke:#669
 ```
 
@@ -88,15 +88,16 @@ WebSocket frame (`npm run capture -- <url> <dir> <seconds>`). The two books are 
 ### DraftKings — snapshot + WebSocket deltas (push)
 1. `GET sportsbook-nash.draftkings.com/sites/<REGION>/api/sportscontent/controldata/league/leagueSubcategory/v1/markets?…league 88808 (NFL), subcategory 4518 (Game Lines)…`
    → `{events, markets, selections}` ≈ 155 KB in ~300 ms. That is the whole board.
-2. `wss://sportsbook-ws-<region>.draftkings.com/websocket?format=msgpack` — JSON-RPC 2.0 over MessagePack.
-   One `subscribe` with the same OData filters and `initialData:false`; the server answers `subscribed` and then
-   pushes **only the selections that changed**, each frame stamped with DK's own `publishedTime`.
-   `jwt: "default-token"` — no login, nothing expires.
+2. `wss://sportsbook-ws-<region>.draftkings.com/websocket?format=json` — JSON-RPC 2.0. (The site itself asks for
+   `format=msgpack`; the same server speaks JSON.) One `subscribe` with the same OData filters and `initialData:false`;
+   the server answers `subscribed` and then pushes **only changes**: `{add, change, remove} × {events, markets,
+   selections}`, each frame stamped with DK's own `createdTime / publishedTime`. `jwt: "default-token"` — no login,
+   nothing expires. A line move arrives as `remove(old id) + add(new id with points)`; a price move as a partial
+   `change` on the selection.
 
 **Why:** it is literally the fastest path the DK site uses; nothing to poll, and every push carries a source timestamp,
-which makes true end-to-end latency measurable. Deltas are compact positional arrays (undocumented), so I decode
-the two shapes I need by their fields (a price row: `[selectionId, label, [american, decimal, …], trueOdds, points, …]`)
-and treat everything else as "re-snapshot soon".
+which makes true end-to-end latency measurable. I started with the msgpack frames (positional arrays decoded by shape)
+and moved to the JSON form once I confirmed the server honours it: structured frames, no guessing.
 
 ### FanDuel — snapshot + polling (pull)
 1. `GET sbapi.on.sportsbook.fanduel.ca/api/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=<public app key>`
@@ -130,7 +131,7 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 | --- | --- | --- |
 | Feed type | **deltas** (changes only) | **full picture** every poll |
 | State kept by | **us**: snapshot into the store, apply each delta by selection id | nobody: each poll is authoritative |
-| Safety net | full re-snapshot every 60 s, immediately when a delta names an unknown selection id (a line move = new id, e.g. `…P350` → `…P300`), and after every reconnect | full re-snapshot every 60 s (new games, markets going in-play) |
+| Safety net | line moves applied from the push itself (`remove`+`add`); full re-snapshot every 60 s, 3 s after a push names an id we cannot place, and after every reconnect (fetched directly, or requested from the edge) | full re-snapshot every 60 s (new games, markets going in-play) |
 | Quiet ≠ dead | ping/pong every 30 s; no pong in 10 s → reconnect (backoff 1 → 30 s) | a failed/slow poll is visible immediately |
 
 ## 5. Push to the browser
@@ -152,13 +153,19 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 | Rate limits | none hit (1 WS connection + 1 snapshot/min) | none hit at 1 poll / 2 s for hours, then 1 poll / s; back-off on 429/403 is implemented and tested |
 | Sessions / tokens | `jwt: default-token` — nothing to expire. If DK ever rejects it, the worker reconnects with backoff and re-snapshots; stale state is shown meanwhile. | `_ak` is a public app key baked into the site; no cookie needed. |
 
-**The one problem I could not solve inside a free cloud host:** DraftKings refuses the data API to datacenter IPs.
-Rather than hide it, the deployment is split: FanDuel runs in the cloud (Render, Ohio); the DraftKings collector
-(`src/edge.js`, the *same* worker class) runs on a machine in Ontario and pushes normalized changes into the cloud
-server over one authenticated WebSocket (`/ingest/ws`, HTTPS POST fallback). The cloud server still tries DK directly on start-up and every
-10 minutes, and takes over automatically if the block ever lifts. If the edge stops, the board says so: DraftKings
-turns **STALE** within 75 s and its prices grey out; FanDuel keeps moving. With more time: a residential/ISP proxy or
-a small VM in a licensed region, instead of a laptop.
+**The block, and how I got around it.** DraftKings' two hosts sit behind two different Akamai products: the
+snapshot host (`sportsbook-nash`, bot management) refuses datacenter IPs with 403 for every regional site, while the
+**push socket host (`sportsbook-ws-*`) accepts them** — for every region, Ontario included, tested from this server
+(`/api/diag/dk-socket`). So the split follows that line: the **cloud server holds DraftKings' socket itself** (the
+latency-critical part, 44 ms from DK's publish to our server), and the only thing that leaves the cloud is the
+once-a-minute REST snapshot, fetched by a tiny **snapshot provider** (`src/edge.js`) on a machine in Ontario that DK
+accepts, and relayed over one authenticated WebSocket (`/ingest/ws`, HTTPS fallback) every 30 s and whenever the cloud
+asks (after a reconnect, or when a push names an id it cannot place). My first version relayed *every price* through
+that machine (~26 ms extra, and the board depended on it); after testing the socket from the cloud I moved the socket
+to the cloud and left only the snapshot at the edge. If the edge stops now, pushes keep flowing and the board stays
+current; only brand-new games wait, the snapshot age is shown, and `/api/health` reports it. The cloud still tries the
+REST host directly on start-up and takes over fully if the block ever lifts. A residential/ISP proxy for that one
+request a minute is the production answer (nothing latency-critical goes through it).
 
 ## 7. Shape of the data, matching, and "best price"
 
@@ -192,19 +199,19 @@ a small VM in a licensed region, instead of a laptop.
 ### Numbers (live deployment, Wed Oct 28 evening, pregame)
 | Hop | DraftKings | FanDuel |
 | --- | --- | --- |
-| Book → our server | **~75 ms** DK publishedTime → applied in the cloud, *including* the relay (n=2 — midweek lines barely move) | wait for the next poll: **0.5 s avg, 1.0 s max** (beat p50 1000 ms, p95 1002 ms) + request **16 ms** p50 / 23 ms p95 |
-| Relay edge (Ontario) → cloud (Ohio) | round trip p50 **53 ms** (≈ 26 ms one way), p95 106 ms, over one open WebSocket | — |
+| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly (earlier version via the Ontario relay: p50 88 ms over 26 moves) | wait for the next poll: **0.5 s avg, 1.0 s max** (beat p50 1000 ms, p95 1002 ms) + request **16 ms** p50 / 23 ms p95 |
+| Edge snapshot relay (Ontario → Ohio) | not on the price path any more; 155 KB every 30 s, round trip p50 ~48 ms | — |
 | Our processing per update | **2.5 µs** per DK frame | **~0.25 ms** per 87-market poll (25 µs per 9 markets) |
 | Wait before sending to browsers | p50 0 ms | p50 0 ms |
 | Server → browser (Toronto) | ~30 ms | ~30 ms |
-| **Book → screen** | **≈ 0.1 s** | **≈ 0.55 s average, ≈ 1.05 s worst** |
+| **Book → screen** | **≈ 75 ms** | **≈ 0.55 s average, ≈ 1.05 s worst** |
 
 ### Before → after (what tuning bought)
 | Change | Before | After |
 | --- | --- | --- |
 | FanDuel poll | 2 s, delay-after-request | **1 s fixed beat** → average age 1.0 s → **0.5 s** |
 | Batching to browsers | fixed 40 ms window | **flush per upstream message** → 40 ms → **0 ms** |
-| DK relay | HTTPS POST per batch, ~100–200 ms | **one open WebSocket**, ~26 ms one way |
+| DK relay | every price via Ontario: HTTPS POST per batch, ~100–200 ms | one open WebSocket, ~26 ms one way → then **no relay on the price path at all**: cloud holds the socket, edge sends snapshots only |
 | DK line moves (spread −3 → −3.5) | waited for a re-snapshot, ~3 s | **mapped from the selection id**, same speed as a price move |
 | Stale detection | DK 150 s / FD 15 s | DK 75 s (ping/pong every 30 s) / FD 10 s |
 
@@ -222,8 +229,8 @@ Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) i
   sports: DraftKings in-play uses the same WebSocket; FanDuel's in-play page still has **no push** and re-polls each
   market about every **5 s**. There is no faster hidden channel to switch to.
 * **What that means:** our FanDuel prices are polled every 1 s, so the board shows a FanDuel move on average about
-  **2 s before FanDuel's own website** does. For DraftKings we receive the very same push as DK's page, then add the
-  relay to Ohio and back (~50 ms), so DK's own page is ahead of us by roughly that much.
+  **2 s before FanDuel's own website** does. For DraftKings our server receives the very same push as DK's page,
+  directly from DK's socket; the only extra step is Ohio → the viewer's browser.
 * Wednesday evening was too quiet to time many moves (FanDuel's NFL lines did not move for 20+ minutes; DraftKings
   moved 26 times in the hour, 0 times during the second run). The race runs again during the live Thursday game and
   the timings will be added here.
@@ -242,15 +249,16 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
   tie, different lines = no winner, suspended excluded).
 * **Store:** emits only real changes, tracks previous price/line, removals, stale flag on and off per book.
 * **DraftKings, on real recorded payloads** (`test/fixtures/`, made by `npm run fixtures` from the capture): snapshot →
-  18 prices with mirrored spreads; recorded WebSocket frames apply with DK's publish time; a line move with a new selection
-  id applies instantly; garbage frames are ignored. Against a **fake DraftKings** (HTTP + WebSocket): skips a region
-  that answers 403, subscribes with the right payload, reconnects and re-snapshots when the socket drops, and steps aside
-  for the edge relay when every region refuses.
+  18 prices with mirrored spreads; JSON `change` frames apply with DK's publish time; a line move (`remove`+`add`) applies
+  instantly with the new line; status changes flip games live; real recorded frames for unknown games are ignored and
+  trigger a snapshot request; garbage frames are counted, never thrown. Against a **fake DraftKings** (HTTP + WebSocket): skips a region
+  that answers 403, subscribes with the right payload, reconnects and re-snapshots when the socket drops, and when every region refuses
+  the snapshot it still holds the socket and asks the edge for snapshots.
 * **FanDuel, on real recorded payloads:** props ignored, in-place line move via `handicap`, suspended runner, game turns
   live. Against a **fake FanDuel:** one request for all markets on a ~100 ms beat; 429 → backs off (honours
   `Retry-After`), shows the error, does not hammer, recovers.
 * **Black box:** the real server process against a fake FanDuel and a relay client — a FanDuel change reaches an SSE viewer
-  within one poll; a relayed DK price reaches a viewer in <150 ms; wrong relay tokens are refused; DK going quiet → DK
+  within one poll; a DK snapshot relayed from an edge fills the board and reaches viewers at once; wrong relay tokens are refused; DK going quiet → DK
   stale, FanDuel unaffected; FanDuel failing → FanDuel stale with its last prices kept; recovery on its own.
 * I checked the tests can fail: breaking the different-lines rule, the change-only emit, or the back-off each turns
   exactly the right test red.

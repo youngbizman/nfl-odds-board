@@ -39,3 +39,10 @@ to a canonical `{abbr, city, nick}` table, and a game key is `AWAY@HOME:<US-East
 site, `on.sportsbook.fanduel.ca`, with the same API shape on `sbapi.on.sportsbook.fanduel.ca/api/content-managed-page` and
 `smp.on.sportsbook.fanduel.ca/…/getMarketPrices`, region `ON`, market ids prefixed `801.` instead of `734.`. Both answer from Toronto and from AWS Ohio.
 NJ vs ON on Oct 28 19:05 ET: 174/174 prices identical. The board now uses ON to match DraftKings `CA-ON-SB`.
+
+## Two Akamai products, two answers (Oct 28 evening)
+`sportsbook-nash.draftkings.com` (REST snapshot) → 403 for datacenter IPs, every regional site. `sportsbook-ws-*.draftkings.com`
+(push socket) → accepts datacenter IPs for every region (tested from Render Ohio: us-oh, us-nj, ca-on all `subscribed` in <600 ms).
+The socket honours `format=json` (frames: `{add, change, remove} × {events, markets, selections}` + `data.metadata.publishedTime`).
+`initialData:true` still returns changes only — the socket never hands over the board, so a snapshot from an accepted IP is required.
+Consequence: hold the socket in the cloud; relay only the snapshot from the edge.
