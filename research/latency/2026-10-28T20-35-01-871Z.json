@@ -1,0 +1,113 @@
+{
+ "base": "https://nfl-odds-board-hgim.onrender.com",
+ "minutes": 15,
+ "measuredAt": "2026-10-28T20:35:01.866Z",
+ "clockOffsetMs": 78,
+ "rttMs": 43,
+ "batches": 0,
+ "bytes": 101855,
+ "changes": {
+  "draftkings": 0,
+  "fanduel": 0
+ },
+ "lineMoves": {
+  "draftkings": 0,
+  "fanduel": 0
+ },
+ "pushLagMs": {
+  "draftkings": {
+   "n": 0
+  },
+  "fanduel": {
+   "n": 0
+  }
+ },
+ "draftkingsEndToEndMs": {
+  "pregame": {
+   "n": 0
+  },
+  "live": {
+   "n": 0
+  }
+ },
+ "serverSide": {
+  "draftkings": {
+   "ingestLagPregame": {
+    "count": 0
+   },
+   "ingestLagLive": {
+    "count": 0
+   },
+   "wsMessages": 0,
+   "selectionUpdates": 0,
+   "snapshots": 0,
+   "reconnects": 0,
+   "decodeMisses": 0
+  },
+  "fanduel": {
+   "pollDuration": {
+    "count": 3,
+    "min": 17,
+    "p50": 17,
+    "p90": 196,
+    "p95": 196,
+    "max": 196,
+    "mean": 77
+   },
+   "pollInterval": {
+    "count": 2,
+    "min": 2018,
+    "p50": 2198,
+    "p90": 2198,
+    "p95": 2198,
+    "max": 2198,
+    "mean": 2108
+   },
+   "changesPerPoll": {
+    "count": 3,
+    "min": 0,
+    "p50": 0,
+    "p90": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+   },
+   "polls": 3,
+   "pollErrors": 0,
+   "snapshots": 1,
+   "lastStatus": 200,
+   "bytes": {
+    "count": 3,
+    "min": 93139,
+    "p50": 93139,
+    "p90": 93139,
+    "p95": 93139,
+    "max": 93139,
+    "mean": 93139
+   }
+  },
+  "sse": {
+   "clients": 0,
+   "batchesSent": 5,
+   "bytesSent": 0,
+   "batchSize": {
+    "count": 5,
+    "min": 0,
+    "p50": 0,
+    "p90": 174,
+    "p95": 174,
+    "max": 174,
+    "mean": 35
+   },
+   "coalesceWait": {
+    "count": 5,
+    "min": 40,
+    "p50": 41,
+    "p90": 414,
+    "p95": 414,
+    "max": 414,
+    "mean": 115
+   }
+  }
+ }
+}
