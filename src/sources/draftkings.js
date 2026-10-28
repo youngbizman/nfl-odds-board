@@ -46,21 +46,29 @@ export class DraftKingsSource {
 
   async start() {
     this.store.setSource(BOOK, { mode: 'websocket', state: 'connecting', detail: 'probing regional sites' });
-    await this.pickSite();   // also loads the first snapshot
+    const ok = await this.pickSite();   // also loads the first snapshot
+    if (!ok) {
+      // This server's IP is refused by every DK site (datacenter IPs are). Step aside: an edge worker (src/edge.js)
+      // can push DK data into /ingest/draftkings instead. Re-probe every 10 minutes in case the block lifts.
+      this.store.setSource(BOOK, { mode: 'websocket (via edge)', state: 'down', detail: 'this server\'s IP is refused by DraftKings (HTTP 403); waiting for edge worker' });
+      this.retryTimer = setTimeout(() => this.start(), 10 * 60_000);
+      return;
+    }
     this.connect();
     this.timer = setInterval(() => this.snapshot().catch((e) => this.fail('resnapshot', e)), this.resnapshotMs);
   }
 
-  stop() { this.stopped = true; clearInterval(this.timer); this.ws?.terminate(); }
+  stop() { this.stopped = true; clearInterval(this.timer); clearTimeout(this.retryTimer); this.ws?.terminate(); }
 
   /** Try each regional site until one gives us a snapshot (geo-fencing is by IP, see README). */
   async pickSite() {
     for (const c of this.candidates) {
       Object.assign(this, c);
-      try { await this.snapshot(); this.log('dk', `using site ${c.site} (${c.siteName}, ${c.wsHost})`); return; }
-      catch (e) { this.log('dk', `site ${c.site} rejected: ${e.message}`); }
+      try { await this.snapshot(); this.log('dk', `using site ${c.site} (${c.siteName}, ${c.wsHost})`); return true; }
+      catch (e) { this.log('dk', `site ${c.site} rejected: ${e.message.split('\n')[0].slice(0, 60)}`); }
     }
-    this.fail('pickSite', new Error('no DraftKings regional site accepted this server\'s IP'));
+    this.log('dk', 'no DraftKings regional site accepted this server\'s IP');
+    return false;
   }
 
   fail(where, e) {
