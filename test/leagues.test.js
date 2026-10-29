@@ -107,6 +107,38 @@ test('DraftKings start-up: one snapshot per league (in parallel) and one socket 
   } finally { dk.stop(); for (const c of wss.clients) c.terminate(); wss.close(); srv.close(); }
 });
 
+test('FanDuel polling: a live college game is polled every beat, like the NFL; FanDuel changes are counted per channel and league', async () => {
+  const pages = { nfl: FD_NFL, ncaaf: FD_NCAAF, cfl: FD_CFL }; const bodies = [];
+  const srv = http.createServer((req, res) => {
+    const page = new URL(req.url, 'http://x').searchParams.get('customPageId');
+    if (page) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(pages[page])); }
+    let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => { bodies.push({ at: Date.now(), ids: JSON.parse(b).marketIds }); res.writeHead(200, { 'content-type': 'application/json' }); res.end('[]'); });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const { store, metrics } = fresh();
+  const fd = new FanDuelSource(store, metrics, quiet, { leagues: ALL, push: false, snapshotBase: `${base}/page`, pricesUrl: `${base}/prices`, pollMs: 60, chunkSize: 5 });
+  try {
+    await fd.start();
+    const g = store.games.get('ncaaf:troy@james-madison:2026-10-29');
+    const liveIds = [...fd.marketIndex].filter(([, mi]) => mi.gameKey === g.key).map(([id]) => id);
+    assert.equal(liveIds.length, 3);
+    store.upsertGame({ key: g.key, books: { fanduel: { ...g.books.fanduel, live: true } } });
+    const from = Date.now(); await waitFor(() => metrics.fd.polls >= 8, 3000);
+    const after = bodies.filter((b) => b.at > from + 70).map((b) => b.ids);
+    const beats = Math.floor(after.length / 4);
+    assert.ok(beats >= 3, `beats ${beats}`);
+    const polledLive = after.filter((ids) => liveIds.every((id) => ids.includes(id))).length;
+    assert.ok(polledLive >= beats, `live game's markets polled every beat (${polledLive} of ${beats} beats)`);
+    // channel bookkeeping: a poll that moves a price counts as "poll" for its league; a push that moves one, as "push"
+    const moved = structuredClone(Object.values(FD_NCAAF.attachments.markets).find((m) => m.marketId === liveIds[0]));
+    const md = { marketId: moved.marketId, marketStatus: 'OPEN', runnerDetails: moved.runners.map((r) => ({ selectionId: r.selectionId, handicap: r.handicap, runnerStatus: 'ACTIVE', winRunnerOdds: { americanDisplayOdds: { americanOdds: 777 } } })) };
+    fd.applyPrices([md], Date.now() + 1000, Date.now() + 1000, true);
+    fd.applyPush({ ...md, runnerDetails: md.runnerDetails.map((r) => ({ ...r, winRunnerOdds: { americanDisplayOdds: { americanOdds: 555 } } })) }, Date.now() + 2000);
+    assert.deepEqual(metrics.fd.byLeague.ncaaf, { push: 2, poll: 2 });
+  } finally { fd.stop(); srv.close(); }
+});
+
 // ---------- black box: viewers only get the league they look at ----------
 const freePort = () => new Promise((r) => { const s = net.createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
 async function firstSnapshot(url) {

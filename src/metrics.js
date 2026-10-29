@@ -28,7 +28,8 @@ export class Metrics {
       // interleaved second poller (edge, other IP, half a beat later)
       edgePolls: 0, edgeChanges: 0, edgeStale: 0, freshInterval: new Ring(), marketsMissing: 0,
       // push (AppSync): markets received, prices they changed, and FanDuel's updatedAt → our receipt
-      pushMarkets: 0, pushChanges: 0, pushLag: new Ring(),
+      pushMarkets: 0, pushChanges: 0, pushNoChange: 0, pushLag: new Ring(),
+      pollChanges: 0, byLeague: {}, // which channel delivered each FanDuel price change first: { nfl: { push, poll }, … }
     };
     this.sse = { clients: 0, batchesSent: 0, bytesSent: 0, batchSize: new Ring(), coalesceWait: new Ring() };
     // browser-reported: push lag (server updatedAt → browser paint) and DK end-to-end (publishedTime → browser paint)

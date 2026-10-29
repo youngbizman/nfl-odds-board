@@ -56,7 +56,8 @@ export class FanDuelSource {
     this.marketIds = [];           // every game-line market (push subscribes to all of them)
     this.byLeague = new Map();     // league -> its market ids
     this.primaryIds = [];          // NFL: polled every beat
-    this.otherChunks = []; this.rot = 0; // other leagues: one chunk per beat, in turn (the push carries their changes)
+    this.otherIds = []; this.otherChunks = []; this.rot = 0; // other leagues: one chunk per beat, in turn; live games every beat
+    this.liveExtraMax = Number(opts.liveExtraMax || process.env.FD_LIVE_EXTRA || 150); // at most this many live other-league markets per beat
     this.selIndex = new Map();     // `${marketId}:${selectionId}` -> { gameKey, market, side }
     this.marketIndex = new Map();  // marketId -> { gameKey, market }
     this.stopped = false; this.lastPollAt = null; this.inFlight = false;
@@ -94,6 +95,8 @@ export class FanDuelSource {
     if (Number.isFinite(lag) && lag > -5_000 && lag < 120_000) this.metrics.fd.pushLag.push(lag); // FanDuel's stamp → our receipt
     const changes = this.applyPrices([m], now, now);
     this.metrics.fd.pushChanges += changes;
+    if (!changes) this.metrics.fd.pushNoChange++; // the push confirmed what a poll had already shown (or carried no price change)
+    const lg = leagueOf(this.marketIndex.get(m.marketId)?.gameKey); (this.metrics.fd.byLeague[lg] ||= { push: 0, poll: 0 }).push += changes;
     this.store.setSource(BOOK, { lastDataAt: now });
     return changes;
   }
@@ -171,6 +174,7 @@ export class FanDuelSource {
     this.byLeague.set(league.id, ids);
     this.primaryIds = this.byLeague.get('nfl') || [];
     const others = [...this.byLeague].filter(([id]) => id !== 'nfl').flatMap(([, x]) => x);
+    this.otherIds = others;
     this.otherChunks = others.length ? chunk(others, this.chunkSize) : [];
     this.marketIds = [...this.primaryIds, ...others];
     this.push?.setMarketIds(this.marketIds);
@@ -214,10 +218,11 @@ export class FanDuelSource {
   }
 
   /** Apply one getMarketPrices response. Returns the number of prices that changed. */
-  applyPrices(list, now = Date.now(), polledAt = now) {
+  applyPrices(list, now = Date.now(), polledAt = now, fromPoll = false) {
     let changes = 0;
     for (const m of list || []) {
       const mi = this.marketIndex.get(m.marketId); if (!mi) continue;
+      const before = changes;
       if (polledAt < (this.marketPolledAt.get(m.marketId) ?? 0)) { this.metrics.fd.edgeStale++; continue; } // older than what we show
       this.marketPolledAt.set(m.marketId, polledAt);
       const game = this.store.games.get(mi.gameKey);
@@ -230,6 +235,7 @@ export class FanDuelSource {
         if (odds == null && suspended) odds = this.store.quotes.get(`${ref.gameKey}|${ref.market}|${ref.side}|${BOOK}`)?.odds ?? null; // greyed, last known price
         if (this.store.upsertQuote({ ...ref, book: BOOK, line: mi.market === 'moneyline' ? null : rd.handicap ?? null, odds, suspended, sourceTs: null }, now)) changes++;
       }
+      if (fromPoll && changes > before) (this.metrics.fd.byLeague[leagueOf(mi.gameKey)] ||= { push: 0, poll: 0 }).poll += changes - before;
     }
     return changes;
   }
@@ -243,7 +249,10 @@ export class FanDuelSource {
     try {
       // All chunks at once; each is applied the moment it lands, so one slow chunk never holds back the others.
       // NFL every beat; the other leagues one chunk per beat, in turn
-      const parts = [...(this.primaryIds.length ? chunk(this.primaryIds, this.chunkSize) : []), ...(this.otherChunks.length ? [this.otherChunks[this.rot++ % this.otherChunks.length]] : [])];
+      // live college / CFL games are polled every beat too (in-play prices move every few seconds); the rest take turns
+      const live = this.otherIds.filter((id) => this.store.games.get(this.marketIndex.get(id)?.gameKey)?.status === 'live').slice(0, this.liveExtraMax);
+      const parts = [...(this.primaryIds.length ? chunk(this.primaryIds, this.chunkSize) : []), ...(live.length ? chunk(live, this.chunkSize) : []),
+        ...(this.otherChunks.length ? [this.otherChunks[this.rot++ % this.otherChunks.length]] : [])];
       const requested = parts.reduce((a, p) => a + p.length, 0);
       const results = await Promise.all(parts.map((ids) => this.pollChunk(ids, t0)));
       const now = Date.now();
@@ -259,11 +268,12 @@ export class FanDuelSource {
       }
       this.pollMs = Math.max(this.basePollMs, Math.round(this.pollMs * 0.7)); // recover gradually after an error
       const changes = results.reduce((a, r) => a + r.changes, 0), returned = results.reduce((a, r) => a + r.returned, 0);
+      this.metrics.fd.pollChanges += changes; this.lastLivePolled = live.length;
       this.metrics.fd.changesPerPoll.push(changes); this.markFresh(now);
       this.metrics.fd.marketsMissing = requested - returned; // FanDuel leaving markets out of an answer
       const interleave = now - this.edgeLastAt < 3 * this.pollMs;
       this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, pollMs: this.pollMs, lastPollMs: now - t0, interleave,
-        detail: `${returned}/${requested} markets in ${parts.length} parallel request${parts.length > 1 ? 's' : ''}, ${now - t0} ms, every ${this.pollMs} ms${this.otherChunks.length ? ` (other leagues: 1 of ${this.otherChunks.length} chunks per beat)` : ''}${this.push?.state === 'live' ? ' + push on all ' + this.marketIds.length : ''}` });
+        detail: `${returned}/${requested} markets in ${parts.length} parallel request${parts.length > 1 ? 's' : ''}, ${now - t0} ms, every ${this.pollMs} ms${live.length ? ` (incl. ${live.length} live college/CFL markets)` : ''}${this.otherChunks.length ? ` (other leagues: 1 of ${this.otherChunks.length} chunks per beat)` : ''}${this.push?.state === 'live' ? ' + push on all ' + this.marketIds.length : ''}` });
     } catch (e) {
       this.fail('poll', e);
     } finally { this.inFlight = false; }
@@ -275,7 +285,8 @@ export class FanDuelSource {
     const text = await r.text();
     if (r.status !== 200) return { status: r.status, bytes: text.length, retryAfterMs: Number(r.headers.get('retry-after')) * 1000 || 0, changes: 0, returned: 0 };
     const list = JSON.parse(text);
-    return { status: 200, bytes: text.length, changes: this.applyPrices(list, Date.now(), t0), returned: Array.isArray(list) ? list.length : 0 };
+    const changes = this.applyPrices(list, Date.now(), t0, true);
+    return { status: 200, bytes: text.length, changes, returned: Array.isArray(list) ? list.length : 0 };
   }
 }
 

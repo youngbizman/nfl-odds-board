@@ -152,10 +152,11 @@ and moved to the JSON form once I confirmed the server honours it: structured fr
 3. **Poll:** `POST smp.on.sportsbook.fanduel.ca/api/sports/fixedodds/readonly/v1/getMarketPrices  {marketIds:[…]}`
    → fresh prices/handicaps for those markets. FanDuel's own widgets poll this about every 5 s.
 
-My first recordings only showed the polling, so the first version polled; I found the subscription later and moved
-FanDuel to it. **Why both:** the push is the speed (a FanDuel move reaches our server as FanDuel stamps it, no
-beat to wait for); polling every **1 s** stays on as the safety net — it fills anything a push reconnect missed and
-re-confirms every price each second. Every market remembers the time of the newest answer applied to it (a push counts
+My first recordings only showed the polling, so the first version polled; I found the subscription later and added
+it. **Why both — measured, not assumed:** on Thursday afternoon (pregame) the push delivered only about **1 in 7** of
+FanDuel's price changes first; polling caught the rest (`byLeague` in `/api/metrics` counts which channel delivered
+each change first, per league). So polling is not just a safety net: it is half the feed, and it stays at **1 s** for
+every NFL market and for every *live* college or CFL game; the push adds speed wherever FanDuel fires it. Every market remembers the time of the newest answer applied to it (a push counts
 from when it arrived, a poll from when it *started*), so an older answer can never overwrite a newer one.
 **FanDuel answers at most 80 markets per request and silently drops the rest** — with 87 game-line markets, one
 request left 7 markets un-refreshed. Polling now splits them into the fewest requests of ≤ 50 (`FD_CHUNK`), sent in
@@ -200,9 +201,9 @@ one page per league and puts every market on the push. `LEAGUES=nfl,ncaaf,cfl` (
   (`CAR@GB:2026-10-29`), other leagues are prefixed (`ncaaf:troy@james-madison:2026-10-29`, `cfl:WPG@TOR:2026-10-31`),
   so stored history still matches. `/api/stream?league=`, `/api/board?league=` (or `all`) and `/api/history?league=`
   send only that league, so the NFL page is not slowed by ~1,400 college prices.
-* **Polling budget.** The NFL is polled every beat as before; the other leagues' ~360 markets take turns, one batch of
-  ≤ 50 per beat (each refreshed every ~8 s), because the push already delivers their changes as they happen. That keeps
-  FanDuel at about 3 requests a second in total.
+* **Polling budget.** The NFL and every live college or CFL game are polled every beat (1 s); the other leagues'
+  pregame markets (~360) take turns, one batch of ≤ 50 per beat, so each is re-read every ~8 s (pregame lines move
+  slowly; the push adds what it catches). That keeps FanDuel at about 3 requests a second when no college game is live.
 * **Checked live** (`tools/check-leagues.mjs`, Thu Oct 29): every college and CFL price on the board against what each
   book's own API served at that moment, matched by the book's own event id: college **DraftKings 390/390, FanDuel
   713/713** identical; CFL **12/12** and **12/12**; 0 different, 0 missing. 126 college games and 2 CFL games on the board.
@@ -360,7 +361,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 64 tests, ~12 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 65 tests, ~12 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
