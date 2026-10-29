@@ -14,6 +14,17 @@ What is on the page, beyond the board itself:
   price only where both books offer the exact same line and player (§3, "More lines").
 * **A movement chart** per game in the space beside the prices: each book's implied chance over the last 48 h (a live
   game: since kickoff). Click any price to chart it. History is one point per real change, kept in Redis across restarts.
+* **Who wins, at a glance** — the winning cell takes the winning book's colour (DraftKings purple, FanDuel teal) and
+  shows the edge in cents (`+8¢`: −192 vs −200).
+* **Hold and arbitrage** — every game shows the hold per market at the best price on each side (either book), and a
+  *Tightest markets* strip ranks the lowest holds across the board, game lines and alt lines. A negative hold means
+  backing both sides at those two prices guarantees a profit; the strip flags it as an arbitrage. Click a card to jump
+  to the game. (`bestHold()` in `src/model.js`, tested.)
+* **Star games** to pin them to the top (kept in this browser). **Compact** density roughly doubles the games per
+  screen. **Dark mode** follows the system. The status bar condenses to one line once it sticks (and on phones);
+  click it for details. Kickoff countdowns on every slot.
+* **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `c` compact · `d` dark · `s` star the focused
+  game · `Enter` chart the focused price · `?` help.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
 * **Per-book feed cards** — how the book is read (push vs poll), a freshness bar that drains as data ages, last
@@ -298,10 +309,11 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 43 tests, ~6 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 46 tests, ~6 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
-  different lines, only-available, nothing eligible).
+  different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
+  side across books, matching lines only, suspended prices never count).
 * **Store:** emits only real changes, tracks previous price/line, removals, stale flag on and off per book.
 * **Durability and timing:** a new process rebuilds the exact DraftKings board from checkpoint + frame log (line
   moves and live status included) and keeps applying pushes; DK's clock offset from the subscribe ack converts publish
