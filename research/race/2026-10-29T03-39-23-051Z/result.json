@@ -1,0 +1,68 @@
+{
+ "board": "https://nfl-odds-board-hgim.onrender.com",
+ "minutes": 1,
+ "correctnessStart": [
+  {
+   "book": "draftkings",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  },
+  {
+   "book": "fanduel",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  }
+ ],
+ "correctnessEnd": [
+  {
+   "book": "draftkings",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  },
+  {
+   "book": "fanduel",
+   "compared": 174,
+   "match": 174,
+   "mismatch": [],
+   "missingOnBoard": [],
+   "boardOnly": 0
+  }
+ ],
+ "pairs": [
+  {
+   "book": "fanduel",
+   "key": "ATL@TB:2026-11-01|moneyline|away|fanduel",
+   "odds": 118,
+   "line": null,
+   "prevOdds": 116,
+   "prevLine": null,
+   "t": 1793245214852,
+   "boardT": 1793245211852,
+   "deltaMs": -3000
+  },
+  {
+   "book": "fanduel",
+   "key": "ATL@TB:2026-11-01|moneyline|home|fanduel",
+   "odds": -138,
+   "line": null,
+   "prevOdds": -136,
+   "prevLine": null,
+   "t": 1793245214852,
+   "boardT": 1793245211852,
+   "deltaMs": -3000
+  }
+ ],
+ "siteOnly": [],
+ "boardOnly": [],
+ "dkFrames": 1,
+ "fdPolls": 36
+}
