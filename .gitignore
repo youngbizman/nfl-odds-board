@@ -11,3 +11,5 @@ start-helper.applescript
 .DS_Store
 tools/*.bak
 design/
+.venv/
+__pycache__/

@@ -85,7 +85,7 @@ function head() {
   const V = view(); const B = api.BOOK;
   const bookHead = (b) => {
     const f = api.feedState(b); const L = api.latency(b);
-    const st = f === 'live' ? (b === 'draftkings' ? `push${L.bookToScreenMs != null ? ` ${api.secs(L.bookToScreenMs)}` : ''}` : `poll ${api.secs(L.beatMs)}`) : f;
+    const st = f === 'live' ? (b === 'draftkings' || L.push ? `push${L.bookToScreenMs != null ? ` ${api.secs(L.bookToScreenMs)}` : ''}` : `poll ${api.secs(L.beatMs)}`) : f;
     return `<th colspan="3" class="g-grp g-${B[b].cls}${f !== 'live' ? ' is-down' : ''}">${B[b].label} <span class="g-st"><i></i>${esc(st)}</span></th>`;
   };
   const groups = V === 'best' ? `<th colspan="3" class="g-grp g-best">Best available</th>${bookHead('draftkings')}${bookHead('fanduel')}` : bookHead(V);
@@ -254,8 +254,10 @@ function renderGame(key) {
 function renderFeeds() {
   const rows = BOOKS.map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
-    const lat = f !== 'live' ? '—' : b === 'draftkings' ? (L.bookToScreenMs != null ? `${api.secs(L.bookToScreenMs)}${L.clockPm != null ? ` ±${L.clockPm}ms` : ''}` : 'on next move') : `≤ ${api.secs(L.maxAgeMs)}`;
-    return `<tr class="f-${f}"><th>${api.BOOK[b].label}</th><td><i class="dot"></i>${esc(f)}</td><td>${b === 'draftkings' ? 'ws push' : `poll ${api.secs(L.beatMs)}${L.interleave ? ' · 2 IPs' : ''}`}</td>
+    const lat = f !== 'live' ? '—' : b === 'draftkings' ? (L.bookToScreenMs != null ? `${api.secs(L.bookToScreenMs)}${L.clockPm != null ? ` ±${L.clockPm}ms` : ''}` : 'on next move')
+      : L.push ? (L.bookToScreenMs != null ? api.secs(L.bookToScreenMs) : 'on next move') : `≤ ${api.secs(L.maxAgeMs)}`;
+    const mode = b === 'draftkings' ? 'ws push' : `${L.push ? 'ws push + ' : ''}poll ${api.secs(L.beatMs)}${L.interleave ? ' · 2 IPs' : ''}`;
+    return `<tr class="f-${f}"><th>${api.BOOK[b].label}</th><td><i class="dot"></i>${esc(f)}</td><td>${esc(mode)}</td>
       <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td>${esc(lat)}</td><td><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
   el.feeds.innerHTML = `<table class="g-pt g-feedt"><thead><tr><th></th><th>state</th><th>mode</th><th>data</th><th>latency</th><th>fresh</th></tr></thead><tbody>${rows}

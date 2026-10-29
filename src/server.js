@@ -17,6 +17,7 @@ import { makeCheckpoint } from './checkpoint.js';
 import { ExtrasStore, KINDS } from './extras.js';
 import { DraftKingsExtras } from './sources/draftkings-extras.js';
 import { FanDuelExtras } from './sources/fanduel-extras.js';
+import { makeHttp } from './transport/http.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -39,7 +40,9 @@ const firstEdge = () => [...edges].find((ws) => ws.readyState === 1);
 // FanDuel interleave: half a beat after our own poll, ask the edge (another IP) to poll the same markets
 const askEdgeToPollFanDuel = (marketIds) => { const ws = firstEdge(); if (!ws || process.env.FD_INTERLEAVE === '0') return false; ws.send(JSON.stringify({ type: 'fd-poll', t: Date.now(), region: fd.region, marketIds })); return true; };
 const checkpoint = SOURCES.includes('draftkings') ? await makeCheckpoint(log) : null;
-const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics, log, { onNeedSnapshot: askEdgeForSnapshot, checkpoint }) : null;
+// One HTTPS client for every DraftKings snapshot (game lines + more lines): Node first, browser-compatible after a 403.
+const dkHttp = makeHttp({ log });
+const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics, log, { onNeedSnapshot: askEdgeForSnapshot, checkpoint, http: dkHttp }) : null;
 const fd = SOURCES.includes('fanduel') ? new FanDuelSource(store, metrics, log, { onMidBeat: askEdgeToPollFanDuel }) : null;
 if (dk) sources.push(dk);
 if (fd) sources.push(fd);
@@ -48,7 +51,7 @@ const extras = new ExtrasStore();
 const extraStreams = new Map(); // gameKey -> Set(res): viewers with that game's drop-down open
 const watchedGames = () => new Set([...extraStreams].filter(([, set]) => set.size).map(([k]) => k));
 const EXTRAS = process.env.EXTRAS !== '0';
-const dkx = EXTRAS && dk ? new DraftKingsExtras(extras, store, log) : null;
+const dkx = EXTRAS && dk ? new DraftKingsExtras(extras, store, log, { http: dkHttp }) : null;
 const fdx = EXTRAS && fd ? new FanDuelExtras(extras, store, log, { region: fd.region, headers: () => fd.headers(), watched: watchedGames }) : null;
 // Price history for the movement charts survives restarts in the same Redis (one JSON value, saved every minute).
 const HISTORY_KEY = 'board:history';
@@ -80,6 +83,7 @@ setInterval(() => { // live latency figures for the feed cards (ride the heartbe
   const dkLag = metrics.dk.ingestLagLive.stats().count ? metrics.dk.ingestLagLive.stats() : metrics.dk.ingestLagPregame.stats();
   store.sources.draftkings.lagP50Ms = dkLag.p50 ?? null; store.sources.draftkings.lagCount = dkLag.count;
   store.sources.fanduel.freshP50Ms = metrics.fd.freshInterval.stats().p50 ?? null;
+  const fdPush = metrics.fd.pushLag.stats(); store.sources.fanduel.pushLagP50Ms = fdPush.p50 ?? null; store.sources.fanduel.pushLagCount = fdPush.count;
 }, 5_000);
 setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps proxies from closing idle streams
   const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources })}\n\n`;
@@ -154,6 +158,7 @@ app.get('/api/history', (req, res) => {
   res.type('application/json').send(histCache.body);
 });
 app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS,
+  transport: { draftkings: dkHttp.stats, fanduelPush: fd?.push ? { state: fd.push.state, ...fd.push.counts, subscribed: fd.push.subscribedCount() } : null }, edgeConnected: edges.size > 0, edgeIgnored,
   extras: { rows: extras.rows.size, status: extras.status, draftkings: dkx?.counts, fanduel: fdx?.counts, watched: [...watchedGames()] } }));
 // Liveness for the host (never fails because a BOOK is down — restarting us would not fix DraftKings).
 app.get('/healthz', (req, res) => res.json({ ok: true, version: VERSION, games: store.games.size, quotes: store.quotes.size, clients: clients.size }));
@@ -162,7 +167,7 @@ app.get('/api/health', (req, res) => {
   const now = Date.now();
   const books = Object.fromEntries(BOOKS.map((b) => {
     const s = store.sources[b];
-    return [b, { state: s.state, mode: s.mode, region: s.region, stale: s.stale, dataAgeMs: s.lastDataAt ? now - s.lastDataAt : null, snapshotAgeMs: s.lastSnapshotAt ? now - s.lastSnapshotAt : null, snapshotVia: s.snapshotVia, quotes: [...store.quotes.values()].filter((q) => q.book === b).length, lastError: s.lastError }];
+    return [b, { state: s.state, mode: s.mode, region: s.region, transport: s.transport, push: s.push, stale: s.stale, dataAgeMs: s.lastDataAt ? now - s.lastDataAt : null, snapshotAgeMs: s.lastSnapshotAt ? now - s.lastSnapshotAt : null, snapshotVia: s.snapshotVia, quotes: [...store.quotes.values()].filter((q) => q.book === b).length, lastError: s.lastError }];
   }));
   const ok = store.games.size > 0 && BOOKS.every((b) => !books[b].stale && books[b].quotes > 0);
   res.status(ok ? 200 : 503).json({ ok, version: VERSION, games: store.games.size, books, clients: clients.size });
@@ -188,11 +193,15 @@ app.post('/api/report', (req, res) => {
 // ---------- DraftKings snapshot relay (edge machine → here, see src/edge.js) ----------
 // The cloud holds DK's socket itself; what it cannot fetch is the REST snapshot (403 for datacenter IPs).
 // An edge machine on an accepted IP sends the raw snapshot JSON every 30 s and whenever we ask.
-let lastEdgeAt = 0;
+let lastEdgeAt = 0, edgeIgnored = 0;
+// The edge is a fallback: while this server fetches its own snapshots, an edge snapshot is counted and dropped, so
+// "the cloud runs on its own" stays true and checkable (edgeIgnored in /api/metrics).
+const ownSnapshotsWork = () => dk && !dk.restBlocked && store.sources.draftkings.snapshotVia === 'direct' && Date.now() - (store.sources.draftkings.lastSnapshotAt || 0) < 3 * dk.resnapshotMs;
 function ingestSnapshot(body, now = Date.now()) {
   if (!dk) return { error: 'draftkings source disabled' };
   const { snapshot, edgeTs, rttMs } = body || {};
   if (!snapshot?.events) return { error: 'no snapshot' };
+  if (ownSnapshotsWork()) { edgeIgnored++; return { ignored: 'this server fetches its own snapshots' }; }
   lastEdgeAt = now; metrics.dk.relayMessages++;
   if (Number.isFinite(rttMs)) metrics.dk.relayRtt.push(rttMs);
   const n = dk.applySnapshot(snapshot, now, 'edge');
@@ -244,7 +253,7 @@ relay.on('connection', (ws, req) => {
     let msg; try { msg = JSON.parse(data); } catch { return; }
     if (msg.type === 'ping') return ws.send(JSON.stringify({ type: 'pong', t: msg.t }));
     if (msg.type === 'snapshot') ingestSnapshot(msg);
-    if (msg.type === 'dk-extras' && dkx && msg.data) dkx.applySnapshot(String(msg.sub), msg.data, Date.now(), 'edge');
+    if (msg.type === 'dk-extras' && dkx && msg.data) { if (dkx.restBlocked) dkx.applySnapshot(String(msg.sub), msg.data, Date.now(), 'edge'); else edgeIgnored++; }
     if (msg.type === 'fd-prices' && fd && Array.isArray(msg.markets)) {
       // the edge started its request ~RTT/2 after we sent the trigger
       const rtt = Number.isFinite(msg.rttMs) ? msg.rttMs : 0;
@@ -256,5 +265,5 @@ relay.on('connection', (ws, req) => {
 
 for (const s of sources) s.start().catch((e) => log('src', 'start failed', e));
 for (const x of [dkx, fdx]) x?.start().catch((e) => log('extras', 'start failed', e));
-const shutdown = async () => { for (const s of sources) s.stop(); dkx?.stop(); fdx?.stop(); await dk?.saveCheckpoint(); await saveHistory(); await checkpoint?.close(); server.close(); process.exit(0); };
+const shutdown = async () => { for (const s of sources) s.stop(); dkx?.stop(); fdx?.stop(); dkHttp.stop(); await dk?.saveCheckpoint(); await saveHistory(); await checkpoint?.close(); server.close(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

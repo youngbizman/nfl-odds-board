@@ -19,7 +19,7 @@ import WebSocket from 'ws';
 import { BoardStore } from './store.js';
 import { Metrics } from './metrics.js';
 import { DraftKingsSource } from './sources/draftkings.js';
-import { FanDuelSource, fanduelEndpoints } from './sources/fanduel.js';
+import { FanDuelSource, fanduelEndpoints, chunk } from './sources/fanduel.js';
 import { DK_SUBCATS, slimDk } from './extras.js';
 import { dkExtrasUrl, DK_HEADERS } from './sources/draftkings-extras.js';
 
@@ -29,7 +29,7 @@ const EVERY = Number(process.env.EDGE_SNAPSHOT_MS || 30_000);
 if (!CLOUD || !TOKEN) { console.error('CLOUD_URL and INGEST_TOKEN are required'); process.exit(1); }
 
 const log = (tag, ...a) => console.log(new Date().toISOString(), `[edge:${tag}]`, ...a);
-const dk = new DraftKingsSource(new BoardStore(), new Metrics(), log); // used only for fetchSnapshot() + site probing
+const dk = new DraftKingsSource(new BoardStore(), new Metrics(), log); // used only for fetchSnapshot() + site probing (Node, or browser-compatible after a 403)
 
 let ws = null, backoff = 500, rttMs = null, sent = 0, failed = 0, lastOkAt = 0, inFlight = false, site = null;
 
@@ -43,11 +43,15 @@ async function pollFanDuel(msg) {
   try {
     const region = String(msg.region || 'ON').toUpperCase();
     if (!fdHeaders.has(region)) fdHeaders.set(region, new FanDuelSource(new BoardStore(), new Metrics(), () => {}, { region }).headers());
-    const r = await fetch(`${fanduelEndpoints(region).prices}?priceHistory=0`, { method: 'POST', headers: { ...fdHeaders.get(region), 'content-type': 'application/json' }, body: JSON.stringify({ marketIds: msg.marketIds }), signal: AbortSignal.timeout(2500) });
+    // same split as the cloud: FanDuel answers at most 80 markets per request, so ≤50 per request, all in parallel
+    const answers = await Promise.all(chunk(msg.marketIds, 50).map(async (marketIds) => {
+      const r = await fetch(`${fanduelEndpoints(region).prices}?priceHistory=0`, { method: 'POST', headers: { ...fdHeaders.get(region), 'content-type': 'application/json' }, body: JSON.stringify({ marketIds }), signal: AbortSignal.timeout(2500) });
+      if (r.status !== 200) { if (r.status === 429 || r.status === 403) fdPausedUntil = Date.now() + 60_000; throw new Error(`HTTP ${r.status}`); }
+      return r.json();
+    })).catch((e) => { fdErrors++; throw e; });
     fdPolls++;
-    if (r.status !== 200) { fdErrors++; if (r.status === 429 || r.status === 403) fdPausedUntil = Date.now() + 60_000; throw new Error(`HTTP ${r.status}`); }
     const changed = [];
-    for (const m of await r.json()) { const j = JSON.stringify(m.runnerDetails); if (lastMarket.get(m.marketId) !== j) { lastMarket.set(m.marketId, j); changed.push(m); } }
+    for (const m of answers.flat()) { const j = JSON.stringify([m.marketStatus, m.runnerDetails]); if (lastMarket.get(m.marketId) !== j) { lastMarket.set(m.marketId, j); changed.push(m); } }
     if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'fd-prices', t: msg.t, rttMs, markets: changed })); fdSent += changed.length; }
   } catch (e) { if (fdErrors % 20 === 1) log('fd', `interleave poll failed: ${e.message}`); }
   finally { fdBusy = false; }
@@ -80,9 +84,7 @@ let xi = 0, xSent = 0, xFailed = 0, xBytes = 0;
 async function sendExtras(sub = SUBS[xi++ % SUBS.length]) {
   if (!site || ws?.readyState !== WebSocket.OPEN || process.env.EXTRAS === '0') return;
   try {
-    const r = await fetch(dkExtrasUrl(dk.nashBase, site, sub), { headers: DK_HEADERS, signal: AbortSignal.timeout(20_000) });
-    if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
-    const body = JSON.stringify({ type: 'dk-extras', sub, data: slimDk(await r.json()) });
+    const body = JSON.stringify({ type: 'dk-extras', sub, data: slimDk(await dk.http.getJson(dkExtrasUrl(dk.nashBase, site, sub), DK_HEADERS, 20_000)) });
     if (ws?.readyState === WebSocket.OPEN) { ws.send(body); xSent++; xBytes += body.length; }
   } catch (e) { xFailed++; if (xFailed % 10 === 1) log('extras', `subcategory ${sub}: ${e.message}`); }
 }

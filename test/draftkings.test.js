@@ -4,6 +4,7 @@ import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import { DraftKingsSource, familyOf, lineFromId, regionLabel } from '../src/sources/draftkings.js';
 import { fixture, fresh, quiet, waitFor, quotesOf } from './helpers.js';
+import { makeHttp } from '../src/transport/http.js';
 
 const SNAP = fixture('dk-snapshot.json');
 const REAL_FRAMES = fixture('dk-json-frames.json'); // real JSON frames recorded from DK's socket (other games)
@@ -18,7 +19,7 @@ const frame = ({ add = {}, change = {}, remove = {} }, publishedTime = '2026-10-
 
 function source(opts = {}) {
   const { store, metrics } = fresh();
-  return { store, metrics, dk: new DraftKingsSource(store, metrics, quiet, { candidates: [{ site: 'CA-ON-SB', siteName: 'dkcaon', wsHost: 'x' }], ...opts }) };
+  return { store, metrics, dk: new DraftKingsSource(store, metrics, quiet, { candidates: [{ site: 'CA-ON-SB', siteName: 'dkcaon', wsHost: 'x' }], http: makeHttp({ mode: 'native' }), ...opts }) };
 }
 
 test('selection ids: family survives a line move, line is read from the id, region label from the site', () => {

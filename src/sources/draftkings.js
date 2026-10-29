@@ -7,10 +7,11 @@
 //      JSON-RPC "subscribe" with the same filters, initialData:false → the server pushes only CHANGES:
 //      { add, change, remove } × { events, markets, selections }, each frame stamped with DK's own publishedTime.
 //
-// Two different Akamai products sit in front of those hosts. The snapshot host refuses datacenter IPs (403);
-// the socket host accepts them, for every region. So on a cloud server this worker holds the socket itself and
-// takes its snapshots from an edge machine DK accepts (src/edge.js → /ingest/dk-snapshot). On a residential IP it
-// does both itself. The socket is not geo-fenced: the region only selects which site's prices you subscribe to.
+// Two different Akamai products sit in front of those hosts. The socket host accepts cloud IPs. The snapshot host
+// refuses Node's own HTTPS client from cloud IPs (403) but accepts a client with a browser's TLS/HTTP2 handshake,
+// so snapshots go through src/transport/http.js: Node first, the browser-compatible client after the first 403.
+// That makes the cloud server self-sufficient. An edge machine (src/edge.js → /ingest/dk-snapshot) is only a
+// fallback if both clients are refused. The socket is not geo-fenced: the region only selects which site's prices.
 //
 // Line moves: DK encodes the line in the selection id ("0HC84695615P350_3" = spread +3.5, away). A move arrives as
 // remove(old id) + add(new id, with marketId and points) and is applied immediately. If a change names an id we
@@ -18,6 +19,7 @@
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
 import { resolveTeam, gameKey, parseAmerican } from '../model.js';
+import { makeHttp } from '../transport/http.js';
 
 const BOOK = 'draftkings';
 const LEAGUE = '88808';          // NFL
@@ -37,7 +39,8 @@ export class DraftKingsSource {
     Object.assign(this, this.candidates[0]);
     this.nashBase = opts.nashBase || process.env.DK_NASH_BASE || 'https://sportsbook-nash.draftkings.com';
     this.wsUrlOverride = opts.wsUrl || process.env.DK_WS_URL || null;
-    this.resnapshotMs = Number(opts.resnapshotMs || process.env.DK_RESNAPSHOT_MS || 60_000);
+    this.resnapshotMs = Number(opts.resnapshotMs || process.env.DK_RESNAPSHOT_MS || 30_000); // a reconciliation check; the socket carries every change
+    this.http = opts.http || makeHttp({ log });
     this.pingMs = Number(opts.pingMs || 30_000);
     this.selIndex = new Map();    // DK selection id -> { gameKey, market, side }
     this.familyIndex = new Map(); // "HC84695615_3" -> { gameKey, market, side } (survives line moves)
@@ -65,8 +68,8 @@ export class DraftKingsSource {
       this.restBlocked = true;
       Object.assign(this, this.candidates[0]); // subscribe to the preferred site anyway: the socket is open to everyone
       const restored = this.store.sources[BOOK]?.snapshotVia === 'checkpoint';
-      this.store.setSource(BOOK, { mode: 'websocket', region: regionLabel(this.site), ...(restored ? {} : { snapshotVia: 'edge' }), detail: `snapshot host refuses this IP; socket direct, ${restored ? 'board restored from checkpoint, ' : ''}snapshots from edge` });
-      this.log('dk', `snapshot host refuses this IP → socket direct (${this.wsHost}), waiting for a snapshot from the edge`);
+      this.store.setSource(BOOK, { mode: 'websocket', region: regionLabel(this.site), ...(restored ? {} : { snapshotVia: 'edge' }), detail: `snapshot host refuses this server; socket direct, ${restored ? 'board restored from checkpoint, ' : ''}snapshots from edge` });
+      this.log('dk', `snapshot host refuses this server → socket direct (${this.wsHost}), waiting for a snapshot from the edge`);
     } else this.store.setSource(BOOK, { snapshotVia: 'direct' });
     this.connect();
     this.timer = setInterval(() => this.refreshSnapshot('periodic'), this.resnapshotMs);
@@ -144,18 +147,15 @@ export class DraftKingsSource {
   }
 
   /** Raw snapshot JSON from DK (used directly, and by the edge to relay). */
-  async fetchSnapshot() {
-    const r = await fetch(this.snapshotUrl(), { headers: this.headers(), signal: AbortSignal.timeout(15_000) });
-    if (r.status !== 200) throw new Error(`HTTP ${r.status} ${(await r.text()).slice(0, 120)}`);
-    return r.json();
-  }
+  fetchSnapshot() { return this.http.getJson(this.snapshotUrl(), this.headers(), 15_000); }
 
   async snapshot() {
     const t0 = Date.now();
     const data = await this.fetchSnapshot();
     const now = Date.now();
     this.applySnapshot(data, now, 'direct');
-    this.store.setSource(BOOK, { lastError: null, detail: `${data.events?.length ?? 0} games, ${data.selections?.length ?? 0} prices, snapshot ${now - t0} ms` });
+    this.metrics.dk.snapshotMs.push(now - t0);
+    this.store.setSource(BOOK, { lastError: null, transport: this.http.transport, snapshotMs: now - t0, detail: `${data.events?.length ?? 0} games, ${data.selections?.length ?? 0} prices, snapshot ${now - t0} ms (${this.http.transport} client)` });
   }
 
   /** Get a fresh snapshot the way this machine can: fetch it, or ask the edge for one. */
@@ -163,6 +163,11 @@ export class DraftKingsSource {
     if (this.stopped) return;
     if (!this.restBlocked) return this.snapshot().catch((e) => this.fail(`resnapshot (${why})`, e));
     if (this.onNeedSnapshot) this.onNeedSnapshot(why);
+    // refused earlier: try ourselves again every 5 minutes, so the edge stays a fallback, never a dependency
+    if (Date.now() - (this.lastDirectTry || 0) > 300_000) {
+      this.lastDirectTry = Date.now();
+      this.snapshot().then(() => { this.restBlocked = false; this.store.setSource(BOOK, { snapshotVia: 'direct' }); this.log('dk', 'snapshot host accepts us again → fetching snapshots directly'); }).catch(() => {});
+    }
   }
 
   applySnapshot(data, now = Date.now(), via = 'direct') {

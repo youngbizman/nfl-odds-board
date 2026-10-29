@@ -3,14 +3,17 @@
 // How the FD website gets odds (found with tools/capture-network.mjs, see research/findings.md):
 //   1. ONE big snapshot:  GET api.sportsbook.fanduel.com/sbapi/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=...
 //      → attachments.events / attachments.markets (with runners = sides, handicap = line, americanOdds).  ~1.5 MB.
-//   2. Then it POLLS:     POST smp.<region>.sportsbook.fanduel.com/api/sports/fixedodds/readonly/v1/getMarketPrices
+//   2. It POLLS:          POST smp.<region>.sportsbook.fanduel.com/api/sports/fixedodds/readonly/v1/getMarketPrices
 //      body { marketIds: [...] } → fresh prices for those markets. The site does this about every 5 s per widget.
-//      There is no WebSocket and no server-sent events on the page: FanDuel is a "full picture every time" feed,
-//      so the freshest we can be is (poll interval + request time).
+//   3. And it SUBSCRIBES: AppSync GraphQL over WebSocket, onUpdateMarketPrice(ids) → one market's new prices the
+//      moment FanDuel changes them (src/sources/fanduel-push.js).
 //
-// We poll ALL game-line markets in ONE request on a fixed beat (start-to-start, default 1 s), reuse the HTTP
-// connection, and back off automatically (×2, honouring Retry-After, max 30 s) if FanDuel answers 429/403/5xx.
+// We use both: the push for speed, polling as the safety net (it fills whatever a reconnect missed). Polling asks for
+// every game-line market on a fixed beat (start-to-start), split into parallel requests of at most 50 markets
+// (FanDuel answers at most 80 markets per request and silently drops the rest), reuses the HTTP connection, and
+// backs off automatically (×2, honouring Retry-After, max 30 s) if FanDuel answers 429/403/5xx.
 import { resolveTeam, gameKey, parseAmerican } from '../model.js';
+import { FanDuelPush } from './fanduel-push.js';
 
 const BOOK = 'fanduel';
 const APP_KEY = 'FhMFpcPWXMeyZxOx'; // public key embedded in the FanDuel web app
@@ -39,6 +42,12 @@ export class FanDuelSource {
     this.snapshotUrl = opts.snapshotUrl || process.env.FD_SNAPSHOT_URL ||
       `${this.ep.snapshot}?page=CUSTOM&customPageId=nfl&pbHorizontal=false&_ak=${APP_KEY}&timezone=${this.ep.tz}`;
     this.pricesUrl = opts.pricesUrl || process.env.FD_PRICES_URL || `${this.ep.prices}?priceHistory=0`;
+    this.chunkSize = Number(opts.chunkSize || process.env.FD_CHUNK || 50); // markets per request (FanDuel caps one answer at 80)
+    this.pushEnabled = opts.push ?? process.env.FD_PUSH !== '0';
+    // tests and local demos point the push at a fake AppSync (FD_PUSH_URL); normally the settings are read from FanDuel's app
+    const fakePush = process.env.FD_PUSH_URL;
+    this.pushOpts = opts.pushOpts || (fakePush ? { url: fakePush, getConfig: async () => ({ clientId: process.env.FD_PUSH_CLIENT_ID || 'local', endpoint: 'https://pir.on.sportsbook.fanduel.ca/graphql', wssUrl: fakePush }) } : {});
+    this.push = null;
     this.marketIds = [];           // game-line markets we poll
     this.selIndex = new Map();     // `${marketId}:${selectionId}` -> { gameKey, market, side }
     this.marketIndex = new Map();  // marketId -> { gameKey, market }
@@ -58,17 +67,40 @@ export class FanDuelSource {
   async start() {
     this.store.setSource(BOOK, { mode: 'poll', state: 'connecting', region: this.ep.label, pollMs: this.pollMs, detail: `region ${this.region}, poll every ${this.pollMs} ms` });
     await this.snapshot().catch((e) => this.fail('snapshot', e));
+    if (this.pushEnabled && !this.stopped) {
+      this.push = new FanDuelPush({ region: this.region, log: this.log, onMarket: (m, now) => this.applyPush(m, now), onState: (st) => this.onPushState(st), ...this.pushOpts });
+      this.push.setMarketIds(this.marketIds);
+      this.push.start();
+    }
     this.snapTimer = setInterval(() => this.snapshot().catch((e) => this.fail('resnapshot', e)), this.resnapshotMs);
     this.loop();
   }
 
-  stop() { this.stopped = true; clearInterval(this.snapTimer); clearTimeout(this.pollTimer); clearTimeout(this.midTimer); }
+  stop() { this.stopped = true; clearInterval(this.snapTimer); clearTimeout(this.pollTimer); clearTimeout(this.midTimer); this.push?.stop(); }
+
+  // ---------- push (AppSync) ----------
+  /** One pushed market. Its receive time is its "polled at": a poll that started earlier can no longer overwrite it. */
+  applyPush(m, now = Date.now()) {
+    this.metrics.fd.pushMarkets++;
+    const lag = now - Date.parse(m.updatedAt || '');
+    if (Number.isFinite(lag) && lag > -5_000 && lag < 120_000) this.metrics.fd.pushLag.push(lag); // FanDuel's stamp → our receipt
+    const changes = this.applyPrices([m], now, now);
+    this.metrics.fd.pushChanges += changes;
+    this.store.setSource(BOOK, { lastDataAt: now });
+    return changes;
+  }
+
+  onPushState({ state, detail, subscribed }) {
+    this.store.setSource(BOOK, { push: state, pushDetail: detail, pushMarkets: subscribed, mode: state === 'live' ? 'push+poll' : 'poll' });
+    if (state === 'live') this.log('fd', `push live (${subscribed} markets); polling every ${this.pollMs} ms stays on as the safety net`);
+  }
 
   fail(where, e) {
     const msg = `${where}: ${e?.message || e}`;
     this.log('fd', msg);
     this.metrics.fd.pollErrors++;
-    this.store.setSource(BOOK, { lastError: msg, state: 'down', pollMs: this.pollMs });
+    // polling broke but the push is still delivering: not down, just without its safety net
+    this.store.setSource(BOOK, { lastError: msg, state: this.push?.state === 'live' ? 'push' : 'down', pollMs: this.pollMs });
   }
 
   // ---------- 1) snapshot ----------
@@ -119,6 +151,7 @@ export class FanDuelSource {
       if (q.book === BOOK && !seen.has(`${q.gameKey}|${q.market}|${q.side}`)) this.store.removeQuotes(BOOK, q.gameKey, q.market);
     }
     this.marketIds = ids;
+    this.push?.setMarketIds(ids);
     return { games: gameByEvent.size, markets: ids.length };
   }
 
@@ -166,10 +199,13 @@ export class FanDuelSource {
       this.marketPolledAt.set(m.marketId, polledAt);
       const game = this.store.games.get(mi.gameKey);
       if (game && !!m.inplay !== !!game.books[BOOK]?.live) this.store.upsertGame({ key: mi.gameKey, books: { [BOOK]: { ...game.books[BOOK], live: !!m.inplay } } });
+      const marketClosed = !!m.marketStatus && m.marketStatus !== 'OPEN'; // SUSPENDED / CLOSED: nothing in it can be bet
       for (const rd of m.runnerDetails || []) {
         const ref = this.selIndex.get(`${m.marketId}:${rd.selectionId}`); if (!ref) continue;
-        if (this.store.upsertQuote({ ...ref, book: BOOK, line: mi.market === 'moneyline' ? null : rd.handicap ?? null,
-          odds: parseAmerican(rd.winRunnerOdds?.americanDisplayOdds?.americanOdds), suspended: !!rd.runnerStatus && rd.runnerStatus !== 'ACTIVE', sourceTs: null }, now)) changes++;
+        const suspended = marketClosed || (!!rd.runnerStatus && rd.runnerStatus !== 'ACTIVE');
+        let odds = parseAmerican(rd.winRunnerOdds?.americanDisplayOdds?.americanOdds);
+        if (odds == null && suspended) odds = this.store.quotes.get(`${ref.gameKey}|${ref.market}|${ref.side}|${BOOK}`)?.odds ?? null; // greyed, last known price
+        if (this.store.upsertQuote({ ...ref, book: BOOK, line: mi.market === 'moneyline' ? null : rd.handicap ?? null, odds, suspended, sourceTs: null }, now)) changes++;
       }
     }
     return changes;
@@ -182,27 +218,45 @@ export class FanDuelSource {
     if (this.lastPollAt) this.metrics.fd.pollInterval.push(t0 - this.lastPollAt);
     this.lastPollAt = t0;
     try {
-      const r = await fetch(this.pricesUrl, { method: 'POST', headers: { ...this.headers(), 'content-type': 'application/json' },
-        body: JSON.stringify({ marketIds: this.marketIds }), signal: AbortSignal.timeout(Math.max(3000, this.pollMs * 3)) });
-      this.metrics.fd.lastStatus = r.status;
-      const text = await r.text();
+      // All chunks at once; each is applied the moment it lands, so one slow chunk never holds back the others.
+      const parts = chunk(this.marketIds, this.chunkSize);
+      const results = await Promise.all(parts.map((ids) => this.pollChunk(ids, t0)));
       const now = Date.now();
-      this.metrics.fd.pollDuration.push(now - t0); this.metrics.fd.bytes.push(text.length); this.metrics.fd.polls++;
-      if (r.status !== 200) {
+      this.metrics.fd.pollDuration.push(now - t0); this.metrics.fd.polls++;
+      this.metrics.fd.bytes.push(results.reduce((a, r) => a + r.bytes, 0));
+      const bad = results.find((r) => r.status !== 200);
+      this.metrics.fd.lastStatus = bad ? bad.status : 200;
+      if (bad) {
         // Rate-limited, blocked or broken: slow down instead of hammering. Honour Retry-After if FanDuel sends it.
-        const retryAfter = Number(r.headers.get('retry-after')) * 1000;
-        this.pollMs = Math.min(Math.max(this.pollMs * 2, retryAfter || 0), this.maxPollMs);
-        if (r.status === 429 || r.status === 403) this.metrics.fd.rateLimited++;
-        throw new Error(`HTTP ${r.status} → polling every ${this.pollMs} ms`);
+        this.pollMs = Math.min(Math.max(this.pollMs * 2, bad.retryAfterMs || 0), this.maxPollMs);
+        if (bad.status === 429 || bad.status === 403) this.metrics.fd.rateLimited++;
+        throw new Error(`HTTP ${bad.status} → polling every ${this.pollMs} ms`);
       }
       this.pollMs = Math.max(this.basePollMs, Math.round(this.pollMs * 0.7)); // recover gradually after an error
-      const changes = this.applyPrices(JSON.parse(text), now, t0);
+      const changes = results.reduce((a, r) => a + r.changes, 0), returned = results.reduce((a, r) => a + r.returned, 0);
       this.metrics.fd.changesPerPoll.push(changes); this.markFresh(now);
+      this.metrics.fd.marketsMissing = this.marketIds.length - returned; // FanDuel leaving markets out of an answer
       const interleave = now - this.edgeLastAt < 3 * this.pollMs;
       this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, pollMs: this.pollMs, lastPollMs: now - t0, interleave,
-        detail: `${this.marketIds.length} markets/poll, ${now - t0} ms, every ${this.pollMs} ms` });
+        detail: `${returned}/${this.marketIds.length} markets in ${parts.length} parallel request${parts.length > 1 ? 's' : ''}, ${now - t0} ms, every ${this.pollMs} ms${this.push?.state === 'live' ? ' + push' : ''}` });
     } catch (e) {
       this.fail('poll', e);
     } finally { this.inFlight = false; }
   }
+
+  async pollChunk(ids, t0) {
+    const r = await fetch(this.pricesUrl, { method: 'POST', headers: { ...this.headers(), 'content-type': 'application/json' },
+      body: JSON.stringify({ marketIds: ids }), signal: AbortSignal.timeout(Math.max(3000, this.pollMs * 3)) });
+    const text = await r.text();
+    if (r.status !== 200) return { status: r.status, bytes: text.length, retryAfterMs: Number(r.headers.get('retry-after')) * 1000 || 0, changes: 0, returned: 0 };
+    const list = JSON.parse(text);
+    return { status: 200, bytes: text.length, changes: this.applyPrices(list, Date.now(), t0), returned: Array.isArray(list) ? list.length : 0 };
+  }
+}
+
+/** Split into the fewest requests of at most `size`, evenly (87 → 44 + 43, not 50 + 37). */
+export function chunk(list, size) {
+  const n = Math.max(1, Math.ceil(list.length / size)), per = Math.ceil(list.length / n), out = [];
+  for (let i = 0; i < list.length; i += per) out.push(list.slice(i, i + per));
+  return out;
 }

@@ -27,8 +27,8 @@ What is on the page, beyond the board itself:
   game · `Enter` chart the focused price · `?` help.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
-* **Per-book feed cards** — how the book is read (push vs poll), a freshness bar that drains as data ages, last
-  data / last move, and the latency *this browser* measured (DraftKings book→screen; FanDuel worst-case age).
+* **Per-book feed cards** — how the book is read (push, poll, or both), a freshness bar that drains as data ages, last
+  data / last move, and the latency *this browser* measured (book→screen for both books: each book stamps its pushes).
 * **Stale handling** — a book that stops answering turns red, its prices grey out, a banner says so; the other book
   keeps moving. Lost server connection → "reconnecting" banner, then a fresh snapshot. A stream that dies *silently*
   (the connection stays open but nothing arrives — seen on a home network where HTTP/3 kept timing out) is caught too:
@@ -60,13 +60,15 @@ npm ci
 npm start            # http://localhost:3000
 ```
 Node ≥ 20, no database, no keys. Settings are environment variables (see `.env.example`); defaults work from a
-residential IP in Ontario (DraftKings Ontario site) and anywhere for FanDuel.
+residential IP in Ontario (DraftKings Ontario site) and anywhere for FanDuel. On a cloud server DraftKings' snapshot
+host refuses Node's HTTPS client; `INSTALL_CURL_TRANSPORT=1 npm ci` (automatic on Render) adds a small Python venv with
+`curl_cffi`, which the server switches to by itself after the first 403 (§6).
 
 Useful endpoints: `/api/board` (full JSON snapshot) · `/api/stream` (SSE) · `/api/metrics` (latency counters) ·
 `/api/diag/draftkings` (what DK says to *this* server's IP) · `/healthz`.
 
-If DraftKings refuses your server's IP (it refuses datacenter IPs, see §6), run the DK collector from a machine DK accepts
-and point it at the server:
+Optional fallback, only needed if DraftKings ever refuses both clients: run the snapshot provider from a machine DK
+accepts and point it at the server (the server ignores it while its own snapshots work):
 ```bash
 CLOUD_URL=https://your-server INGEST_TOKEN=<same value as on the server> npm run edge
 ```
@@ -80,8 +82,8 @@ flowchart LR
     FD[(FanDuel)]
   end
   subgraph ingestion["one worker per book"]
-    DKW["DraftKings worker<br/>snapshot (REST) + deltas (WebSocket, JSON)"]
-    FDW["FanDuel worker<br/>snapshot (REST) + poll getMarketPrices every 1 s<br/>(+ edge polls half a beat later → 0.5 s)"]
+    DKW["DraftKings worker<br/>snapshot (REST, browser-compatible client) + deltas (WebSocket, JSON)"]
+    FDW["FanDuel worker<br/>push (AppSync WebSocket) + poll getMarketPrices every 1 s<br/>(≤ 50 markets per request, in parallel)"]
   end
   STORE["BoardStore (in memory)<br/>games · quotes · per-book status<br/>emits only real changes"]
   REDIS[("Redis<br/>dk:state checkpoint<br/>dk:frames stream")]
@@ -91,17 +93,19 @@ flowchart LR
   B2[browser]:::b
   B3[browser …]:::b
   DK -- "wss (push)" --> DKW
-  FD -- "https (pull)" --> FDW
+  FD -- "wss (push) + https (pull)" --> FDW
   DKW --> STORE
   FDW --> STORE
   STORE --> SSE
   SSE --> B1 & B2 & B3
-  EDGE["edge (src/edge.js), another IP<br/>DK REST snapshot every 30 s + on request<br/>FanDuel poll half a beat after ours"] -. "DK snapshot (only because the REST host refuses cloud IPs)" .-> DKW
+  EDGE["optional edge (src/edge.js), another IP<br/>fallback DK snapshots · FanDuel poll half a beat after ours"] -. "only if DK refuses the cloud" .-> DKW
   EDGE -. "FanDuel markets that changed" .-> FDW
   classDef b fill:#223,stroke:#669
 ```
 
-* `src/sources/draftkings.js`, `src/sources/fanduel.js` — one ingestion process per book, never per viewer.
+* `src/sources/draftkings.js`, `src/sources/fanduel.js` (+ `fanduel-push.js`) — one ingestion per book, never per viewer.
+* `src/transport/` — HTTPS for DraftKings' snapshot host: Node first, then one long-lived browser-compatible worker
+  (`curl_worker.py`, curl_cffi with Chrome's TLS/HTTP2 handshake) after the first 403.
 * `src/store.js` — the single normalized board. `upsertQuote` only emits when price/line actually changed, so idle
   polls cost nothing downstream.
 * `src/server.js` — static UI, `/api/board` snapshot, `/api/stream` SSE, metrics, edge ingestion.
@@ -134,28 +138,29 @@ WebSocket frame (`npm run capture -- <url> <dir> <seconds>`). The two books are 
 which makes true end-to-end latency measurable. I started with the msgpack frames (positional arrays decoded by shape)
 and moved to the JSON form once I confirmed the server honours it: structured frames, no guessing.
 
-### FanDuel — snapshot + polling (pull)
+### FanDuel — snapshot + push (AppSync), with polling as the safety net
 1. `GET sbapi.on.sportsbook.fanduel.ca/api/content-managed-page?page=CUSTOM&customPageId=nfl&_ak=<public app key>`
    with `x-sportsbook-region: ON` → ≈ 1.5 MB (includes futures and props I ignore). That is the whole page model.
-2. `POST smp.on.sportsbook.fanduel.ca/api/sports/fixedodds/readonly/v1/getMarketPrices  {marketIds:[…]}`
-   → fresh prices/handicaps for those markets. **There is no WebSocket and no SSE on the FanDuel page** — its own
-   widgets poll this endpoint about every 5 s.
+2. **Push:** `wss://pir.on.sportsbook.fanduel.ca/graphql/realtime` — AWS AppSync, GraphQL subscription
+   `onUpdateMarketPrice(ids)`. Each message is one market's full price picture (runners, handicaps, odds, status) the
+   moment FanDuel changes it, stamped with FanDuel's `updatedAt`. The connection is authorised with the web app's
+   public client id, which the server reads at start-up from the app's own bundle (`sw.js` names it), so a FanDuel
+   deploy that rotates it costs a reconnect, not a code change. No login, no cookies.
+3. **Poll:** `POST smp.on.sportsbook.fanduel.ca/api/sports/fixedodds/readonly/v1/getMarketPrices  {marketIds:[…]}`
+   → fresh prices/handicaps for those markets. FanDuel's own widgets poll this about every 5 s.
 
-**Why polling, and why 1 s:** it is the only update channel the site has. The FD page polls at ~5 s per widget;
-I poll all 87 game-line markets in **one** request every **1 s** on a fixed beat (start-to-start, so a 16 ms request
-does not stretch the beat), reusing the connection (`FD_POLL_MS`). Cost: one 93 KB response per second, 16 ms per
-request from Ohio. Benefit: a FanDuel number is on average **0.5 s** old and never more than **~1 s**. If FanDuel
-answers 429/403/5xx the interval doubles (honouring `Retry-After`) up to 30 s, the UI shows FanDuel as down, and it
-recovers by itself. I stopped at 1 s: the request is 16 ms, so the interval *is* the latency, and going to 500 ms
-would double the load on FanDuel for 0.25 s of average freshness — that is the first knob I would turn with
-FanDuel's blessing or more egress IPs, not before.
-I started at 2 s, measured it, and moved to 1 s after the tests below proved the back-off works.
-
-**Then 0.5 s, still one request per second per IP.** Half a beat after each of our polls, the server asks the edge
-machine (§6, another IP) to poll the same 87 markets; the edge sends back only the markets whose answer changed. The
-server applies a market only if that poll *started* later than the newest poll already applied to it, so a slow answer
-can never overwrite a fresher one. Measured: a fresh FanDuel answer every **523 ms** (median), was 1,000 ms. If the edge
-goes away, FanDuel simply falls back to the 1 s beat.
+My first recordings only showed the polling, so the first version polled; I found the subscription later and moved
+FanDuel to it. **Why both:** the push is the speed (a FanDuel move reaches our server as FanDuel stamps it, no
+beat to wait for); polling every **1 s** stays on as the safety net — it fills anything a push reconnect missed and
+re-confirms every price each second. Every market remembers the time of the newest answer applied to it (a push counts
+from when it arrived, a poll from when it *started*), so an older answer can never overwrite a newer one.
+**FanDuel answers at most 80 markets per request and silently drops the rest** — with 87 game-line markets, one
+request left 7 markets un-refreshed. Polling now splits them into the fewest requests of ≤ 50 (`FD_CHUNK`), sent in
+parallel, each applied the moment it lands; the page reports `returned/requested` so a cap can't hide again. If
+FanDuel answers 429/403/5xx the interval doubles (honouring `Retry-After`) up to 30 s and recovers by itself; if the
+push drops, it reconnects with backoff (1 → 30 s) and re-subscribes, while polling carries on.
+With the optional edge machine (§6) running, a second poller on another IP polls half a beat after ours, so a fresh
+polled answer lands every ~0.5 s even at one request per second per IP.
 
 ### More lines: alternate lines and player props, both books
 Found the same way (recording each book's game pages tab by tab):
@@ -163,7 +168,7 @@ Found the same way (recording each book's game pages tab by tab):
 | | DraftKings | FanDuel |
 | --- | --- | --- |
 | Where | league-level subcategories: 13195 alt spread, 13196 alt total, 12438 TD scorers, 16569/16571/16570 passing/rushing/receiving yards milestones, 16821 receptions milestones | only on each game's own page: `api/event-page?eventId=…&tab=popular` → `ALTERNATE_HANDICAP`, `ALTERNATE_TOTAL`, `ANY_TIME_TOUCHDOWN_SCORER`, `PLAYER_X_ALT_{PASSING,RUSHING,RECEIVING}_YARDS_*`, `PLAYER_X_ALT_RECEPTIONS_*` |
-| Snapshot | same REST as game lines, one subcategory at a time; from the edge (cloud IPs refused), each every ~2 min, trimmed to the fields we read | one game page per game every 10 min, from the cloud |
+| Snapshot | same REST as game lines (same browser-compatible client), one subcategory at a time, each every ~2 min | one game page per game every 10 min, from the cloud |
 | Updates | its **own** push socket, one subscription per subcategory | `getMarketPrices`, 50 markets per request, at most one request a second: every **3 s** for games someone has open, every 60 s otherwise; pauses itself 5 min on 403/429 so it can never cost the main board its rate budget |
 
 Matching: an alt line is (game, side, number); a prop is (game, player, threshold). DraftKings sells yardage as
@@ -189,10 +194,10 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 
 | | DraftKings | FanDuel |
 | --- | --- | --- |
-| Feed type | **deltas** (changes only) | **full picture** every poll |
-| State kept by | **us**: snapshot into the store, apply each delta by selection id | nobody: each poll is authoritative |
-| Safety net | line moves applied from the push itself (`remove`+`add`); full re-snapshot every 60 s, 3 s after a push names an id we cannot place, and after every reconnect (fetched directly, or requested from the edge) | full re-snapshot every 60 s (new games, markets going in-play) |
-| Quiet ≠ dead | ping/pong every 30 s; no pong in 10 s → reconnect (backoff 1 → 30 s) | a failed/slow poll is visible immediately |
+| Feed type | **deltas** (changes only) | push: **one whole market** per change · poll: **full picture** |
+| State kept by | **us**: snapshot into the store, apply each delta by selection id | nobody: each pushed market and each poll is authoritative for its markets (newest wins) |
+| Safety net | line moves applied from the push itself (`remove`+`add`); full re-snapshot every 30 s, 3 s after a push names an id we cannot place, and after every reconnect | polling every 1 s under the push; full re-snapshot every 60 s (new games, markets going in-play) |
+| Quiet ≠ dead | ping/pong every 30 s; no pong in 10 s → reconnect (backoff 1 → 30 s) | push: AppSync keep-alives, silence past the advertised timeout → reconnect; poll: a failed/slow poll is visible immediately |
 
 ## 5. Push to the browser
 
@@ -215,30 +220,34 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 
 | | DraftKings | FanDuel |
 | --- | --- | --- |
-| Bot protection | **Akamai.** Headless Chromium → 403 on the HTML page. The old public API (`/sites/US-SB/api/v5/eventgroups/88808`) → 403. **Every datacenter IP → 403 on the data API** (AWS Ohio, reference ids in `/api/diag/draftkings`), while the HTML page still returns 200 from the same IP. Real Chrome and plain Node from a residential IP pass with the site's own `x-client-*`/`referer` headers. | **PerimeterX** (`_px3` token on API calls). Plain Node *without* the token gets 200 from a residential IP **and** from AWS Ohio (15 ms per poll — FD's API lives next door). |
+| Bot protection | **Akamai.** Headless Chromium → 403 on the HTML page. The old public API (`/sites/US-SB/api/v5/eventgroups/88808`) → 403. **Node's HTTPS client from a datacenter IP → 403 on the data API** (AWS Ohio, reference ids in `/api/diag/draftkings`), while the HTML page still returns 200 from the same IP; a client with Chrome's TLS/HTTP2 handshake (curl_cffi) from the same IP → 200. Real Chrome and plain Node from a residential IP pass with the site's own `x-client-*`/`referer` headers. | **PerimeterX** (`_px3` token on API calls). Plain Node *without* the token gets 200 from a residential IP **and** from AWS Ohio (15 ms per poll — FD's API lives next door). |
 | Geo | **Fenced by IP per licensed region.** From Ontario only `CA-ON-SB` answers; `US-NJ-SB`, `US-OH-SB`, `US-SB` → 403, and vice-versa. The worker probes a list of regional sites at start-up and keeps the first that answers. | Not fenced for reading odds: both the Ontario (`.ca`, `ON`) and New Jersey (`.com`, `NJ`) APIs answer from Toronto *and* from AWS Ohio. Note the `.com` site shows NJ prices even from Canada. |
-| Rate limits | none hit (1 WS connection + 1 snapshot/min) | none hit at 1 poll / 2 s for hours, then 1 poll / s; back-off on 429/403 is implemented and tested |
+| Rate limits | none hit (1 WS connection + 1 snapshot / 30 s) | none hit at 1 poll / 2 s for hours, then 1 poll / s (2 parallel requests since the 80-market cap); one push connection; back-off on 429/403 is implemented and tested |
 | Sessions / tokens | `jwt: default-token` — nothing to expire. If DK ever rejects it, the worker reconnects with backoff and re-snapshots; stale state is shown meanwhile. | `_ak` is a public app key baked into the site; no cookie needed. |
 
-**The block, and how I got around it.** DraftKings' two hosts sit behind two different Akamai products: the
-snapshot host (`sportsbook-nash`, bot management) refuses datacenter IPs with 403 for every regional site, while the
-**push socket host (`sportsbook-ws-*`) accepts them** — for every region, Ontario included, tested from this server
-(`/api/diag/dk-socket`). So the split follows that line: the **cloud server holds DraftKings' socket itself** (the
-latency-critical part, 44 ms from DK's publish to our server), and the only thing that leaves the cloud is the
-once-a-minute REST snapshot, fetched by a tiny **snapshot provider** (`src/edge.js`) on a machine in Ontario that DK
-accepts, and relayed over one authenticated WebSocket (`/ingest/ws`, HTTPS fallback) every 30 s and whenever the cloud
-asks (after a reconnect, or when a push names an id it cannot place). My first version relayed *every price* through
-that machine (~26 ms extra, and the board depended on it); after testing the socket from the cloud I moved the socket
-to the cloud and left only the snapshot at the edge. If the edge stops now, pushes keep flowing and the board stays
-current; only brand-new games wait, the snapshot age is shown, and `/api/health` reports it.
+**The block, and how I got around it — in three steps.** DraftKings' two hosts sit behind two different Akamai
+products: the snapshot host (`sportsbook-nash`, bot management) refuses Node's HTTPS client from datacenter IPs with
+403 for every regional site, while the **push socket host (`sportsbook-ws-*`) accepts them** — for every region,
+Ontario included, tested from this server (`/api/diag/dk-socket`).
+1. First version: everything through a machine in Ontario that DK accepts (`src/edge.js`), every price relayed
+   (~26 ms extra, and the board depended on that machine).
+2. Then the **cloud server took the socket** (the latency-critical part, 44 ms from DK's publish to our server) and
+   the edge only supplied the REST snapshot, relayed over one authenticated WebSocket (`/ingest/ws`).
+3. Now the cloud fetches the snapshot too. The 403 is about *how* the client connects, not where from: the same request
+   made with Chrome's TLS and HTTP/2 handshake is accepted from the same cloud IP. `src/transport/http.js` tries Node
+   first and, on the first 403, switches to a **browser-compatible client**: one long-lived Python worker
+   (`curl_worker.py`, curl_cffi impersonating Chrome) with warm keep-alive connections, so a snapshot costs one request
+   (~60–100 ms), not a process start and a fresh handshake. It is started once, restarted if it dies, and installed at
+   build time (`tools/install-transport.mjs`, `requirements.txt`). **The deployment no longer needs any machine of
+   mine:** the edge is an optional fallback that the server ignores (and counts, `edgeIgnored` in `/api/metrics`)
+   while its own snapshots work, and re-tries on its own every 5 minutes if they ever stop.
 
 **Restarts without the edge.** The DraftKings board is durable in Redis (Render Key Value, same region): a
 checkpoint (`dk:state`: the DK prices plus the id indexes needed to apply future pushes) every 60 s and after every
 snapshot, and a **Redis Stream** (`dk:frames`, `XADD … MAXLEN ~5000`) of every socket frame since. On boot the server
 loads the checkpoint and replays the newer frames — the board as of the last frame received — before it even connects.
-Tested live: edge stopped, cloud restarted, **174/174 DraftKings prices back in < 1 s** from Redis, health green. The cloud still tries the
-REST host directly on start-up and takes over fully if the block ever lifts. A residential/ISP proxy for that one
-request a minute is the production answer (nothing latency-critical goes through it).
+Tested live: edge stopped, cloud restarted, **174/174 DraftKings prices back in < 1 s** from Redis, health green — and
+the restored board is then re-confirmed by the server's own snapshot.
 
 ## 7. Shape of the data, matching, and "best price"
 
@@ -268,14 +277,15 @@ request a minute is the production answer (nothing latency-critical goes through
 * **Server → browser:** each quote is stamped `updatedAt` when the store learns it; the browser corrects its clock
   against `/api/time` (NTP-style, best of 3) and measures paint − `updatedAt`. The page shows it live in the feed cards;
   `tools/measure-latency.mjs <url> <minutes>` does the same from outside (results in `research/latency/`).
-* **FanDuel, book → server:** FD sends no change timestamp, so the honest figure is a **bound** from the poll beat:
-  a change waits on average half an interval and at most one interval, plus the request time.
+* **FanDuel, book → server:** each pushed market carries FanDuel's own `updatedAt`; lag = our receive time −
+  updatedAt (no clock-offset correction is possible here, so this includes FanDuel's clock error; their servers and
+  ours are NTP-synced). For anything that only polling caught, the honest figure is a **bound** from the poll beat.
 * **Our own processing:** `node tools/bench.mjs` on the recorded payloads.
 
 ### Numbers (live deployment, Wed Oct 28 evening, pregame)
 | Hop | DraftKings | FanDuel |
 | --- | --- | --- |
-| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly; DK's clock is **−4 ms ± 19 ms** from ours (measured on subscribe), so this is real lag, not skew (earlier version via the Ontario relay: p50 88 ms over 26 moves) | wait for the next fresh answer: **~0.26 s avg, ~0.5 s max** (fresh answer every 523 ms median, two IPs interleaved) + request **16 ms** p50 / 23 ms p95 |
+| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly; DK's clock is **−4 ms ± 19 ms** from ours (measured on subscribe), so this is real lag, not skew (earlier version via the Ontario relay: p50 88 ms over 26 moves) | **push:** FanDuel `updatedAt` → received (measured live, §8 below) · **poll safety net:** a fresh answer every 1 s (0.5 s with the edge), request **16 ms** p50 |
 | Edge snapshot relay (Ontario → Ohio) | not on the price path any more; 155 KB every 30 s, round trip p50 ~48 ms | — |
 | Our processing per update | **2.5 µs** per DK frame | **~0.25 ms** per 87-market poll (25 µs per 9 markets) |
 | Wait before sending to browsers | p50 0 ms | p50 0 ms |
@@ -301,12 +311,11 @@ Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) i
 * **Correctness, Wed Oct 28, three runs:** DraftKings 174/174 and FanDuel 174/174 prices identical to what the
   books' own pages hold, at the start and the end of each run (the last run against FanDuel's Ontario site, after
   switching to Ontario); screenshots in `research/race/`.
-* **Same channel as the book's own site, pregame and in-play.** Captured both books' live pages during games in other
-  sports: DraftKings in-play uses the same WebSocket; FanDuel's in-play page still has **no push** and re-polls each
-  market about every **5 s**. There is no faster hidden channel to switch to.
-* **What that means:** our FanDuel prices are polled every 1 s, so the board shows a FanDuel move on average about
-  **2 s before FanDuel's own website** does. For DraftKings our server receives the very same push as DK's page,
-  directly from DK's socket; the only extra step is Ohio → the viewer's browser.
+* **Same channel as the book's own site, pregame and in-play.** DraftKings in-play uses the same WebSocket. FanDuel's
+  widgets re-poll each market about every **5 s**; its app also holds the AppSync price subscription we now use.
+* **What that means:** for both books our server receives the same push the book's own page uses, directly from the
+  book; the only extra step is Ohio → the viewer's browser. Under the FanDuel push our own polling (1 s) still runs, so
+  even a missed push is corrected within a second — faster than FanDuel's own widgets refresh.
 * Wednesday evening was too quiet to time many moves (FanDuel's NFL lines did not move for 20+ minutes; DraftKings
   moved 26 times in the hour, 0 times during the second run). The race runs again during the live Thursday game and
   the timings will be added here.
@@ -320,7 +329,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 47 tests, ~6 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 57 tests, ~10 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
@@ -335,9 +344,17 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
   trigger a snapshot request; garbage frames are counted, never thrown. Against a **fake DraftKings** (HTTP + WebSocket): skips a region
   that answers 403, subscribes with the right payload, reconnects and re-snapshots when the socket drops, and when every region refuses
   the snapshot it still holds the socket and asks the edge for snapshots.
-* **FanDuel, on real recorded payloads:** props ignored, in-place line move via `handicap`, suspended runner, game turns
-  live. Against a **fake FanDuel:** one request for all markets on a ~100 ms beat; 429 → backs off (honours
-  `Retry-After`), shows the error, does not hammer, recovers.
+* **FanDuel, on real recorded payloads:** props ignored, in-place line move via `handicap`, suspended runner, a
+  suspended *market* greys every price in it, game turns live. Against a **fake FanDuel:** every market on a ~100 ms
+  beat; split into parallel requests under a per-request cap with nothing left out; 429 → backs off (honours
+  `Retry-After`), shows the error, does not hammer, recovers. Against a **fake AppSync:** push settings read from the
+  bundle `sw.js` names (a changed shape is an error, not a guess); the right protocol, origin and auth; subscriptions
+  in chunks; a pushed price reaches the board at once and a poll that started before it cannot overwrite it; a
+  dropped connection reconnects and re-subscribes while polling carries on.
+* **Browser-compatible client:** Node first, switch on the first 403 and stay switched, never on a 200; HTTP errors keep
+  their status (and `Retry-After`); a missing interpreter fails one request, not the server; and, where curl_cffi is
+  installed, the real worker against a local server that only accepts a Chrome handshake: warm requests, 8 in
+  parallel, a killed worker restarted on the next request.
 * **More lines, on real recorded payloads from both books** (`test/fixtures/extras-*.json`, recorded with
   `tools/record-extras-fixtures.mjs`): the same bet from both books lands on one row (BAL −3.5, Derrick Henry anytime
   TD, Josh Allen 250+), DK 260+ / FD 275+ stay single-book, the 1st-TD market is not mixed in, player names match
@@ -381,13 +398,12 @@ runs under a restart-on-exit supervisor.
 | Asked for | Done |
 | --- | --- |
 | Show the odds moving (flash / previous price) | Yes — green/red flash + struck-through previous value for 8 s + line-move notice + the wire |
-| Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen (DK) and worst-case age (FD) |
+| Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen for both books (each stamps its pushes) |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
 | Props, alt lines, other leagues | **Alt lines + player props: yes** — alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number (§3). Other leagues: not built; the adapters take a league id and market map, so NBA is a config change plus a team table. |
 | What changes for a third book, or ten; where AI helps | §11 |
 
 ## 13. With more time
-* **A residential/ISP proxy instead of a laptop** for the edge's two jobs (DK snapshot once per 30 s, FanDuel's second
-  poller). Nothing on DraftKings' price path depends on it any more.
-Residential/ISP egress (or a licensed-region VM) for DK instead of an edge laptop; a push chart to rank unlike lines;
-over/under player props (FanDuel has them, DraftKings Ontario only sells milestones), other leagues; Prometheus metrics.
+A push chart to rank unlike lines; over/under player props (FanDuel has them, DraftKings Ontario only sells
+milestones); other leagues; FanDuel push for the "more lines" markets too (they still poll); Prometheus metrics; a
+second region for failover.

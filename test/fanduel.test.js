@@ -7,7 +7,7 @@ import { fixture, fresh, quiet, waitFor, quotesOf, sleep } from './helpers.js';
 const SNAP = fixture('fd-snapshot.json');
 const PRICES = fixture('fd-prices.json'); // a real getMarketPrices response for the same markets
 
-function source(opts = {}) { const { store, metrics } = fresh(); return { store, metrics, fd: new FanDuelSource(store, metrics, quiet, opts) }; }
+function source(opts = {}) { const { store, metrics } = fresh(); return { store, metrics, fd: new FanDuelSource(store, metrics, quiet, { push: false, ...opts }) }; }
 
 test('snapshot: three games, nine game-line markets polled, props ignored, six prices per game', () => {
   const { store, fd } = source();
@@ -59,7 +59,7 @@ async function fakeFanDuel() {
   return { state, snapshotUrl: `${base}/snapshot`, pricesUrl: `${base}/prices`, close: () => server.close() };
 }
 
-test('polls all markets in one request on a fixed beat', async () => {
+test('polls every market on a fixed beat (one request while under the per-request cap)', async () => {
   const fake = await fakeFanDuel();
   const { store, metrics, fd } = source({ snapshotUrl: fake.snapshotUrl, pricesUrl: fake.pricesUrl, pollMs: 100 });
   try {
@@ -118,4 +118,128 @@ test('interleave: an edge answer applies, but a late answer older than what the 
   assert.equal(metrics.fd.edgeStale, 1);
   assert.equal(fd.applyPrices(p(160), 11_020, 11_000), 1);     // our next poll (11.0 s) applies normally
   assert.equal(store.sources.fanduel.interleave, true);
+});
+
+// ---------- chunked polling (FanDuel answers at most 80 markets per request and silently drops the rest) ----------
+test('chunk(): the fewest requests of at most N markets, evenly sized', async () => {
+  const { chunk } = await import('../src/sources/fanduel.js');
+  const ids = Array.from({ length: 87 }, (_, i) => i);
+  assert.deepEqual(chunk(ids, 50).map((c) => c.length), [44, 43]);
+  assert.deepEqual(chunk(ids.slice(0, 50), 50).map((c) => c.length), [50]);
+  assert.deepEqual(chunk([], 50).map((c) => c.length), []);
+  assert.deepEqual(chunk(ids, 50).flat(), ids, 'nothing lost, order kept');
+});
+
+test('polling splits the markets into parallel requests under the cap, and every market is updated', async () => {
+  const CAP = 4; // pretend FanDuel's cap is 4 markets per answer
+  const bodies = []; let inFlight = 0, maxInFlight = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/snapshot')) { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(SNAP)); }
+    let body = ''; req.on('data', (c) => (body += c)); req.on('end', () => {
+      const ids = JSON.parse(body).marketIds; bodies.push(ids); inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      setTimeout(() => { inFlight--; res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(PRICES.filter((m) => ids.includes(m.marketId)).slice(0, CAP))); }, 20);
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const { store, metrics, fd } = source({ snapshotUrl: `${base}/snapshot`, pricesUrl: `${base}/prices`, pollMs: 100, chunkSize: CAP });
+  try {
+    await fd.start();
+    await waitFor(() => metrics.fd.polls >= 2, 3000);
+    assert.deepEqual(bodies.slice(0, 3).map((b) => b.length), [3, 3, 3], '9 markets → 3 requests of 3');
+    assert.ok(maxInFlight >= 2, 'the requests run in parallel');
+    assert.equal(metrics.fd.marketsMissing, 0, 'no market left out of the answers');
+    assert.match(store.sources.fanduel.detail, /9\/9 markets in 3 parallel requests/);
+  } finally { fd.stop(); server.close(); }
+});
+
+test('a suspended market greys every price in it and keeps the last odds, even if the runners still say ACTIVE', () => {
+  const { store, fd } = source();
+  fd.applySnapshot(SNAP, 1000);
+  const p = structuredClone(PRICES.filter((m) => m.marketId === '734.192676407'));
+  p[0].marketStatus = 'SUSPENDED'; for (const r of p[0].runnerDetails) delete r.winRunnerOdds;
+  fd.applyPrices(p, 2000);
+  const qs = quotesOf(store, 'fanduel').filter((q) => q.market === 'moneyline' && q.gameKey === 'BAL@BUF:2026-11-01');
+  assert.equal(qs.length, 2); assert.ok(qs.every((q) => q.suspended && Number.isInteger(q.odds)), JSON.stringify(qs));
+});
+
+// ---------- push (AppSync GraphQL over WebSocket) against a fake AppSync ----------
+import { WebSocketServer } from 'ws';
+import { parsePushConfig, discoverPushConfig, FD_PUSH_QUERY } from '../src/sources/fanduel-push.js';
+
+const BUNDLE = 'x={aws_appsync_graphqlEndpoint:"https://pir.{REGION}.sportsbook.fanduel.ca/graphql",aws_appsync_region:"ca-west-1",'
+  + 'aws_appsync_authenticationType:"PIR_AUTH_KEY",aws_appsync_clientId:"public-client-123",aws_appsync_wssEndpoint:"wss://pir.{REGION}.sportsbook.fanduel.ca/graphql/realtime"},y=1';
+
+test('push settings are read from the web app bundle that sw.js names; a changed shape is an error, not a guess', async () => {
+  assert.deepEqual(parsePushConfig(BUNDLE, 'ON'), { clientId: 'public-client-123', endpoint: 'https://pir.on.sportsbook.fanduel.ca/graphql', wssUrl: 'wss://pir.on.sportsbook.fanduel.ca/graphql/realtime' });
+  assert.throws(() => parsePushConfig(BUNDLE.replace('PIR_AUTH_KEY', 'API_KEY'), 'ON'), /changed shape/);
+  assert.throws(() => parsePushConfig('nothing here', 'ON'), /not found/);
+  const asked = [];
+  const fetchImpl = async (url) => { asked.push(url); return new Response(url.endsWith('/sw.js') ? 'precache(["/static/js/main.ab12cd.js","/x.css"])' : BUNDLE, { status: 200 }); };
+  const cfg = await discoverPushConfig({ region: 'ON', fetchImpl });
+  assert.deepEqual(asked, ['https://sportsbook.fanduel.ca/sw.js', 'https://sportsbook.fanduel.ca/static/js/main.ab12cd.js']);
+  assert.equal(cfg.clientId, 'public-client-123');
+});
+
+async function fakeAppSync({ ack = true } = {}) {
+  const st = { conns: 0, starts: [], auth: null, origin: null, protocol: null, sockets: new Set() };
+  const wss = new WebSocketServer({ port: 0, handleProtocols: (p) => (p.has('graphql-ws') ? 'graphql-ws' : false) });
+  wss.on('connection', (ws, req) => {
+    st.conns++; st.sockets.add(ws); st.protocol = ws.protocol; st.origin = req.headers.origin;
+    const q = new URL(req.url, 'ws://x').searchParams; st.auth = JSON.parse(Buffer.from(q.get('header'), 'base64').toString());
+    ws.on('message', (d) => {
+      const m = JSON.parse(d);
+      if (m.type === 'connection_init' && ack) ws.send(JSON.stringify({ type: 'connection_ack', payload: { connectionTimeoutMs: 300000 } }));
+      if (m.type === 'start') { const p = JSON.parse(m.payload.data); st.starts.push({ id: m.id, ids: p.variables.ids, query: p.query, ext: m.payload.extensions }); ws.send(JSON.stringify({ type: 'start_ack', id: m.id })); }
+    });
+    ws.on('close', () => st.sockets.delete(ws));
+  });
+  await new Promise((r) => wss.once('listening', r));
+  const send = (market) => { for (const ws of st.sockets) for (const s of st.starts) if (s.ids.includes(market.marketId)) ws.send(JSON.stringify({ type: 'data', id: s.id, payload: { data: { onUpdateMarketPrice: market } } })); };
+  return { st, url: `ws://127.0.0.1:${wss.address().port}/graphql/realtime`, send, kill: () => { for (const ws of st.sockets) ws.terminate(); }, close: () => wss.close() };
+}
+
+test('push: subscribes to every game-line market, a pushed price reaches the board at once, an older poll cannot overwrite it', async () => {
+  const fake = await fakeAppSync();
+  const ff = await fakeFanDuel();
+  const config = { clientId: 'public-client-123', endpoint: 'https://pir.on.sportsbook.fanduel.ca/graphql', wssUrl: fake.url };
+  const { store, metrics, fd } = source({ push: true, pushOpts: { getConfig: async () => config, url: fake.url, chunk: 4 }, snapshotUrl: ff.snapshotUrl, pricesUrl: ff.pricesUrl, pollMs: 60_000 });
+  try {
+    await fd.start();
+    await waitFor(() => store.sources.fanduel.push === 'live', 3000);
+    assert.equal(fake.st.protocol, 'graphql-ws'); assert.equal(fake.st.origin, 'https://sportsbook.fanduel.ca');
+    assert.deepEqual(fake.st.auth, { Authorization: 'public-client-123', host: 'pir.on.sportsbook.fanduel.ca' });
+    assert.deepEqual(fake.st.starts.map((s) => s.ids.length), [4, 4, 1], '9 markets in subscriptions of at most 4');
+    assert.equal(fake.st.starts[0].query, FD_PUSH_QUERY); assert.equal(fake.st.starts[0].ext.authorization.Authorization, 'public-client-123');
+    assert.equal(store.sources.fanduel.mode, 'push+poll');
+    // FanDuel changes the BAL moneyline
+    const m = structuredClone(PRICES.find((x) => x.marketId === '734.192676407'));
+    m.runnerDetails[0].winRunnerOdds.americanDisplayOdds.americanOdds = 177; m.updatedAt = new Date(Date.now() - 40).toISOString();
+    const pollStartedBefore = Date.now() - 5;
+    fake.send(m);
+    const key = 'BAL@BUF:2026-11-01|moneyline|away|fanduel';
+    await waitFor(() => store.quotes.get(key)?.odds === 177, 2000);
+    assert.equal(metrics.fd.pushMarkets, 1); assert.equal(metrics.fd.pushChanges, 1);
+    const lag = metrics.fd.pushLag.stats(); assert.ok(lag.count === 1 && lag.p50 >= 30 && lag.p50 < 500, `push lag ${lag.p50}`);
+    // a poll that had started before the push landed answers with the old price: ignored
+    assert.equal(fd.applyPrices(PRICES, Date.now(), pollStartedBefore), 0);
+    assert.equal(store.quotes.get(key).odds, 177);
+  } finally { fd.stop(); fake.close(); ff.close(); }
+});
+
+test('push: a dropped connection reconnects and re-subscribes by itself; polling keeps the board fresh meanwhile', async () => {
+  const fake = await fakeAppSync();
+  const ff = await fakeFanDuel();
+  const config = { clientId: 'k', endpoint: 'https://pir.on.sportsbook.fanduel.ca/graphql', wssUrl: fake.url };
+  const { store, metrics, fd } = source({ push: true, pushOpts: { getConfig: async () => config, url: fake.url }, snapshotUrl: ff.snapshotUrl, pricesUrl: ff.pricesUrl, pollMs: 100 });
+  try {
+    await fd.start();
+    await waitFor(() => store.sources.fanduel.push === 'live', 3000);
+    fake.kill();
+    await waitFor(() => store.sources.fanduel.push === 'down', 2000);
+    const polls = metrics.fd.polls;
+    await waitFor(() => store.sources.fanduel.push === 'live' && fake.st.conns === 2, 4000);
+    assert.ok(metrics.fd.polls > polls, 'polling carried on while the push was down');
+    assert.equal(fake.st.starts.at(-1).ids.length, 9, 're-subscribed to every market');
+  } finally { fd.stop(); fake.close(); ff.close(); }
 });

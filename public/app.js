@@ -205,7 +205,10 @@ function latency(book) {
     return { measured: e2e != null, bookToScreenMs: e2e ?? (s.lagP50Ms != null ? s.lagP50Ms + (pct(lat.recent.draftkings, 0.5) ?? 30) : null), bookToServerMs: s.lagP50Ms ?? null, samples: lat.recent.e2e.length || s.lagCount || 0, clockPm: s.clockUncertaintyMs ?? null };
   }
   const beat = (s.pollMs || 1000) / (s.interleave ? 2 : 1);
-  return { beatMs: beat, freshMs: s.freshP50Ms ?? beat, maxAgeMs: beat + (s.lastPollMs || 0) + (pct(lat.recent.fanduel, 0.5) ?? 30), interleave: !!s.interleave };
+  // push: FanDuel's own change stamp → our server (p50), plus the server → this screen hop we measure here
+  const push = s.push === 'live';
+  return { beatMs: beat, freshMs: s.freshP50Ms ?? beat, maxAgeMs: beat + (s.lastPollMs || 0) + (pct(lat.recent.fanduel, 0.5) ?? 30), interleave: !!s.interleave,
+    push, bookToServerMs: push ? s.pushLagP50Ms ?? null : null, bookToScreenMs: push && s.pushLagP50Ms != null ? s.pushLagP50Ms + (pct(lat.recent.fanduel, 0.5) ?? 30) : null };
 }
 function freshness(book, now = serverNow()) {
   const s = state.sources[book] || {}; const limit = state.config.staleMs?.[book] || 60000;
@@ -374,6 +377,7 @@ setInterval(async () => { // measured samples go to the server so /api/metrics h
 }, 30000);
 
 mountTheme(THEMES.find((t) => t.id === settings.theme) || THEMES[0]);
+connect();                       // the stream first: prices on screen as early as possible
+syncClock().catch(() => {});     // the clock offset only refines the "x s ago" labels, so it runs alongside
 loadExtrasSummary(); setInterval(loadExtrasSummary, 60_000);
-syncClock().catch(() => {}).finally(connect);
 setInterval(() => syncClock().catch(() => {}), 120000);

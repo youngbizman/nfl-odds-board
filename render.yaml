@@ -5,6 +5,7 @@ services:
     runtime: node
     region: ohio
     plan: free
+    # npm ci also runs tools/install-transport.mjs (RENDER=true): a .venv with curl_cffi for DraftKings' snapshot host
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
@@ -12,9 +13,11 @@ services:
       - key: NODE_VERSION
         value: 22.12.0
       - key: FD_POLL_MS
-        value: "2000"
+        value: "1000"
       - key: FD_REGION
-        value: NJ
+        value: "ON"
+      - key: FD_PUSH
+        value: "1"
       - key: DK_SITE
         value: CA-ON-SB
       - key: DK_SITENAME

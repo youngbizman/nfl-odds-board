@@ -11,7 +11,8 @@
     "edge": "node src/edge.js",
     "test": "node --test --test-reporter=spec test/*.test.js",
     "smoke": "node tools/smoke.mjs",
-    "fixtures": "node tools/record-fixtures.mjs"
+    "fixtures": "node tools/record-fixtures.mjs",
+    "postinstall": "node tools/install-transport.mjs"
   },
   "keywords": [],
   "author": "",

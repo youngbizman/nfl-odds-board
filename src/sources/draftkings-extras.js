@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { DK_SUBCATS, dkExtraRow, ExtrasStore } from '../extras.js';
 import { parseAmerican } from '../model.js';
 import { siteNameFor, wsHostFor } from './draftkings.js';
+import { makeHttp } from '../transport/http.js';
 
 const BOOK = 'draftkings';
 const LEAGUE = '88808';
@@ -34,6 +35,7 @@ export class DraftKingsExtras {
     this.everyMs = Number(opts.everyMs || process.env.DK_EXTRAS_SNAPSHOT_MS || 120_000);
     this.marketIndex = new Map(); // DK market id -> { gameKey, kind, market }
     this.selIndex = new Map();    // DK selection id -> { gameKey, r: {kind, subject, name, line} }
+    this.http = opts.http || makeHttp({ log });
     this.restBlocked = false; this.stopped = false; this.backoff = 1000; this.ws = null;
     this.counts = { frames: 0, applied: 0, unknown: 0, snapshots: 0 };
   }
@@ -45,16 +47,17 @@ export class DraftKingsExtras {
   }
   stop() { this.stopped = true; clearInterval(this.timer); clearInterval(this.pingTimer); clearTimeout(this.reconnectTimer); this.ws?.terminate(); }
 
-  /** Snapshots straight from DraftKings when this IP is allowed (local runs); otherwise the edge sends them. */
+  /** Snapshots straight from DraftKings (Node or browser-compatible client); the edge sends them only if both are refused. */
   async fetchAll(why) {
-    if (this.restBlocked || this.stopped) return;
+    if (this.stopped) return;
+    if (this.restBlocked) { if (Date.now() - this.blockedAt < 600_000) return; this.restBlocked = false; } // try ourselves again every 10 min
     for (const sub of this.subs) {
       try {
-        const r = await fetch(dkExtrasUrl(this.nashBase, this.site, sub), { headers: DK_HEADERS, signal: AbortSignal.timeout(20_000) });
-        if (r.status === 403) { this.restBlocked = true; this.log('dk-extras', 'snapshot host refuses this IP → extras snapshots come from the edge'); return; }
-        if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
-        this.applySnapshot(sub, await r.json(), Date.now(), 'direct');
-      } catch (e) { this.log('dk-extras', `${why} snapshot ${sub} failed: ${e.message}`); }
+        this.applySnapshot(sub, await this.http.getJson(dkExtrasUrl(this.nashBase, this.site, sub), DK_HEADERS, 20_000), Date.now(), 'direct');
+      } catch (e) {
+        if (e.status === 403) { this.restBlocked = true; this.blockedAt = Date.now(); this.log('dk-extras', 'snapshot host refuses this server → extras snapshots come from the edge'); return; }
+        this.log('dk-extras', `${why} snapshot ${sub} failed: ${e.message}`);
+      }
       await new Promise((res) => setTimeout(res, 250));
     }
   }

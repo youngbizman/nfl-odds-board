@@ -16,6 +16,7 @@ export class Metrics {
     this.dk = {
       // book → backend: DraftKings stamps every push with publishedTime; this is receive − published.
       ingestLagPregame: new Ring(), ingestLagLive: new Ring(),
+      snapshotMs: new Ring(200), // how long one direct REST snapshot takes (warm connection)
       wsMessages: 0, selectionUpdates: 0, snapshots: 0, reconnects: 0, decodeMisses: 0, lineMovesMapped: 0, clockOffsetMs: null, clockUncertaintyMs: null,
       // edge relay (when DK is collected on another machine): round trip edge ↔ cloud over the relay WebSocket
       relayRtt: new Ring(), relayMessages: 0,
@@ -25,7 +26,9 @@ export class Metrics {
       pollDuration: new Ring(), pollInterval: new Ring(), changesPerPoll: new Ring(),
       polls: 0, pollErrors: 0, rateLimited: 0, snapshots: 0, lastStatus: null, bytes: new Ring(),
       // interleaved second poller (edge, other IP, half a beat later)
-      edgePolls: 0, edgeChanges: 0, edgeStale: 0, freshInterval: new Ring(),
+      edgePolls: 0, edgeChanges: 0, edgeStale: 0, freshInterval: new Ring(), marketsMissing: 0,
+      // push (AppSync): markets received, prices they changed, and FanDuel's updatedAt → our receipt
+      pushMarkets: 0, pushChanges: 0, pushLag: new Ring(),
     };
     this.sse = { clients: 0, batchesSent: 0, bytesSent: 0, batchSize: new Ring(), coalesceWait: new Ring() };
     // browser-reported: push lag (server updatedAt → browser paint) and DK end-to-end (publishedTime → browser paint)

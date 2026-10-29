@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
+  push:
+    branches: ["probe/**"]   # push to a probe/* branch to check the live site on demand
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -14,3 +16,5 @@ jobs:
         with:
           node-version: 22
       - run: node tools/smoke.mjs https://nfl-odds-board-hgim.onrender.com
+      - run: node tools/live-report.mjs https://nfl-odds-board-hgim.onrender.com
+        if: always()

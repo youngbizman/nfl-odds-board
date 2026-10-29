@@ -328,10 +328,11 @@ function renderFeeds() {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
     const status = { live: '● Live', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
     const cls = f === 'stale' ? ' is-stale' : f === 'reconnecting' || f === 'lost' ? ' is-reconnecting' : '';
-    const how = b === 'draftkings' ? 'push over WebSocket' : `polled every ${api.secs(L.beatMs)}${L.interleave ? ' from 2 IPs' : ''}`;
+    const how = b === 'draftkings' ? 'push over WebSocket' : L.push ? `push over WebSocket, checked by polling every ${api.secs(L.beatMs)}` : `polled every ${api.secs(L.beatMs)}${L.interleave ? ' from 2 IPs' : ''}`;
     let timing;
     if (f !== 'live') timing = 'Timing bound unavailable';
     else if (b === 'draftkings') timing = L.bookToScreenMs != null ? `book to screen ${api.secs(L.bookToScreenMs)}${L.clockPm != null ? ` ±${L.clockPm} ms` : ''}${L.measured ? '' : ' (server-measured)'}` : 'book to screen: measuring on the next move';
+    else if (L.push) timing = L.bookToScreenMs != null ? `book to screen ${api.secs(L.bookToScreenMs)}` : `book to screen: measuring on the next move (never more than ${api.secs(L.maxAgeMs)} old)`;
     else timing = `any number is at most ${api.secs(L.maxAgeMs)} old`;
     return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-age" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(s.lastDataAt))}</span></div>
       <p>${esc(s.region || 'Ontario')} · ${esc(how)} · <span class="latency">${esc(timing)}</span></p>
