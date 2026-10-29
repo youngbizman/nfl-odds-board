@@ -9,6 +9,11 @@ browser without a refresh. Toggle at the top: **Best price / DraftKings only / F
 ![board](docs/board.png)
 
 What is on the page, beyond the board itself:
+* **More lines** on every game — alternate spreads and totals, anytime touchdown scorer, and passing / rushing /
+  receiving yards and receptions milestones (e.g. "Josh Allen 250+ passing yards"), both books side by side, best
+  price only where both books offer the exact same line and player (§3, "More lines").
+* **A movement chart** per game in the space beside the prices: each book's implied chance over the last 48 h (a live
+  game: since kickoff). Click any price to chart it. History is one point per real change, kept in Redis across restarts.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
 * **Per-book feed cards** — how the book is read (push vs poll), a freshness bar that drains as data ages, last
@@ -129,6 +134,25 @@ machine (§6, another IP) to poll the same 87 markets; the edge sends back only 
 server applies a market only if that poll *started* later than the newest poll already applied to it, so a slow answer
 can never overwrite a fresher one. Measured: a fresh FanDuel answer every **523 ms** (median), was 1,000 ms. If the edge
 goes away, FanDuel simply falls back to the 1 s beat.
+
+### More lines: alternate lines and player props, both books
+Found the same way (recording each book's game pages tab by tab):
+
+| | DraftKings | FanDuel |
+| --- | --- | --- |
+| Where | league-level subcategories: 13195 alt spread, 13196 alt total, 12438 TD scorers, 16569/16571/16570 passing/rushing/receiving yards milestones, 16821 receptions milestones | only on each game's own page: `api/event-page?eventId=…&tab=popular` → `ALTERNATE_HANDICAP`, `ALTERNATE_TOTAL`, `ANY_TIME_TOUCHDOWN_SCORER`, `PLAYER_X_ALT_{PASSING,RUSHING,RECEIVING}_YARDS_*`, `PLAYER_X_ALT_RECEPTIONS_*` |
+| Snapshot | same REST as game lines, one subcategory at a time; from the edge (cloud IPs refused), each every ~2 min, trimmed to the fields we read | one game page per game every 10 min, from the cloud |
+| Updates | its **own** push socket, one subscription per subcategory | `getMarketPrices`, 50 markets per request, at most one request a second: every **3 s** for games someone has open, every 60 s otherwise; pauses itself 5 min on 403/429 so it can never cost the main board its rate budget |
+
+Matching: an alt line is (game, side, number); a prop is (game, player, threshold). DraftKings sells yardage as
+milestones ("250+") and so does FanDuel's "alt" ladder ("Josh Allen 250+ Yards"), so they compare exactly where the
+thresholds coincide (DK 250+ vs FD 250+); DK 260+ or FD 275+ are shown for that book only, never ranked. Players are
+matched on a normalised name ("Kenneth Walker III" = "Kenneth Walker", "D.J. Moore" = "DJ Moore"). DraftKings' 1st-TD
+and 2+ TD markets live in the same subcategory and are filtered out. Ranking uses the same `compare()` as the board.
+Everything sits in its own store, workers and **one stream per open game** (`/api/extras/stream?game=`), so ~7,500
+prop prices never touch the main board's stream. Checked live (`tools/check-extras.mjs`): BAL@BUF and KC@DEN, every
+price on the board identical to what each book served at that moment (2,001 prices, 0 different, 0 missing), with
+801 bets priced by both books.
 
 ### Same jurisdiction for both books: Ontario
 Both books run a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
@@ -274,7 +298,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 36 tests, ~6 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 43 tests, ~6 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible).
@@ -291,6 +315,13 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 * **FanDuel, on real recorded payloads:** props ignored, in-place line move via `handicap`, suspended runner, game turns
   live. Against a **fake FanDuel:** one request for all markets on a ~100 ms beat; 429 → backs off (honours
   `Retry-After`), shows the error, does not hammer, recovers.
+* **More lines, on real recorded payloads from both books** (`test/fixtures/extras-*.json`, recorded with
+  `tools/record-extras-fixtures.mjs`): the same bet from both books lands on one row (BAL −3.5, Derrick Henry anytime
+  TD, Josh Allen 250+), DK 260+ / FD 275+ stay single-book, the 1st-TD market is not mixed in, player names match
+  across suffixes and dots, a DK socket frame moves a prop, a selection missing from the next snapshot is dropped,
+  FanDuel suspension is shown, and FanDuel polls open games every 3 s and the rest every 60 s, ≤ 50 markets a request.
+* **Price history:** one point per real change, restored after a restart, and charted from the price in force at the
+  window start.
 * **Black box:** the real server process against a fake FanDuel and a relay client — a FanDuel change reaches an SSE viewer
   within one poll; a DK snapshot relayed from an edge fills the board and reaches viewers at once; wrong relay tokens are refused; DK going quiet → DK
   stale, FanDuel unaffected; FanDuel failing → FanDuel stale with its last prices kept; recovery on its own; the
@@ -329,12 +360,11 @@ runs under a restart-on-exit supervisor.
 | Show the odds moving (flash / previous price) | Yes — green/red flash + struck-through previous value for 8 s + line-move notice + the wire |
 | Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen (DK) and worst-case age (FD) |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
-| Props, alt lines, other leagues | Not built. Both feeds expose them (DK other subcategories, FD other market types / `customPageId`); the adapters take a league id and market map, so NBA is a config change plus a team table. |
+| Props, alt lines, other leagues | **Alt lines + player props: yes** — alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number (§3). Other leagues: not built; the adapters take a league id and market map, so NBA is a config change plus a team table. |
 | What changes for a third book, or ten; where AI helps | §11 |
 
 ## 13. With more time
 * **A residential/ISP proxy instead of a laptop** for the edge's two jobs (DK snapshot once per 30 s, FanDuel's second
   poller). Nothing on DraftKings' price path depends on it any more.
 Residential/ISP egress (or a licensed-region VM) for DK instead of an edge laptop; a push chart to rank unlike lines;
-props/alt lines (both feeds already expose them under other subcategories/market types); line-history persistence;
-Prometheus metrics; a test suite around the two decoders using the recorded fixtures in `research/`.
+over/under player props (FanDuel has them, DraftKings Ontario only sells milestones), other leagues; Prometheus metrics.
