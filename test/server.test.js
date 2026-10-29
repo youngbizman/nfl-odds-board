@@ -66,7 +66,26 @@ test('serves the board and a liveness check', async () => {
   assert.equal(h.ok, true);
   await waitFor(async () => (await (await fetch(`${base}/api/board`)).json()).quotes.length === 18);
   const page = await (await fetch(`${base}/`)).text();
-  assert.match(page, /<script src="\/app.js"><\/script>/);
+  assert.match(page, /<script type="module" src="\/app.js"><\/script>/);
+  // the page is an ES-module app: the core, the shared price rules and every theme must be served with JS/CSS types
+  for (const [path, type] of [['/app.js', /javascript/], ['/lib/model.js', /javascript/], ['/themes/pressbox.js', /javascript/], ['/themes/pressbox.css', /css/]]) {
+    const r = await fetch(`${base}${path}`);
+    assert.equal(r.status, 200, path);
+    assert.match(r.headers.get('content-type'), type, path);
+  }
+  // the browser uses the same compare() the tests check, so the page can never rank prices differently
+  assert.match(await (await fetch(`${base}/lib/model.js`)).text(), /export function compare/);
+});
+
+test('the page gets a data-age beat as each poll lands, so "data X s ago" is never a heartbeat late', async () => {
+  const s = sse(`${base}/api/stream`);
+  try {
+    await waitFor(() => s.events.filter((e) => e.ev === 'beat').length >= 3, 3000);
+    const beats = s.events.filter((e) => e.ev === 'beat');
+    for (const b of beats) { const age = b.at - b.data.fanduel[0]; assert.ok(age >= -50 && age < 400, `FanDuel data was ${age} ms old when the beat arrived (100 ms poll)`); }
+    const gaps = beats.slice(1).map((b, i) => b.at - beats[i].at);
+    assert.ok(gaps.every((g) => g >= 200), `beats are throttled to 4 per second: ${gaps}`);
+  } finally { s.close(); }
 });
 
 test('a FanDuel price change reaches an SSE viewer within one poll', async () => {

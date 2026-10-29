@@ -90,3 +90,28 @@ export function bestPrice(quotes) {
   const tiedBooks = sorted.filter((q) => q.odds === best.odds).map((q) => q.book);
   return { conflict: false, best, books: tiedBooks, offers: sorted };
 }
+
+/**
+ * Compare the two books' offers for one game/market/side, the way the board shows it.
+ * offer = { book, line, odds, suspended?, stale? }  (stale = the book's feed is stale/down)
+ * Eligible = exists, has odds, not suspended, book live.
+ * Returns { kind, best?, books?, eligible, offers } with kind:
+ *   'best'      both eligible, same line, one has higher odds
+ *   'tie'       both eligible, same line, same odds
+ *   'different' both eligible, different lines → shown side by side, nobody crowned
+ *   'partial'   exactly one eligible ("only available offer"); the other is shown with its reason
+ *   'none'      nothing eligible (both stale/suspended/missing)
+ * Shared by the server tests and the browser (served at /lib/model.js), so the page can never drift from the tested rule.
+ */
+export function compare(offers) {
+  const present = offers.filter((o) => o && o.odds != null);
+  const eligible = present.filter((o) => !o.suspended && !o.stale);
+  if (eligible.length === 0) return { kind: 'none', eligible, offers: present };
+  if (eligible.length === 1) return { kind: 'partial', best: eligible[0], eligible, offers: present };
+  if (new Set(eligible.map((o) => o.line ?? 'ml')).size > 1) return { kind: 'different', eligible, offers: eligible };
+  const sorted = eligible.slice().sort((a, b) => b.odds - a.odds);
+  const books = sorted.filter((o) => o.odds === sorted[0].odds).map((o) => o.book);
+  return books.length > 1 ? { kind: 'tie', best: sorted[0], books, eligible, offers: sorted } : { kind: 'best', best: sorted[0], books, eligible, offers: sorted };
+}
+
+export function decimalOdds(a) { return a == null ? null : a > 0 ? 1 + a / 100 : 1 + 100 / Math.abs(a); }

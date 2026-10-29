@@ -1,213 +1,176 @@
-// Board UI: one SSE connection, a local copy of games + quotes, surgical re-rendering, and latency measurement.
-const BOOK = { draftkings: { label: 'DraftKings', short: 'DK', cls: 'dk' }, fanduel: { label: 'FanDuel', short: 'FD', cls: 'fd' } };
-const MARKET_LABEL = { spread: 'spread', total: 'total', moneyline: 'moneyline' };
-const state = { view: 'best', games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 150000, fanduel: 15000 } }, offset: 0, rtt: null, connected: false, everConnected: false, moves: [] };
-const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: { pregame: [], live: [] } } };
-const $ = (s) => document.querySelector(s);
-const boardEl = $('#board'), feedsEl = $('#feeds'), tapeEl = $('#tape'), bannerEl = $('#banner');
-const flashTimers = new Map();
+// Board core: one SSE connection, local copy of games + quotes, filters/settings, latency measurement.
+// Everything visual lives in a theme (public/themes/*.js + .css). Themes only draw; the rules live here and in
+// /lib/model.js (the same file the server tests check), so switching design can never change what is shown.
+import { compare, decimalOdds } from '/lib/model.js';
+import pressbox from '/themes/pressbox.js';
 
-// ---------- clock offset (browser vs server), NTP-style ----------
+const THEMES = [pressbox]; // add a second design here and a "Design" picker appears in every theme
+
+const BOOK = { draftkings: { label: 'DraftKings', short: 'DK', cls: 'dk' }, fanduel: { label: 'FanDuel', short: 'FD', cls: 'fd' } };
+const MARKETS = [['spread', ['away', 'home']], ['total', ['over', 'under']], ['moneyline', ['away', 'home']]];
+const keep = { get(k, d) { try { return localStorage.getItem(`board.${k}`) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(`board.${k}`, v); } catch {} } };
+const qs = new URLSearchParams(location.search);
+
+const settings = {
+  view: qs.get('view') || 'best',                                   // best | draftkings | fanduel (?view= is shareable)
+  phase: 'all',                                                     // all | live | pregame
+  search: '',
+  format: keep.get('format', 'american'),                           // american | decimal
+  theme: qs.get('theme') || keep.get('theme', THEMES[0].id),
+};
+const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
+  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map() };
+const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: [] } };
+
+// ---------- helpers given to themes ----------
+const serverNow = () => Date.now() + state.offset;
+const minus = (s) => String(s).replace('-', '−');
+function fmtOdds(a) {
+  if (a == null) return '—';
+  if (settings.format === 'decimal') return decimalOdds(a).toFixed(3);
+  return a > 0 ? `+${a}` : minus(a);
+}
+function fmtLine(market, side, l) {
+  if (l == null) return '';
+  if (market === 'total') return `${side === 'over' ? 'O' : 'U'} ${l}`;
+  return l > 0 ? `+${l}` : l === 0 ? 'PK' : minus(l);
+}
+function ago(ts, now = serverNow()) {
+  if (!ts) return 'never'; const s = Math.max(0, (now - ts) / 1000);
+  return s < 10 ? `${s.toFixed(1)} s ago` : s < 60 ? `${Math.round(s)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+}
+const secs = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+const pct = (arr, q) => { if (!arr.length) return null; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+const quote = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book}`);
+const bookDown = (book) => { const s = state.sources[book]; return !s || s.stale || s.state === 'down' || !state.connected; };
+const feedState = (book) => { const s = state.sources[book] || {}; if (!state.connected && state.everConnected) return 'lost'; if (s.state === 'down') return 'reconnecting'; if (s.stale) return 'stale'; if (s.state === 'connecting' || !s.lastDataAt) return 'connecting'; return 'live'; };
+
+/** How a quote moved recently: for flashes (≤ 0.7 s) and the struck-through previous value (≤ 8 s). */
+function change(q, now = Date.now()) {
+  const at = q && state.changedAt.get(q.id); if (!at || now - at > 8000) return null;
+  const lineMoved = q.prevLine != null && q.prevLine !== q.line;
+  const dir = !lineMoved && q.prevOdds != null && q.odds != null ? (q.odds > q.prevOdds ? 'up' : q.odds < q.prevOdds ? 'down' : '') : '';
+  return { at, dir, lineMoved, prevOdds: q.prevOdds, prevLine: q.prevLine, flash: now - at < 700 };
+}
+
+/** Everything a theme needs to draw one side of one market. */
+function cell(g, market, side) {
+  const offer = (book) => { const q = quote(g.key, market, side, book); return q ? { ...q, book, stale: bookDown(book) } : null; };
+  const dk = offer('draftkings'), fd = offer('fanduel');
+  if (settings.view !== 'best') return { view: settings.view, single: settings.view === 'draftkings' ? dk : fd };
+  return { view: 'best', dk, fd, cmp: compare([dk, fd]) };
+}
+
+function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
+function visibleGames() {
+  const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
+  const term = settings.search.trim().toLowerCase();
+  return [...state.games.values()]
+    .filter((g) => withPrices.has(g.key))
+    .filter((g) => settings.phase === 'all' || phaseOf(g) === settings.phase)
+    .filter((g) => !term || [g.away.abbr, g.home.abbr, g.away.name, g.home.name, g.away.nick, g.home.nick].some((x) => String(x || '').toLowerCase().includes(term)))
+    .sort((a, b) => (phaseOf(a) === 'live' ? 0 : 1) - (phaseOf(b) === 'live' ? 0 : 1) || new Date(a.start) - new Date(b.start) || a.key.localeCompare(b.key));
+}
+function groups() {
+  const out = new Map();
+  for (const g of visibleGames()) {
+    const k = phaseOf(g) === 'live' ? 'live' : g.start;
+    if (!out.has(k)) out.set(k, { key: k, live: k === 'live', start: k === 'live' ? null : new Date(g.start), games: [] });
+    out.get(k).games.push(g);
+  }
+  return [...out.values()];
+}
+function latency(book) {
+  const s = state.sources[book] || {};
+  if (book === 'draftkings') {
+    const e2e = pct(lat.recent.e2e, 0.5);
+    return { measured: e2e != null, bookToScreenMs: e2e ?? (s.lagP50Ms != null ? s.lagP50Ms + (pct(lat.recent.draftkings, 0.5) ?? 30) : null), bookToServerMs: s.lagP50Ms ?? null, samples: lat.recent.e2e.length || s.lagCount || 0, clockPm: s.clockUncertaintyMs ?? null };
+  }
+  const beat = (s.pollMs || 1000) / (s.interleave ? 2 : 1);
+  return { beatMs: beat, freshMs: s.freshP50Ms ?? beat, maxAgeMs: beat + (s.lastPollMs || 0) + (pct(lat.recent.fanduel, 0.5) ?? 30), interleave: !!s.interleave };
+}
+function freshness(book, now = serverNow()) {
+  const s = state.sources[book] || {}; const limit = state.config.staleMs?.[book] || 60000;
+  const age = s.lastDataAt ? now - s.lastDataAt : limit;
+  return { age, fill: Math.max(0, Math.min(1, 1 - age / limit)) };
+}
+
+const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
+  feedState, latency, freshness, bookDown,
+  set(key, value) { settings[key] = value; if (key === 'format') keep.set('format', value); if (key === 'view') { const u = new URL(location.href); value === 'best' ? u.searchParams.delete('view') : u.searchParams.set('view', value); history.replaceState(null, '', u); } theme.render(); },
+  setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; keep.set('theme', id); settings.theme = id; mountTheme(t); },
+};
+
+// ---------- theme mounting ----------
+let theme = null;
+function link(id, href) { let el = document.getElementById(id); if (!href) { el?.remove(); return; } if (!el) { el = document.createElement('link'); el.id = id; el.rel = 'stylesheet'; document.head.appendChild(el); } if (el.getAttribute('href') !== href) el.href = href; }
+function mountTheme(t) {
+  theme?.unmount?.();
+  theme = t;
+  link('theme-fonts', t.fonts); link('theme-css', t.css);
+  document.documentElement.dataset.theme = t.id;
+  document.body.className = t.bodyClass || '';
+  t.mount(document.getElementById('app'), api);
+  t.render();
+}
+
+// ---------- clock + stream ----------
 async function syncClock() {
   let best = null;
   for (let i = 0; i < 3; i++) {
     const t0 = Date.now(); const { serverTs } = await (await fetch('/api/time', { cache: 'no-store' })).json(); const t1 = Date.now();
-    const rtt = t1 - t0, off = serverTs - (t0 + t1) / 2;
-    if (!best || rtt < best.rtt) best = { rtt, off };
+    if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, off: serverTs - (t0 + t1) / 2 };
   }
   state.offset = best.off; state.rtt = best.rtt;
 }
-const serverNow = () => Date.now() + state.offset;
-
-// ---------- live stream ----------
 function connect() {
   const es = new EventSource('/api/stream');
-  es.addEventListener('snapshot', (e) => { applySnapshot(JSON.parse(e.data)); state.connected = true; state.everConnected = true; renderBanner(); });
+  es.addEventListener('snapshot', (e) => {
+    const s = JSON.parse(e.data);
+    state.games = new Map(s.games.map((g) => [g.key, g])); state.quotes = new Map(s.quotes.map((q) => [q.id, q]));
+    state.sources = s.sources; if (s.config) state.config = s.config;
+    state.connected = true; state.everConnected = true;
+    theme.render();
+  });
   es.addEventListener('batch', (e) => applyBatch(JSON.parse(e.data)));
-  es.onerror = () => { state.connected = false; renderBanner(); }; // EventSource reconnects by itself and we get a fresh snapshot
-}
-function applySnapshot(s) {
-  state.games = new Map(s.games.map((g) => [g.key, g]));
-  state.quotes = new Map(s.quotes.map((q) => [q.id, q]));
-  state.sources = s.sources; if (s.config) state.config = s.config;
-  renderBoard(); renderFeeds(); renderTape();
+  es.addEventListener('beat', (e) => { for (const [b, [d, c]] of Object.entries(JSON.parse(e.data))) { const s = state.sources[b]; if (s) { s.lastDataAt = d; s.lastChangeAt = c; } } theme.renderFeeds(); });
+  es.onerror = () => { state.connected = false; theme.renderBanner(); theme.renderFeeds(); }; // EventSource reconnects by itself; a fresh snapshot follows
 }
 function applyBatch(b) {
-  const now = serverNow();
-  const touched = new Set();
-  for (const g of b.games || []) { state.games.set(g.key, { ...(state.games.get(g.key) || {}), ...g }); touched.add(g.key); }
+  const now = serverNow(), local = Date.now(); const touched = new Set(); let structural = false;
+  for (const g of b.games || []) { const prev = state.games.get(g.key); if (!prev || prev.status !== g.status) structural = true; state.games.set(g.key, { ...(prev || {}), ...g }); touched.add(g.key); }
   for (const q of b.quotes || []) {
     touched.add(q.gameKey);
-    if (q.removed) { state.quotes.delete(q.id); continue; }
-    state.quotes.set(q.id, { ...q, _flashAt: Date.now() });
-    if (q.prevOdds != null || q.prevLine != null) recordMove(q);
+    if (q.removed) { state.quotes.delete(q.id); structural = true; continue; }
+    if (!state.quotes.has(q.id)) structural = true;
+    state.quotes.set(q.id, q);
+    const moved = (q.prevOdds != null && q.prevOdds !== q.odds) || (q.prevLine != null && q.prevLine !== q.line);
+    if (moved) { state.changedAt.set(q.id, local); recordMove(q, local); }
     const pl = now - q.updatedAt; if (pl > -5000 && pl < 120000) { lat.pushLag[q.book]?.push(pl); lat.recent[q.book]?.push(pl); }
-    if (q.book === 'draftkings' && q.sourceTs) { const e2e = now - q.sourceTs; const phase = state.games.get(q.gameKey)?.status === 'live' ? 'live' : 'pregame'; if (e2e > -5000 && e2e < 600000) { lat.endToEnd.draftkings[phase].push(e2e); lat.recent.e2e[phase].push(e2e); } }
+    if (q.book === 'draftkings' && q.sourceTs && moved) { const e2e = now - q.sourceTs; if (e2e > -5000 && e2e < 600000) { const ph = state.games.get(q.gameKey)?.status === 'live' ? 'live' : 'pregame'; lat.endToEnd.draftkings[ph].push(e2e); lat.recent.e2e.push(e2e); } }
   }
   for (const [book, s] of Object.entries(b.sources || {})) state.sources[book] = s;
-  // a game appearing/disappearing or changing slot re-lays the board; price moves patch one row
-  const structural = (b.games || []).some((g) => !boardEl.querySelector(`[data-key="${CSS.escape(g.key)}"]`) || g.status !== undefined);
-  if (structural) renderBoard(); else for (const k of touched) renderGame(k);
-  if (b.quotes?.length) renderTape();
-  renderFeeds();
+  if (structural) theme.render();
+  else { for (const k of touched) theme.renderGame(k); if ((b.quotes || []).length) theme.renderWire(); theme.renderFeeds(); theme.renderBanner(); }
+  // drop the previous-price history 8 s later
+  for (const k of touched) setTimeout(() => theme.renderGame(k), 8100);
+}
+function recordMove(q, at) {
+  const g = state.games.get(q.gameKey); if (!g) return;
+  state.moves.unshift({ at, book: q.book, gameKey: q.gameKey, game: `${g.away.abbr} @ ${g.home.abbr}`, market: q.market, side: q.side,
+    sideName: q.market === 'total' ? (q.side === 'over' ? 'Over' : 'Under') : (q.side === 'home' ? g.home.abbr : g.away.abbr),
+    prevOdds: q.prevOdds, odds: q.odds, prevLine: q.prevLine, line: q.line });
+  state.moves.length = Math.min(state.moves.length, 30);
 }
 
-// ---------- formatting ----------
-const fmtOdds = (a) => a == null ? '—' : a > 0 ? `+${a}` : `${a}`.replace('-', '−');
-const fmtLine = (m, side, l) => l == null ? '' : m === 'total' ? `${side === 'over' ? 'O' : 'U'} ${l}` : (l > 0 ? `+${l}` : `${l}`.replace('-', '−'));
-const quoteOf = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book}`);
-const isStale = (book) => !!state.sources[book]?.stale;
-function ago(ts, now = serverNow()) {
-  if (!ts) return 'never'; const s = Math.max(0, Math.round((now - ts) / 1000));
-  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
-}
-const pct = (arr, q) => { if (!arr.length) return null; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
-const secs = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
-function sideName(g, market, side) { return market === 'total' ? (side === 'over' ? 'Over' : 'Under') : (side === 'home' ? g?.home.abbr : g?.away.abbr); }
-
-// ---------- best price ----------
-function bestOf(quotes) {
-  const live = quotes.filter((q) => q && q.odds != null && !q.suspended);
-  if (!live.length) return null;
-  const lines = new Set(live.map((q) => q.line ?? 'ml'));
-  const sorted = live.slice().sort((a, b) => b.odds - a.odds);
-  if (lines.size > 1) return { conflict: true, offers: sorted };
-  return { conflict: false, best: sorted[0], books: sorted.filter((q) => q.odds === sorted[0].odds).map((q) => q.book), offers: sorted };
-}
-
-// ---------- cells ----------
-function cellHtml(q, { chip, other, age } = {}) {
-  if (!q) return `<div class="cell empty">no line</div>`;
-  const t = Date.now() - (q._flashAt || 0);
-  const moved = q._flashAt && t < 8000 && (q.prevOdds != null || q.prevLine != null) && (q.prevOdds !== q.odds || q.prevLine !== q.line);
-  const dir = moved && q.prevOdds != null && q.odds != null ? (q.odds > q.prevOdds ? 'up' : q.odds < q.prevOdds ? 'down' : '') : '';
-  const flash = q._flashAt && t < 1500 ? (dir === 'down' ? ' flash-down' : ' flash-up') : '';
-  const prev = moved ? `<s>${q.prevLine != null && q.prevLine !== q.line ? fmtLine(q.market, q.side, q.prevLine) + ' ' : ''}${fmtOdds(q.prevOdds)}</s>` : '';
-  const arrow = dir ? `<span class="arrow ${dir}">${dir === 'up' ? '▲' : '▼'}</span>` : '';
-  const cls = ['cell', chip === 'both' ? 'both' : BOOK[q.book].cls, flash, isStale(q.book) ? 'stale' : '', q.suspended ? 'suspended' : ''].join(' ');
-  const chipText = chip === 'both' ? 'DK = FD' : chip ? BOOK[chip].label : '';
-  const sub = chipText || other || age ? `<span class="sub"><span class="chip">${chipText || ''}</span><span class="other">${other || ''}${age ? `<span class="age" data-ts="${q.updatedAt}">updated ${ago(q.updatedAt)}</span>` : ''}</span></span>` : '';
-  return `<div class="${cls}" data-q="${q.gameKey}|${q.market}|${q.side}|${q.book}" data-odds="${q.odds ?? ''}" data-line="${q.line ?? ''}" title="${BOOK[q.book].label}, updated ${new Date(q.updatedAt).toLocaleTimeString()}${q.suspended ? ', suspended' : ''}">
-    <span class="line">${fmtLine(q.market, q.side, q.line)}</span><span class="odds">${prev}<b>${fmtOdds(q.odds)}</b>${arrow}</span>${sub}</div>`;
-}
-function marketHtml(g, market, sides) {
-  return `<div class="market" data-label="${market === 'moneyline' ? 'Moneyline' : market === 'spread' ? 'Spread' : 'Total'}">${sides.map((side) => {
-    if (state.view !== 'best') return cellHtml(quoteOf(g.key, market, side, state.view), { age: true });
-    const dk = quoteOf(g.key, market, side, 'draftkings'), fd = quoteOf(g.key, market, side, 'fanduel');
-    const best = bestOf([dk, fd]);
-    if (!best) return cellHtml(dk || fd, { chip: (dk || fd)?.book });
-    if (best.conflict) return `<div class="split"><span class="note">lines differ</span>${best.offers.map((q) => cellHtml(q, { chip: q.book })).join('')}</div>`;
-    const tie = best.books.length > 1;
-    const runnerUp = tie ? null : best.offers.find((q) => q.book !== best.best.book) || [dk, fd].find((q) => q && q.book !== best.best.book);
-    const other = runnerUp ? `${BOOK[runnerUp.book].short} ${runnerUp.suspended ? 'suspended' : fmtOdds(runnerUp.odds)}` : (tie ? '' : `${BOOK[best.best.book === 'draftkings' ? 'fanduel' : 'draftkings'].short} no line`);
-    return cellHtml(best.best, { chip: tie ? 'both' : best.best.book, other });
-  }).join('')}</div>`;
-}
-function gameHtml(g) {
-  const start = new Date(g.start);
-  const mins = Math.round((start - Date.now()) / 60000);
-  const when = g.status === 'live' ? `<span class="live-pill">Live</span><span>in progress</span>`
-    : mins <= 0 ? 'kickoff passed' : mins < 60 ? `kicks off in ${mins} min` : mins < 48 * 60 ? `kicks off in ${Math.round(mins / 60)} h` : `kicks off in ${Math.round(mins / 1440)} days`;
-  return `<div class="teams">
-      <div class="team" style="--tc:${g.away.color || '#44506a'}"><span class="abbr">${g.away.abbr}</span><span class="name">${g.away.name}</span></div>
-      <div class="team" style="--tc:${g.home.color || '#44506a'}"><span class="abbr">${g.home.abbr}</span><span class="name">${g.home.name}</span></div>
-      <div class="kick">${when}</div></div>
-    ${marketHtml(g, 'spread', ['away', 'home'])}${marketHtml(g, 'total', ['over', 'under'])}${marketHtml(g, 'moneyline', ['away', 'home'])}`;
-}
-
-// ---------- board ----------
-function slotOf(g) {
-  if (g.status === 'live') return { key: '0-live', label: 'Live now', live: true };
-  const d = new Date(g.start);
-  return { key: '1-' + d.toISOString(), label: d.toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ' at ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) };
-}
-function visibleGames() {
-  const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
-  return [...state.games.values()].filter((g) => withPrices.has(g.key)).sort((a, b) => (a.status === 'live' ? 0 : 1) - (b.status === 'live' ? 0 : 1) || new Date(a.start) - new Date(b.start) || a.key.localeCompare(b.key));
-}
-function renderBoard() {
-  const games = visibleGames();
-  if (!games.length) { boardEl.innerHTML = `<p class="empty-board">No NFL game lines right now. The board fills itself as soon as either book posts one.</p>`; return; }
-  const slots = new Map();
-  for (const g of games) { const s = slotOf(g); if (!slots.has(s.key)) slots.set(s.key, { ...s, games: [] }); slots.get(s.key).games.push(g); }
-  boardEl.innerHTML = [...slots.values()].map((s) => `<section class="slot">
-      <h2>${s.live ? '<span class="live-dot"></span>' : ''}${s.label}<small>${s.games.length} ${s.games.length === 1 ? 'game' : 'games'}</small></h2>
-      <div class="cols"><span>Game</span><span>Spread</span><span>Total</span><span>Moneyline</span></div>
-      ${s.games.map((g) => `<article class="game${g.status === 'live' ? ' live' : ''}" data-key="${g.key}">${gameHtml(g)}</article>`).join('')}
-    </section>`).join('');
-}
-function renderGame(key) {
-  const g = state.games.get(key); const el = boardEl.querySelector(`[data-key="${CSS.escape(key)}"]`);
-  if (!g) { el?.remove(); return; }
-  if (!el) return renderBoard();
-  el.innerHTML = gameHtml(g); el.classList.toggle('live', g.status === 'live');
-  clearTimeout(flashTimers.get(key)); flashTimers.set(key, setTimeout(() => { const e = boardEl.querySelector(`[data-key="${CSS.escape(key)}"]`); if (e) e.innerHTML = gameHtml(g); }, 8300));
-}
-
-// ---------- moves tape ----------
-function recordMove(q) {
-  const g = state.games.get(q.gameKey);
-  state.moves.unshift({ ts: Date.now(), who: `${sideName(g, q.market, q.side)} ${MARKET_LABEL[q.market]}`, market: q.market, side: q.side, book: q.book, prevOdds: q.prevOdds, prevLine: q.prevLine, odds: q.odds, line: q.line });
-  state.moves.length = Math.min(state.moves.length, 40);
-}
-function renderTape() {
-  if (!state.moves.length) return;
-  tapeEl.innerHTML = state.moves.map((m) => {
-    const lineMoved = m.prevLine != null && m.prevLine !== m.line;
-    const dir = m.prevOdds != null && m.odds != null && !lineMoved ? (m.odds > m.prevOdds ? 'up' : m.odds < m.prevOdds ? 'down' : '') : '';
-    const from = `${lineMoved ? fmtLine(m.market, m.side, m.prevLine) + ' ' : ''}${fmtOdds(m.prevOdds)}`;
-    const to = `${fmtLine(m.market, m.side, m.line)} ${fmtOdds(m.odds)}`;
-    return `<span class="move ${dir}${Date.now() - m.ts < 5000 ? ' fresh' : ''}"><span class="who">${m.who}</span><s>${from}</s><span class="to">${to}</span><span class="bk ${BOOK[m.book].cls}">${BOOK[m.book].short}</span><time data-ts="${m.ts}">${ago(m.ts, Date.now())}</time></span>`;
-  }).join('');
-}
-
-// ---------- feeds (freshness + latency per book) ----------
-function renderFeeds() {
-  const now = serverNow();
-  feedsEl.innerHTML = ['draftkings', 'fanduel'].map((b) => {
-    const s = state.sources[b] || {}; const B = BOOK[b];
-    const threshold = state.config.staleMs?.[b] || 60000;
-    const age = s.lastDataAt ? now - s.lastDataAt : threshold;
-    const fill = Math.max(0, Math.min(1, 1 - age / threshold));
-    const barColor = s.stale || s.state === 'down' ? 'var(--down)' : fill < .35 ? 'var(--best)' : 'var(--up)';
-    const beat = (s.pollMs || 1000) / (s.interleave ? 2 : 1);
-    const mode = b === 'draftkings' ? 'push over WebSocket' : `polled every ${beat >= 1000 ? (beat / 1000).toFixed(beat % 1000 ? 1 : 0) + ' s' : beat + ' ms'}${s.interleave ? ' from 2 IPs' : ''}`;
-    const stateText = s.stale ? 'stale' : s.state === 'down' ? 'down, reconnecting' : s.state === 'connecting' ? 'connecting' : 'live';
-    const r = lat.recent;
-    const relay = b === 'draftkings' && s.lastSnapshotAt ? `<span>Snapshot <b>${ago(s.lastSnapshotAt, now)}</b></span>` : '';
-    const latency = b === 'draftkings'
-      ? (r.e2e.pregame.length + r.e2e.live.length ? `<span>Book to screen <b>${secs(pct(r.e2e.pregame.concat(r.e2e.live), .5))}</b>${s.clockUncertaintyMs != null ? ` ±${s.clockUncertaintyMs} ms` : ''} over ${r.e2e.pregame.length + r.e2e.live.length} moves</span>` : `<span>Book to screen <b>measuring</b> on the next move</span>`)
-      : `<span>Any number is at most <b>${secs(beat + (s.lastPollMs || 0))}</b> old</span>`;
-    return `<div class="feed ${B.cls}${s.stale ? ' stale' : ''}${s.state === 'down' ? ' down' : ''}" title="${(s.detail || '') + (s.lastError ? '. Last error: ' + s.lastError : '')}">
-      <div class="feed-head"><b>${B.label}</b><span class="mode">${s.region ? s.region + ' · ' : ''}${mode}</span><span class="state">${stateText}</span></div>
-      <div class="feed-bar"><i style="width:${(fill * 100).toFixed(0)}%;background:${barColor}"></i></div>
-      <div class="feed-meta"><span>Data <b>${ago(s.lastDataAt, now)}</b></span><span>Last move <b>${ago(s.lastChangeAt, now)}</b></span>${latency}${relay}${r[b].length ? `<span>Server to screen <b>${secs(pct(r[b], .5))}</b></span>` : ''}</div></div>`;
-  }).join('');
-}
-function renderBanner() {
-  const stale = ['draftkings', 'fanduel'].filter((b) => state.sources[b]?.stale);
-  if (!state.connected && state.everConnected) { bannerEl.hidden = false; bannerEl.className = 'banner'; bannerEl.textContent = 'Lost the connection to the server. Reconnecting; prices on screen are from before the drop.'; return; }
-  if (stale.length) { bannerEl.hidden = false; bannerEl.className = 'banner'; bannerEl.textContent = `${stale.map((b) => BOOK[b].label).join(' and ')} ${stale.length > 1 ? 'have' : 'has'} stopped answering. Those prices are greyed out and may be old; the other book keeps updating.`; return; }
-  const regions = ['draftkings', 'fanduel'].map((b) => state.sources[b]?.region).filter(Boolean);
-  if (regions.length === 2 && regions[0] !== regions[1]) { bannerEl.hidden = false; bannerEl.className = 'banner info'; bannerEl.textContent = `Heads up: DraftKings prices are from ${regions[0]} and FanDuel prices from ${regions[1]}. Books can price differently by jurisdiction.`; return; }
-  bannerEl.hidden = true;
-}
-
-// ---------- view toggle, timers, reporting ----------
-document.querySelectorAll('.views button').forEach((b) => b.addEventListener('click', () => {
-  state.view = b.dataset.view; document.querySelectorAll('.views button').forEach((x) => x.setAttribute('aria-selected', String(x === b))); renderBoard();
-}));
-setInterval(() => { // once a second: freshness bars, ages, stale greying, banner
-  renderFeeds(); renderBanner();
-  const now = Date.now(); for (const t of tapeEl.querySelectorAll('time')) t.textContent = ago(Number(t.dataset.ts), now);
-  for (const a of boardEl.querySelectorAll('.age')) a.textContent = `updated ${ago(Number(a.dataset.ts))}`;
-  for (const b of ['draftkings', 'fanduel']) for (const c of boardEl.querySelectorAll(`.cell.${BOOK[b].cls}`)) c.classList.toggle('stale', isStale(b));
-}, 1000);
-setInterval(async () => { // send measured samples to the server so /api/metrics holds true end-to-end numbers
+// ---------- timers ----------
+setInterval(() => theme.tick(), 250); // age labels and freshness bars
+setInterval(async () => { // measured samples go to the server so /api/metrics holds true end-to-end numbers
   const body = { pushLag: { draftkings: lat.pushLag.draftkings.splice(0), fanduel: lat.pushLag.fanduel.splice(0) }, endToEnd: { draftkings: { pregame: lat.endToEnd.draftkings.pregame.splice(0), live: lat.endToEnd.draftkings.live.splice(0) } } };
   if (Object.values(body.pushLag).some((a) => a.length) || Object.values(body.endToEnd.draftkings).some((a) => a.length)) fetch('/api/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+  for (const k of ['draftkings', 'fanduel', 'e2e']) if (lat.recent[k].length > 500) lat.recent[k].splice(0, lat.recent[k].length - 500);
 }, 30000);
-// ?view=draftkings | fanduel | best — shareable links to one book's board
-{ const v = new URLSearchParams(location.search).get('view'); const btn = v && document.querySelector(`.views button[data-view="${v}"]`); if (btn) btn.click(); }
-syncClock().finally(connect);
-setInterval(syncClock, 120000);
+
+mountTheme(THEMES.find((t) => t.id === settings.theme) || THEMES[0]);
+syncClock().catch(() => {}).finally(connect);
+setInterval(() => syncClock().catch(() => {}), 120000);

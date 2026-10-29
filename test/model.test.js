@@ -51,3 +51,17 @@ test('best price: suspended or missing prices are ignored', () => {
   assert.equal(r.best.book, 'fanduel');
   assert.equal(bestPrice([null, { book: 'fanduel', odds: null }]), null);
 });
+
+test('compare(): best, tie, different lines, only-available, nothing eligible', async () => {
+  const { compare, decimalOdds } = await import('../src/model.js');
+  const dk = (o) => ({ book: 'draftkings', line: -3.5, odds: -110, ...o }), fd = (o) => ({ book: 'fanduel', line: -3.5, odds: -105, ...o });
+  assert.equal(compare([dk(), fd()]).kind, 'best'); assert.equal(compare([dk(), fd()]).best.book, 'fanduel');
+  assert.equal(compare([dk(), fd({ odds: -110 })]).kind, 'tie');
+  assert.equal(compare([dk(), fd({ line: -3 })]).kind, 'different');
+  const s = compare([dk(), fd({ suspended: true, odds: 300 })]); assert.equal(s.kind, 'partial'); assert.equal(s.best.book, 'draftkings');
+  assert.equal(compare([dk({ stale: true }), fd()]).best.book, 'fanduel', 'a stale book can never win');
+  assert.equal(compare([dk(), null]).kind, 'partial');
+  assert.equal(compare([dk({ stale: true }), fd({ suspended: true })]).kind, 'none');
+  assert.equal(compare([null, null]).kind, 'none');
+  assert.equal(decimalOdds(-340).toFixed(3), '1.294'); assert.equal(decimalOdds(-350).toFixed(3), '1.286'); assert.equal(decimalOdds(150), 2.5);
+});

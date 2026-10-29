@@ -4,18 +4,21 @@
 
 A side-by-side NFL board (moneyline, spread, total; pregame and in-game) that pulls from DraftKings and FanDuel,
 normalizes both into one model, shows the best price with the book underneath, and pushes every line move to the
-browser without a refresh. Toggle at the top: **Best Price / DraftKings / FanDuel**.
+browser without a refresh. Toggle at the top: **Best price / DraftKings only / FanDuel only** (shareable as `?view=`).
 
 ![board](docs/board.png)
 
 What is on the page, beyond the board itself:
-* **Line moves tape** — every price or line change as it happens (old → new, which book, how long ago).
+* **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
 * **Per-book feed cards** — how the book is read (push vs poll), a freshness bar that drains as data ages, last
   data / last move, and the latency *this browser* measured (DraftKings book→screen; FanDuel worst-case age).
 * **Stale handling** — a book that stops answering turns red, its prices grey out, a banner says so; the other book
   keeps moving. Lost server connection → "reconnecting" banner, then a fresh snapshot.
 * Games grouped by kickoff slot, live games first; the single-book views show "updated N s ago" on every number.
+* Team search, Live/Pregame filter, American or decimal odds (decimal to 3 places so −340 vs −350 stays visible).
+* **Swappable design.** Every design is a theme that only draws; the rules (which price wins, what is stale) live in
+  one place. Add a second theme and a *Design* picker appears in the header; the choice is remembered (`?theme=`).
 
 The scraping is read-only and login-free: the same public odds endpoints the sites' own pages call, at or below
 the rate the pages themselves use, one connection per book.
@@ -76,7 +79,9 @@ flowchart LR
   polls cost nothing downstream.
 * `src/server.js` — static UI, `/api/board` snapshot, `/api/stream` SSE, metrics, edge ingestion.
 * `src/model.js` — canonical teams, game key, odds helpers, **best-price policy**.
-* `public/` — the board (vanilla JS, one `EventSource`).
+* `public/app.js` — the board core: one `EventSource`, settings, filters, latency measurement. It ranks prices with
+  the **same `compare()` from `src/model.js`** the tests check (served as `/lib/model.js`), so the page cannot disagree
+  with the tests. `public/themes/` — the designs; a theme gets data and helpers and only renders.
 * `tools/` — the research tooling: `capture-network.mjs` (records what each book's page really does),
   `probe-*.mjs`, `measure-latency.mjs`. Findings in [`research/findings.md`](research/findings.md).
 
@@ -150,7 +155,8 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 * **No timer batching.** Everything one upstream message changes (one DK frame, one FD poll) is applied synchronously,
   so a `setImmediate` flush already groups it into one event without adding delay. Measured wait before sending:
   **p50 0 ms, p95 1 ms** (it was a fixed 40 ms window in the first version). A typical event is 1–2 prices, ~300 bytes,
-  written with Nagle off. Status counters ("data 3 s ago") ride on a 5 s heartbeat instead of every poll.
+  written with Nagle off. Full status rides a 5 s heartbeat; the moment a poll or frame lands, a tiny `beat` event
+  (two timestamps per book, at most 4 per second) keeps "data 0.4 s ago" exact instead of up to 5 s late.
 * Adding viewers adds zero requests to the books: one ingestion, N listeners. The ~100 KB snapshot is serialised once
   per board change, not once per viewer.
 * **Many viewers, measured** (`node tools/load-sse.mjs <url> 500 60 25`, from one laptop against the free Render
@@ -198,8 +204,10 @@ request a minute is the production answer (nothing latency-critical goes through
   Sides from DK `outcomeType` (Home/Away/Over/Under) and FD `result.type`; the line is DK `points` / FD `handicap`.
 * **Live:** FD market `inPlay`, DK event status; a game is live if either book says so.
 * **Best price:** moneyline → higher American odds wins. Spread/total → prices are only comparable **on the same
-  number**; if both books post the same line the better odds wins (ties show "DK = FD"). If they post different lines
-  (−3 −110 vs −3.5 +100) the board shows **both offers side by side tagged "lines differ" and crowns neither** — I
+  number**; if both books post the same line the better odds wins (equal odds show "Tie" with both books). If they post
+  different lines (−3 −110 vs −3.5 +100) the board shows **both offers side by side, "Different lines · no best price",
+  and crowns neither**. A suspended or stale offer stays visible with its reason but can never win; if only one book is
+  open the cell says "only available offer". I
   would rather show the trade-off than silently call unlike markets equal. A fairer next step is a push chart
   (value of the half point by key number) so unlike lines can be ranked; that needs calibrated numbers, so it is a
   "with more time" item.
@@ -266,9 +274,10 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 34 tests, ~6 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 36 tests, ~6 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
-  tie, different lines = no winner, suspended excluded).
+  tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
+  different lines, only-available, nothing eligible).
 * **Store:** emits only real changes, tracks previous price/line, removals, stale flag on and off per book.
 * **Durability and timing:** a new process rebuilds the exact DraftKings board from checkpoint + frame log (line
   moves and live status included) and keeps applying pushes; DK's clock offset from the subscribe ack converts publish
@@ -284,7 +293,8 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
   `Retry-After`), shows the error, does not hammer, recovers.
 * **Black box:** the real server process against a fake FanDuel and a relay client — a FanDuel change reaches an SSE viewer
   within one poll; a DK snapshot relayed from an edge fills the board and reaches viewers at once; wrong relay tokens are refused; DK going quiet → DK
-  stale, FanDuel unaffected; FanDuel failing → FanDuel stale with its last prices kept; recovery on its own.
+  stale, FanDuel unaffected; FanDuel failing → FanDuel stale with its last prices kept; recovery on its own; the
+  age `beat` reaches the page within one poll; the page, its price rules and every theme file are served as modules.
 * I checked the tests can fail: breaking the different-lines rule, the change-only emit, or the back-off each turns
   exactly the right test red.
 
@@ -316,7 +326,7 @@ runs under a restart-on-exit supervisor.
 ## 12. Above & beyond checklist
 | Asked for | Done |
 | --- | --- |
-| Show the odds moving (flash / previous price) | Yes — flash + struck-through previous value + the moves tape |
+| Show the odds moving (flash / previous price) | Yes — green/red flash + struck-through previous value for 8 s + line-move notice + the wire |
 | Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen (DK) and worst-case age (FD) |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
 | Props, alt lines, other leagues | Not built. Both feeds expose them (DK other subcategories, FD other market types / `customPageId`); the adapters take a league id and market map, so NBA is a config change plus a team table. |

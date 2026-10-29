@@ -4,39 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NFL Odds Board</title>
-<meta name="description" content="DraftKings and FanDuel NFL lines side by side, updated the moment they move.">
+<meta name="description" content="DraftKings and FanDuel Ontario NFL prices side by side, updated the moment a line moves.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css">
+<link rel="modulepreload" href="/lib/model.js">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect y='5' width='16' height='6' fill='%232555cb'/%3E%3C/svg%3E">
 </head>
 <body>
-<header class="bar">
-  <div class="brand">
-    <h1>NFL odds board</h1>
-    <p>DraftKings and FanDuel Ontario prices, side by side, the moment a line moves</p>
-  </div>
-  <div class="views" role="tablist" aria-label="Which prices to show">
-    <button role="tab" aria-selected="true" data-view="best">Best price</button>
-    <button role="tab" aria-selected="false" data-view="draftkings">DraftKings</button>
-    <button role="tab" aria-selected="false" data-view="fanduel">FanDuel</button>
-  </div>
-  <div class="feeds" id="feeds" aria-live="polite"></div>
-</header>
-
-<div class="banner" id="banner" hidden></div>
-
-<section class="tape" aria-label="Recent line moves">
-  <div class="tape-label"><span class="pulse"></span>Line moves</div>
-  <div class="tape-track" id="tape"><span class="tape-empty">Waiting for the first move. Lines are quiet midweek; Sunday mornings and live games move constantly.</span></div>
-</section>
-
-<main id="board" class="board"></main>
-
-<footer class="foot">
-  <p><strong>Best price</strong> is the higher odds on the same number. When the two books post different numbers, for example −3 −110 against −3.5 +100, both are shown and neither is called best: a half point is worth money and the board will not pretend otherwise.</p>
-  <p>A price flashes when it moves and keeps its old value beside it for a few seconds. Each book shows how fresh its data is; a book that stops answering turns stale and its prices grey out while the other keeps updating. <a href="https://github.com/youngbizman/nfl-odds-board">How it works and what was measured</a></p>
-</footer>
-<script src="/app.js"></script>
+<div id="app"></div>
+<noscript>This board updates live and needs JavaScript.</noscript>
+<script type="module" src="/app.js"></script>
 </body>
 </html>

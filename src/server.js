@@ -61,16 +61,35 @@ store.on('quote', (q) => queue('quotes', q, q.id));
 store.on('game', (g) => queue('games', g, g.key));
 store.on('source', (s) => queue('sources', s, s.book));
 setInterval(() => store.refreshStaleness(STALE_MS), 1000);
+setInterval(() => { // live latency figures for the feed cards (ride the heartbeat below)
+  const dkLag = metrics.dk.ingestLagLive.stats().count ? metrics.dk.ingestLagLive.stats() : metrics.dk.ingestLagPregame.stats();
+  store.sources.draftkings.lagP50Ms = dkLag.p50 ?? null; store.sources.draftkings.lagCount = dkLag.count;
+  store.sources.fanduel.freshP50Ms = metrics.fd.freshInterval.stats().p50 ?? null;
+}, 5_000);
 setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps proxies from closing idle streams
   const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources })}\n\n`;
   for (const res of clients) res.write(payload);
 }, 5_000);
+// Age beat: the moment a book's data timestamp moves (at most every 250 ms) push just the two timestamps per book,
+// so "data 0.4 s ago" on the page is exact rather than up to a heartbeat late.
+let lastBeat = { at: 0, sig: '' };
+setInterval(() => {
+  if (!clients.size) return;
+  const t = {}; for (const [b, s] of Object.entries(store.sources)) t[b] = [s.lastDataAt, s.lastChangeAt];
+  const sig = JSON.stringify(t), now = Date.now();
+  if (sig === lastBeat.sig || now - lastBeat.at < 250) return;
+  lastBeat = { at: now, sig };
+  const payload = `event: beat\ndata: ${sig}\n\n`;
+  for (const res of clients) res.write(payload);
+}, 100);
 
 // ---------- HTTP ----------
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0 }));
+// the browser uses the exact same comparison rules the tests check
+app.get('/lib/model.js', (req, res) => res.type('application/javascript').sendFile(path.join(__dirname, 'model.js')));
 
 const snapshot = () => ({ ...store.snapshot(), config: { staleMs: STALE_MS, batchMs: BATCH_MS } });
 // The snapshot is ~100 KB; serialising it per viewer would make a burst of joins CPU-bound. Serialise once per change.
