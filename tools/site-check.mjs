@@ -47,6 +47,26 @@ for (const lg of LEAGUES) for (const theme of ['pressbox', 'grid']) for (const v
 }
 await check('/?scheme=dark', VIEWS[0], 'nfl · pressbox · desktop · dark');
 await check('/?theme=grid&scheme=dark', VIEWS[0], 'nfl · grid · desktop · dark');
+// every league's first game on its own page (big chart, time windows), both designs
+for (const lg of LEAGUES) {
+  const games = (await (await fetch(`${BASE}/api/board?league=${lg}`)).json()).games || []; if (!games.length) continue;
+  const key = encodeURIComponent(games[0].key);
+  for (const theme of ['pressbox', 'grid']) for (const view of VIEWS) await check(`/?league=${lg}&game=${key}${theme === 'grid' ? '&theme=grid' : ''}`, view, `${lg} · game page · ${theme} · ${view.name}`);
+}
+{ // open a game from the list by its chart, change the window, come back with Esc
+  const ctx = await browser.newContext({ viewport: VIEWS[0].viewport }); const page = await ctx.newPage(); const mine = [];
+  page.on('pageerror', (e) => mine.push(`script error: ${e.message}`));
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('.chart[data-open-game]', { timeout: 30_000 });
+  await page.locator('.chart[data-open-game]').first().click(); await page.waitForSelector('.bc', { timeout: 10_000 }).catch(() => mine.push('no big chart after clicking a chart'));
+  if (!page.url().includes('game=')) mine.push('the game page has no link of its own');
+  await page.click('[data-range="1w"]').catch(() => mine.push('no 1 week button')); await page.waitForTimeout(500);
+  if (await page.locator('[data-range="1w"][aria-pressed="true"]').count() !== 1) mine.push('1 week window did not select');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(800);
+  if (page.url().includes('game=') || !(await page.locator('.game').count())) mine.push('Esc did not return to all games');
+  for (const p of mine) problems.push(`game page: ${p}`);
+  notes.push(`open a game from its chart${' '.repeat(9)}${mine.length ? `${mine.length} problem(s)` : 'ok'}`);
+  await ctx.close();
+}
 // the league switch inside the page (no reload) and the single-book toggle
 {
   const ctx = await browser.newContext({ viewport: VIEWS[0].viewport }); const page = await ctx.newPage(); const mine = [];
