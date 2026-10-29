@@ -61,7 +61,12 @@ function mount(r, a) {
   const fmt = root.querySelector('#odds-format'); fmt.value = api.settings.format; fmt.addEventListener('change', (e) => api.set('format', e.target.value));
   root.querySelector('#theme-picker')?.addEventListener('change', (e) => api.setTheme(e.target.value));
   const pickFrom = (t) => { const c = t.closest('.price[data-market]'); const gEl = c?.closest('[data-game]'); if (c && gEl) { api.pickChart(gEl.dataset.game, c.dataset.market, c.dataset.side); gEl.querySelector(`.price[data-market="${c.dataset.market}"][data-side="${c.dataset.side}"]`)?.focus({ preventScroll: true }); } };
-  el.board.addEventListener('click', (e) => pickFrom(e.target));
+  el.board.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-extras-toggle]'); if (t) return api.toggleExtras(t.dataset.extrasToggle);
+    const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind });
+    pickFrom(e.target);
+  });
+  el.board.addEventListener('change', (e) => { if (e.target.matches('[data-x-both]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { bothOnly: e.target.checked }); });
   el.board.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.price[data-market]')) { e.preventDefault(); pickFrom(e.target); } });
 }
 function unmount() { root.innerHTML = ''; }
@@ -146,7 +151,50 @@ function teamHtml(t, side) {
 function gameInner(g) {
   const meta = g.status === 'live' ? `<span class="live-tag">● Live</span> · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}` : `${esc(etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} ET · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
   const cells = (idx) => api.MARKETS.map(([m, sides]) => priceCell(g, m, sides[idx], idx)).join('');
-  return `<div class="game-meta">${meta}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${chartHtml(g)}</div>`;
+  return `<div class="game-meta"><span>${meta}</span>${extrasToggle(g)}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${chartHtml(g)}</div>
+    ${api.extrasOpen(g.key) ? `<section class="extras" data-extras="${esc(g.key)}" aria-label="More lines for ${esc(`${g.away.abbr} @ ${g.home.abbr}`)}">${extrasInner(g.key)}</section>` : ''}`;
+}
+
+// ---------- "More lines": alt spreads/totals and player props, both books, same number only ----------
+function extrasToggle(g) {
+  const c = api.extrasCount(g.key); const open = api.extrasOpen(g.key);
+  if (!c && !open) return '';
+  const label = c ? `More lines · ${c.both} on both books` : 'More lines';
+  return `<button type="button" class="extras-toggle" data-extras-toggle="${esc(g.key)}" aria-expanded="${open}">${esc(label)} <span aria-hidden="true">${open ? '▴' : '▾'}</span></button>`;
+}
+function oddsCell(o, cmp) {
+  if (!o) return '<td class="x-none">—</td>';
+  const win = (cmp.kind === 'best' && cmp.best.book === o.book) || (cmp.kind === 'tie' && cmp.books.includes(o.book));
+  const cls = [o.suspended ? 'x-susp' : '', win ? (cmp.kind === 'tie' ? 'x-tie' : 'x-best') : '', o.moved ? `x-${o.moved}` : ''].filter(Boolean).join(' ');
+  const prev = o.moved && o.prevOdds != null ? ` <s>${esc(api.fmtOdds(o.prevOdds))}</s>` : '';
+  const tag = o.suspended ? ' <span class="badge">Suspended</span>' : win && cmp.kind === 'tie' ? ' <span class="badge">Tie</span>' : '';
+  return `<td class="${cls}">${o.moved ? `<span class="change ${o.moved}">${o.moved === 'up' ? '↑' : '↓'}</span> ` : ''}<strong>${esc(api.fmtOdds(o.odds))}</strong>${prev}${tag}</td>`;
+}
+function extrasInner(gk) {
+  const v = api.extrasView(gk); if (!v) return '';
+  if (!v.loaded) return '<p class="x-note">Loading both books\' alt lines and player props…</p>';
+  if (!v.kinds.length) return '<p class="x-note">Neither book has alt lines or player props up for this game yet.</p>';
+  const tabs = v.kinds.map((k) => `<button type="button" data-x-kind="${k.id}" aria-pressed="${k.id === v.kind}">${esc(k.label)} <span class="x-count">${v.bothOnly ? k.both : k.all}</span></button>`).join('');
+  const st = v.status || {};
+  const head = `<div class="x-bar"><div class="segment x-tabs" role="group" aria-label="Kind of bet">${tabs}</div>
+    <label class="x-both"><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> Only lines both books offer</label></div>`;
+  const body = v.rows.length ? `<table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
+    <tbody>${v.rows.slice(0, 250).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table>
+    ${v.rows.length > 250 ? `<p class="x-note">Showing 250 of ${v.rows.length}.</p>` : ''}`
+    : `<p class="x-note">${v.bothOnly ? 'No line here that both books offer at the same number. Untick the box to see each book\'s own lines.' : 'Nothing here right now.'}</p>`;
+  const foot = `<p class="x-note">Best = higher odds on the exact same line and threshold; anything else is shown, never ranked. DraftKings pushes changes as they happen (<span data-x-age="draftkings" data-age-ts="${st.draftkings?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.draftkings?.lastDataAt))}</span>); FanDuel is re-checked every 3 s while this is open (<span data-x-age="fanduel" data-age-ts="${st.fanduel?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.fanduel?.lastDataAt))}</span>).</p>`;
+  return head + body + foot;
+}
+function renderExtras(gk) {
+  const node = el.board.querySelector(`[data-extras="${CSS.escape(gk)}"]`);
+  if (node) node.innerHTML = extrasInner(gk); else renderGame(gk);
+}
+function renderExtrasToggles() {
+  for (const node of el.board.querySelectorAll('[data-game]')) {
+    const g = api.state.games.get(node.dataset.game); if (!g) continue;
+    const meta = node.querySelector('.game-meta'); const old = meta?.querySelector('.extras-toggle');
+    const html = extrasToggle(g); if (old) old.outerHTML = html || ''; else if (html && meta) meta.insertAdjacentHTML('beforeend', html);
+  }
 }
 
 // ---------- movement chart: implied chance of the picked side, one line per book ----------
@@ -251,4 +299,4 @@ function tick() {
 
 export default { id: 'pressbox', name: 'Pressbox (light)', css: '/themes/pressbox.css',
   fonts: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap',
-  mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, tick };
+  mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, tick };

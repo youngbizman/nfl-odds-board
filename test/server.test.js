@@ -55,7 +55,7 @@ test.before(async () => {
   const dead = await freePort();
   proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'draftkings,fanduel', INGEST_TOKEN: TOKEN,
     DK_NASH_BASE: `http://127.0.0.1:${dead}`, DK_WS_URL: `ws://127.0.0.1:${dead}/websocket`,
-    FD_SNAPSHOT_URL: `${fake.base}/snapshot`, FD_PRICES_URL: `${fake.base}/prices`, FD_POLL_MS: '100', FD_STALE_MS: '1200', DK_STALE_MS: '1200' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    FD_SNAPSHOT_URL: `${fake.base}/snapshot`, FD_PRICES_URL: `${fake.base}/prices`, FD_POLL_MS: '100', FD_STALE_MS: '1200', DK_STALE_MS: '1200', EXTRAS: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.resume(); proc.stderr.resume();
   await waitFor(async () => { try { return (await fetch(`${base}/healthz`)).ok; } catch { return false; } }, 5000);
 });

@@ -20,6 +20,8 @@ import { BoardStore } from './store.js';
 import { Metrics } from './metrics.js';
 import { DraftKingsSource } from './sources/draftkings.js';
 import { FanDuelSource, fanduelEndpoints } from './sources/fanduel.js';
+import { DK_SUBCATS, slimDk } from './extras.js';
+import { dkExtrasUrl, DK_HEADERS } from './sources/draftkings-extras.js';
 
 const CLOUD = (process.env.CLOUD_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.INGEST_TOKEN || '';
@@ -72,10 +74,24 @@ async function sendSnapshot(why) {
   finally { inFlight = false; }
 }
 
+// ---------- DraftKings "more lines" (alt lines, player props): one subcategory at a time, each every ~2 min ----------
+const SUBS = Object.keys(DK_SUBCATS); const EXTRAS_EVERY = Number(process.env.EDGE_EXTRAS_MS || 120_000);
+let xi = 0, xSent = 0, xFailed = 0, xBytes = 0;
+async function sendExtras(sub = SUBS[xi++ % SUBS.length]) {
+  if (!site || ws?.readyState !== WebSocket.OPEN || process.env.EXTRAS === '0') return;
+  try {
+    const r = await fetch(dkExtrasUrl(dk.nashBase, site, sub), { headers: DK_HEADERS, signal: AbortSignal.timeout(20_000) });
+    if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+    const body = JSON.stringify({ type: 'dk-extras', sub, data: slimDk(await r.json()) });
+    if (ws?.readyState === WebSocket.OPEN) { ws.send(body); xSent++; xBytes += body.length; }
+  } catch (e) { xFailed++; if (xFailed % 10 === 1) log('extras', `subcategory ${sub}: ${e.message}`); }
+}
+const sendAllExtras = async () => { for (const sub of SUBS) { await sendExtras(sub); await new Promise((r) => setTimeout(r, 1000)); } };
+
 function connect() {
   const sock = new WebSocket(`${CLOUD.replace(/^http/, 'ws')}/ingest/ws`, { headers: { authorization: `Bearer ${TOKEN}` }, perMessageDeflate: false, handshakeTimeout: 10_000 });
   ws = sock;
-  sock.on('open', () => { backoff = 500; log('relay', 'connected'); sendSnapshot('connected'); ping(); });
+  sock.on('open', () => { backoff = 500; log('relay', 'connected'); sendSnapshot('connected'); ping(); setTimeout(sendAllExtras, 3000); });
   sock.on('message', (d) => { try { const m = JSON.parse(d); if (m.type === 'pong') rttMs = Date.now() - m.t; if (m.type === 'need-snapshot') sendSnapshot(`cloud asked (${m.why})`); if (m.type === 'fd-poll') pollFanDuel(m); } catch {} });
   sock.on('error', (e) => log('relay', `error: ${e.message}`));
   sock.on('close', () => { if (ws === sock) { ws = null; log('relay', `closed; reconnecting in ${backoff} ms`); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 15_000); } });
@@ -86,6 +102,7 @@ if (!(await pickSite())) { log('dk', 'no DraftKings site accepts this machine ei
 connect();
 setInterval(ping, 10_000);
 setInterval(() => sendSnapshot('periodic'), EVERY);
-setInterval(() => log('stat', `dk snapshots ok=${sent} failed=${failed} · fd interleave polls=${fdPolls} changed-markets-sent=${fdSent} errors=${fdErrors} · rtt=${rttMs ?? '—'} ms · site ${site}`), 60_000);
+setInterval(() => sendExtras(), EXTRAS_EVERY / SUBS.length);
+setInterval(() => log('stat', `dk snapshots ok=${sent} failed=${failed} · fd interleave polls=${fdPolls} changed-markets-sent=${fdSent} errors=${fdErrors} · extras sent=${xSent} failed=${xFailed} ${Math.round(xBytes / 1e6)} MB · rtt=${rttMs ?? '—'} ms · site ${site}`), 60_000);
 const shutdown = () => { ws?.close(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

@@ -14,6 +14,9 @@ import { DraftKingsSource } from './sources/draftkings.js';
 import { FanDuelSource } from './sources/fanduel.js';
 import { BOOKS } from './model.js';
 import { makeCheckpoint } from './checkpoint.js';
+import { ExtrasStore, KINDS } from './extras.js';
+import { DraftKingsExtras } from './sources/draftkings-extras.js';
+import { FanDuelExtras } from './sources/fanduel-extras.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -40,6 +43,13 @@ const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics,
 const fd = SOURCES.includes('fanduel') ? new FanDuelSource(store, metrics, log, { onMidBeat: askEdgeToPollFanDuel }) : null;
 if (dk) sources.push(dk);
 if (fd) sources.push(fd);
+// "More lines" (alt lines + player props): separate store, workers and per-game streams, so they never slow the board.
+const extras = new ExtrasStore();
+const extraStreams = new Map(); // gameKey -> Set(res): viewers with that game's drop-down open
+const watchedGames = () => new Set([...extraStreams].filter(([, set]) => set.size).map(([k]) => k));
+const EXTRAS = process.env.EXTRAS !== '0';
+const dkx = EXTRAS && dk ? new DraftKingsExtras(extras, store, log) : null;
+const fdx = EXTRAS && fd ? new FanDuelExtras(extras, store, log, { region: fd.region, headers: () => fd.headers(), watched: watchedGames }) : null;
 // Price history for the movement charts survives restarts in the same Redis (one JSON value, saved every minute).
 const HISTORY_KEY = 'board:history';
 if (checkpoint) try { const h = await checkpoint.loadBlob(HISTORY_KEY); if (h) { store.importHistory(JSON.parse(h)); log('history', `restored ${store.history.size} series`); } } catch (e) { log('history', `restore failed: ${e.message}`); }
@@ -88,6 +98,23 @@ setInterval(() => {
   for (const res of clients) res.write(payload);
 }, 100);
 
+// per-game "more lines" stream: everything one upstream message changed for that game, in one event
+const rowOut = (r) => ({ key: r.key, kind: r.kind, subject: r.subject, name: r.name, line: r.line, offers: r.offers });
+let xPending = new Map(), xScheduled = false;
+extras.on('row', (row) => {
+  if (!extraStreams.get(row.gameKey)?.size) return;
+  xPending.set(row.key, row);
+  if (!xScheduled) { xScheduled = true; setImmediate(flushExtras); }
+});
+function flushExtras() {
+  xScheduled = false; const byGame = new Map();
+  for (const r of xPending.values()) { if (!byGame.has(r.gameKey)) byGame.set(r.gameKey, []); byGame.get(r.gameKey).push(rowOut(r)); }
+  xPending = new Map();
+  for (const [gk, rows] of byGame) { const payload = `event: rows\ndata: ${JSON.stringify({ serverTs: Date.now(), rows })}\n\n`; for (const res of extraStreams.get(gk) || []) res.write(payload); }
+}
+// every 2 s: each book's data age for the open drop-downs (also keeps proxies from closing idle streams)
+setInterval(() => { const payload = `event: status\ndata: ${JSON.stringify(extras.status)}\n\n`; for (const set of extraStreams.values()) for (const res of set) res.write(payload); }, 2_000);
+
 // ---------- HTTP ----------
 const app = express();
 app.disable('x-powered-by');
@@ -106,6 +133,18 @@ function snapshotSse() {
 }
 app.get('/api/board', (req, res) => res.json(snapshot()));
 app.get('/api/time', (req, res) => res.json({ serverTs: Date.now() }));
+app.get('/api/extras/summary', (req, res) => res.json({ kinds: KINDS, games: extras.summary(), status: extras.status }));
+app.get('/api/extras', (req, res) => { const gk = String(req.query.game || ''); res.json({ gameKey: gk, kinds: KINDS, rows: extras.forGame(gk).map(rowOut), status: extras.status, serverTs: Date.now() }); });
+app.get('/api/extras/stream', (req, res) => {
+  const gk = String(req.query.game || ''); if (!store.games.has(gk)) return res.status(404).end();
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+  res.socket?.setNoDelay(true);
+  res.write(`event: snapshot\ndata: ${JSON.stringify({ gameKey: gk, kinds: KINDS, rows: extras.forGame(gk).map(rowOut), status: extras.status, serverTs: Date.now() })}\n\n`);
+  if (!extraStreams.has(gk)) extraStreams.set(gk, new Set());
+  extraStreams.get(gk).add(res);
+  if (fdx && extraStreams.get(gk).size === 1) fdx.tick().catch(() => {}); // first viewer: refresh FanDuel's prices for this game now
+  req.on('close', () => extraStreams.get(gk)?.delete(res));
+});
 // Movement charts: every quote's recent history, downsampled (built at most once per 5 s, shared by all viewers)
 let histCache = { at: 0, key: '', body: '' };
 app.get('/api/history', (req, res) => {
@@ -114,7 +153,8 @@ app.get('/api/history', (req, res) => {
   if (histCache.key !== key || Date.now() - histCache.at > 5000) histCache = { at: Date.now(), key, body: JSON.stringify(store.historyView({ hours, points })) };
   res.type('application/json').send(histCache.body);
 });
-app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS }));
+app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS,
+  extras: { rows: extras.rows.size, status: extras.status, draftkings: dkx?.counts, fanduel: fdx?.counts, watched: [...watchedGames()] } }));
 // Liveness for the host (never fails because a BOOK is down — restarting us would not fix DraftKings).
 app.get('/healthz', (req, res) => res.json({ ok: true, version: VERSION, games: store.games.size, quotes: store.quotes.size, clients: clients.size }));
 // Readiness for monitoring: 503 unless both books are fresh and the board has games.
@@ -204,6 +244,7 @@ relay.on('connection', (ws, req) => {
     let msg; try { msg = JSON.parse(data); } catch { return; }
     if (msg.type === 'ping') return ws.send(JSON.stringify({ type: 'pong', t: msg.t }));
     if (msg.type === 'snapshot') ingestSnapshot(msg);
+    if (msg.type === 'dk-extras' && dkx && msg.data) dkx.applySnapshot(String(msg.sub), msg.data, Date.now(), 'edge');
     if (msg.type === 'fd-prices' && fd && Array.isArray(msg.markets)) {
       // the edge started its request ~RTT/2 after we sent the trigger
       const rtt = Number.isFinite(msg.rttMs) ? msg.rttMs : 0;
@@ -214,5 +255,6 @@ relay.on('connection', (ws, req) => {
 });
 
 for (const s of sources) s.start().catch((e) => log('src', 'start failed', e));
-const shutdown = async () => { for (const s of sources) s.stop(); await dk?.saveCheckpoint(); await saveHistory(); await checkpoint?.close(); server.close(); process.exit(0); };
+for (const x of [dkx, fdx]) x?.start().catch((e) => log('extras', 'start failed', e));
+const shutdown = async () => { for (const s of sources) s.stop(); dkx?.stop(); fdx?.stop(); await dk?.saveCheckpoint(); await saveHistory(); await checkpoint?.close(); server.close(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

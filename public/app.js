@@ -20,7 +20,8 @@ const settings = {
 };
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
   offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map(),
-  history: new Map(), histFrom: null, chartPick: new Map() }; // movement charts: quote id -> [[t, odds, line]]
+  history: new Map(), histFrom: null, chartPick: new Map(), // movement charts: quote id -> [[t, odds, line]]
+  extrasSummary: {}, extrasKinds: {}, extras: new Map() };   // "more lines": per-game counts, and the open drop-downs
 const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: [] } };
 
 // ---------- helpers given to themes ----------
@@ -80,6 +81,56 @@ function series(g, market, side) {
 }
 const chartPick = (gk) => state.chartPick.get(gk) || { market: 'moneyline', side: 'home' };
 
+// ---------- "more lines" drop-down: one stream per open game ----------
+const KIND_ORDER = ['alt-spread', 'alt-total', 'td', 'pass-yds', 'rush-yds', 'rec-yds', 'receptions'];
+async function loadExtrasSummary() {
+  try { const r = await (await fetch('/api/extras/summary', { cache: 'no-store' })).json(); state.extrasSummary = r.games || {}; state.extrasKinds = r.kinds || {}; theme.renderExtrasToggles?.(); } catch {}
+}
+function toggleExtras(gk) {
+  const cur = state.extras.get(gk);
+  if (cur) { cur.es.close(); state.extras.delete(gk); theme.renderGame(gk); return; }
+  const x = { rows: new Map(), kind: null, bothOnly: true, status: {}, loaded: false, es: new EventSource(`/api/extras/stream?game=${encodeURIComponent(gk)}`) };
+  state.extras.set(gk, x);
+  x.es.addEventListener('snapshot', (e) => {
+    const d = JSON.parse(e.data); x.rows = new Map(d.rows.map((r) => [r.key, r])); x.status = d.status; if (d.kinds) state.extrasKinds = d.kinds; x.loaded = true;
+    if (!x.kind) x.kind = KIND_ORDER.find((k) => [...x.rows.values()].some((r) => r.kind === k && r.offers.draftkings && r.offers.fanduel)) || KIND_ORDER.find((k) => [...x.rows.values()].some((r) => r.kind === k)) || 'alt-spread';
+    theme.renderExtras(gk);
+  });
+  x.es.addEventListener('status', (e) => { x.status = JSON.parse(e.data); for (const b of Object.keys(BOOK)) document.querySelectorAll(`[data-x-age="${b}"]`).forEach((n) => { n.dataset.ageTs = x.status[b]?.lastDataAt || ''; }); });
+  x.es.addEventListener('rows', (e) => {
+    const local = Date.now();
+    for (const r of JSON.parse(e.data).rows) {
+      if (!Object.keys(r.offers).length) { x.rows.delete(r.key); continue; }
+      const prev = x.rows.get(r.key); r.changedAt = { ...(prev?.changedAt || {}) };
+      for (const [b, o] of Object.entries(r.offers)) if (prev?.offers[b] && prev.offers[b].odds !== o.odds) r.changedAt[b] = local;
+      x.rows.set(r.key, r);
+    }
+    theme.renderExtras(gk);
+    setTimeout(() => state.extras.get(gk) === x && theme.renderExtras(gk), 8100);
+  });
+  theme.renderGame(gk);
+}
+/** What the drop-down shows: one kind's rows, ranked with the same compare() as the board, sorted for reading. */
+function extrasView(gk) {
+  const x = state.extras.get(gk); if (!x) return null;
+  const g = state.games.get(gk); const all = [...x.rows.values()];
+  const counts = {}; for (const r of all) { const both = !!(r.offers.draftkings && r.offers.fanduel); counts[r.kind] ||= { all: 0, both: 0 }; counts[r.kind].all++; if (both) counts[r.kind].both++; }
+  const now = Date.now();
+  const rows = all.filter((r) => r.kind === x.kind && (!x.bothOnly || (r.offers.draftkings && r.offers.fanduel))).map((r) => {
+    const offers = Object.keys(BOOK).map((b) => r.offers[b] ? { ...r.offers[b], book: b, line: r.line, moved: r.changedAt?.[b] && now - r.changedAt[b] < 8000 ? (r.offers[b].odds > (r.offers[b].prevOdds ?? r.offers[b].odds) ? 'up' : 'down') : null } : null);
+    const label = r.kind === 'alt-spread' ? `${g?.[r.subject]?.abbr ?? r.subject} ${fmtLine('spread', r.subject, r.line)}` : r.kind === 'alt-total' ? `${r.subject === 'over' ? 'Over' : 'Under'} ${r.line}` : r.kind === 'td' ? r.name : `${r.name} · ${r.line}+`;
+    return { ...r, label, cells: offers, cmp: compare(offers) };
+  });
+  const fav = (r) => Math.min(...r.cells.filter(Boolean).map((o) => decimalOdds(o.odds)));
+  const sorters = {
+    'alt-spread': (a, b) => (a.subject === b.subject ? a.line - b.line : a.subject === 'away' ? -1 : 1),
+    'alt-total': (a, b) => a.line - b.line || (a.subject === 'over' ? -1 : 1),
+    td: (a, b) => fav(a) - fav(b),
+  };
+  rows.sort(sorters[x.kind] || ((a, b) => (a.name || '').localeCompare(b.name || '') || a.line - b.line));
+  return { kind: x.kind, bothOnly: x.bothOnly, loaded: x.loaded, status: x.status, rows, counts, kinds: KIND_ORDER.filter((k) => counts[k]).map((k) => ({ id: k, label: state.extrasKinds[k] || k, ...counts[k] })) };
+}
+
 function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
 function visibleGames() {
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
@@ -117,6 +168,8 @@ function freshness(book, now = serverNow()) {
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
   feedState, latency, freshness, bookDown, series, chartPick, decimalOdds,
   pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },
+  toggleExtras, extrasView, extrasOpen: (gk) => state.extras.has(gk), extrasCount: (gk) => state.extrasSummary[gk] || null,
+  setExtras(gk, patch) { const x = state.extras.get(gk); if (!x) return; Object.assign(x, patch); theme.renderExtras(gk); },
   set(key, value) { settings[key] = value; if (key === 'format') keep.set('format', value); if (key === 'view') { const u = new URL(location.href); value === 'best' ? u.searchParams.delete('view') : u.searchParams.set('view', value); history.replaceState(null, '', u); } theme.render(); },
   setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; keep.set('theme', id); settings.theme = id; mountTheme(t); },
 };
@@ -207,5 +260,6 @@ setInterval(async () => { // measured samples go to the server so /api/metrics h
 }, 30000);
 
 mountTheme(THEMES.find((t) => t.id === settings.theme) || THEMES[0]);
+loadExtrasSummary(); setInterval(loadExtrasSummary, 60_000);
 syncClock().catch(() => {}).finally(connect);
 setInterval(() => syncClock().catch(() => {}), 120000);
