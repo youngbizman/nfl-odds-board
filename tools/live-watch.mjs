@@ -173,7 +173,7 @@ function publish() {
   if (!PUSH) return;
   try {
     execFileSync('git', ['add', OUT]); execFileSync('git', ['commit', '-q', '-m', `live watch ${etClock()} ET`], { stdio: 'ignore' });
-    execFileSync('git', ['push', '-q', '-f', 'origin', 'HEAD:live-results'], { stdio: 'ignore' });
+    execFileSync('git', ['push', '-q', '-f', 'origin', `HEAD:${process.env.LIVE_WATCH_BRANCH || 'live-results'}`], { stdio: 'ignore' });
   } catch (e) { log('publish failed', e.message.split('\n')[0]); }
 }
 

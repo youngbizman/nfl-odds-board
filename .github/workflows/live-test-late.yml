@@ -1,0 +1,34 @@
+name: live test (late)
+# The second half of a game night: GitHub stops a job after 6 hours, so a run started in the afternoon cannot reach the
+# end of a late game. This one starts when the `live-test-late` branch is pushed, waits, and watches the late window,
+# pushing to the `live-results-late` branch (research/live/<date>-late/).
+on:
+  push:
+    branches: ["live-test-late"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: live-test-late
+  cancel-in-progress: true
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        env:
+          INSTALL_CURL_TRANSPORT: "1"
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: watch the live board, late window
+        env:
+          LIVE_WATCH_PUSH: "1"
+          LIVE_WATCH_BRANCH: live-results-late
+        run: node tools/live-watch.mjs https://nfl-odds-board-hgim.onrender.com "research/live/$(TZ=America/Toronto date +%F)-late" "22:10" "23:55"
