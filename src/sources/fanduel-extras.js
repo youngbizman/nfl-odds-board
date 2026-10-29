@@ -38,7 +38,8 @@ export class FanDuelExtras {
   stop() { this.stopped = true; clearInterval(this.discoverTimer); clearInterval(this.tickTimer); }
 
   games(now = Date.now()) {
-    return [...this.board.games.values()].filter((g) => g.books?.fanduel?.eventId && new Date(g.start).getTime() < now + this.horizonMs);
+    // NFL only: "more lines" are an NFL feature (college has 100+ games; their pages would cost FanDuel requests for nothing)
+    return [...this.board.games.values()].filter((g) => (g.league || 'nfl') === 'nfl' && g.books?.fanduel?.eventId && new Date(g.start).getTime() < now + this.horizonMs);
   }
 
   blocked(status, where) {

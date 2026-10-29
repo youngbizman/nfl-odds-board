@@ -18,12 +18,12 @@
 // cannot place, we ask for a fresh snapshot (3 s debounce) as a correctness check, never as the fast path.
 import WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
-import { resolveTeam, gameKey, parseAmerican } from '../model.js';
+import { parseAmerican } from '../model.js';
+import { enabledLeagues, leagueGameKey, leagueOf, DK_LEAGUE, LEAGUES } from '../leagues.js';
 import { makeHttp } from '../transport/http.js';
 
 const BOOK = 'draftkings';
-const LEAGUE = '88808';          // NFL
-const SUBCATEGORY = '4518';      // Game Lines (moneyline / spread / total)
+const SUBCATEGORY = '4518';      // Game Lines (moneyline / spread / total), the same id in every football league
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const MARKET_MAP = { Moneyline: 'moneyline', Spread: 'spread', Total: 'total' };
 const LIVE_STATES = new Set(['STARTED', 'IN_PROGRESS', 'LIVE', 'INPLAY', 'IN_PLAY']);
@@ -39,6 +39,7 @@ export class DraftKingsSource {
     Object.assign(this, this.candidates[0]);
     this.nashBase = opts.nashBase || process.env.DK_NASH_BASE || 'https://sportsbook-nash.draftkings.com';
     this.wsUrlOverride = opts.wsUrl || process.env.DK_WS_URL || null;
+    this.leagues = opts.leagues || enabledLeagues(); // NFL first; college football and the CFL from the same hosts
     this.resnapshotMs = Number(opts.resnapshotMs || process.env.DK_RESNAPSHOT_MS || 30_000); // a reconciliation check; the socket carries every change
     this.http = opts.http || makeHttp({ log });
     this.pingMs = Number(opts.pingMs || 30_000);
@@ -139,23 +140,29 @@ export class DraftKingsSource {
   }
 
   // ---------- 1) snapshot ----------
-  snapshotUrl() {
-    const q = new URLSearchParams({ isBatchable: 'false', templateVars: LEAGUE, include: 'Events', entity: 'events',
-      eventsQuery: `$filter=leagueId eq '${LEAGUE}' AND clientMetadata/Subcategories/any(s: s/Id eq '${SUBCATEGORY}')`,
+  snapshotUrl(league = this.leagues[0]) {
+    const q = new URLSearchParams({ isBatchable: 'false', templateVars: league.dk, include: 'Events', entity: 'events',
+      eventsQuery: `$filter=leagueId eq '${league.dk}' AND clientMetadata/Subcategories/any(s: s/Id eq '${SUBCATEGORY}')`,
       marketsQuery: `$filter=clientMetadata/subCategoryId eq '${SUBCATEGORY}' AND tags/all(t: t ne 'SportcastBetBuilder')` });
     return `${this.nashBase}/sites/${this.site}/api/sportscontent/controldata/league/leagueSubcategory/v1/markets?${q}`;
   }
 
   /** Raw snapshot JSON from DK (used directly, and by the edge to relay). */
-  fetchSnapshot() { return this.http.getJson(this.snapshotUrl(), this.headers(), 15_000); }
+  fetchSnapshot(league = this.leagues[0]) { return this.http.getJson(this.snapshotUrl(league), this.headers(), 15_000); }
 
+  /** Every league's snapshot, in parallel. The NFL one must succeed; another league failing only logs. */
   async snapshot() {
     const t0 = Date.now();
-    const data = await this.fetchSnapshot();
+    const results = await Promise.allSettled(this.leagues.map(async (lg) => ({ lg, data: await this.fetchSnapshot(lg), at: Date.now() })));
+    if (results[0].status === 'rejected') throw results[0].reason;
+    let games = 0, prices = 0;
+    for (const r of results) {
+      if (r.status === 'rejected') { this.log('dk', `snapshot ${this.leagues[results.indexOf(r)].id} failed: ${r.reason?.message}`); continue; }
+      const n = this.applySnapshot(r.value.data, r.value.at, 'direct', r.value.lg.id); games += n.games; prices += n.selections;
+    }
     const now = Date.now();
-    this.applySnapshot(data, now, 'direct');
     this.metrics.dk.snapshotMs.push(now - t0);
-    this.store.setSource(BOOK, { lastError: null, transport: this.http.transport, snapshotMs: now - t0, detail: `${data.events?.length ?? 0} games, ${data.selections?.length ?? 0} prices, snapshot ${now - t0} ms (${this.http.transport} client)` });
+    this.store.setSource(BOOK, { lastError: null, transport: this.http.transport, snapshotMs: now - t0, detail: `${games} games, ${prices} prices (${this.leagues.map((l) => l.label).join(' + ')}), snapshot ${now - t0} ms (${this.http.transport} client)` });
   }
 
   /** Get a fresh snapshot the way this machine can: fetch it, or ask the edge for one. */
@@ -170,10 +177,10 @@ export class DraftKingsSource {
     }
   }
 
-  applySnapshot(data, now = Date.now(), via = 'direct') {
+  applySnapshot(data, now = Date.now(), via = 'direct', leagueId = 'nfl') {
     const games = new Map(); // dk eventId -> game
     for (const ev of data.events || []) {
-      const g = this.gameFromEvent(ev); if (!g) continue;
+      const g = this.gameFromEvent(ev, leagueId); if (!g) continue;
       games.set(ev.id, g); this.eventIndex.set(ev.id, g.key);
       this.store.upsertGame(g);
     }
@@ -181,8 +188,9 @@ export class DraftKingsSource {
     const seen = new Set();
     for (const s of data.selections || []) { const ref = this.applySelection(s, now, null); if (ref) seen.add(`${ref.gameKey}|${ref.market}|${ref.side}`); }
     // A market that disappeared from the snapshot (suspended / taken down) must not keep showing a stale price.
+    // Only this league's: each league has its own snapshot.
     if (games.size) for (const q of [...this.store.quotes.values()]) {
-      if (q.book === BOOK && !seen.has(`${q.gameKey}|${q.market}|${q.side}`)) this.store.removeQuotes(BOOK, q.gameKey, q.market);
+      if (q.book === BOOK && leagueOf(q.gameKey) === leagueId && !seen.has(`${q.gameKey}|${q.market}|${q.side}`)) this.store.removeQuotes(BOOK, q.gameKey, q.market);
     }
     this.metrics.dk.snapshots++;
     this.store.setSource(BOOK, { lastSnapshotAt: now, lastDataAt: now, snapshotVia: via });
@@ -190,13 +198,14 @@ export class DraftKingsSource {
     return { games: games.size, selections: (data.selections || []).length };
   }
 
-  gameFromEvent(ev) {
+  gameFromEvent(ev, leagueId) {
     if (ev.eventParticipantType && ev.eventParticipantType !== 'TwoTeam') return null;
-    const home = resolveTeam(ev.participants?.find((p) => p.venueRole === 'Home')?.name);
-    const away = resolveTeam(ev.participants?.find((p) => p.venueRole === 'Away')?.name);
+    const league = (ev.leagueId && DK_LEAGUE[String(ev.leagueId)]) || LEAGUES[leagueId] || LEAGUES.nfl;
+    const home = league.resolve(ev.participants?.find((p) => p.venueRole === 'Home')?.name);
+    const away = league.resolve(ev.participants?.find((p) => p.venueRole === 'Away')?.name);
     if (!home || !away || !ev.startEventDate) return null;
-    const key = gameKey(away, home, ev.startEventDate);
-    return { key, home, away, start: ev.startEventDate, books: { [BOOK]: { eventId: ev.id, status: ev.status, live: LIVE_STATES.has(ev.status) } } };
+    const key = leagueGameKey(league.id, away, home, ev.startEventDate);
+    return { key, league: league.id, home, away, start: ev.startEventDate, books: { [BOOK]: { eventId: ev.id, status: ev.status, live: LIVE_STATES.has(ev.status) } } };
   }
 
   indexMarket(m, game) {
@@ -225,8 +234,9 @@ export class DraftKingsSource {
     if (market === 'total') return sel.outcomeType === 'Over' ? 'over' : sel.outcomeType === 'Under' ? 'under' : (/^over/i.test(sel.label) ? 'over' : /^under/i.test(sel.label) ? 'under' : null);
     if (sel.outcomeType === 'Home') return 'home';
     if (sel.outcomeType === 'Away') return 'away';
-    const t = resolveTeam(sel.label);
-    return t ? (t.abbr === game.home.abbr ? 'home' : t.abbr === game.away.abbr ? 'away' : null) : null;
+    const t = (LEAGUES[game.league || 'nfl'] || LEAGUES.nfl).resolve(sel.label);
+    const k = (x) => x?.key ?? x?.abbr;
+    return t ? (k(t) === k(game.home) ? 'home' : k(t) === k(game.away) ? 'away' : null) : null;
   }
 
   // ---------- 2) websocket deltas ----------
@@ -240,15 +250,15 @@ export class DraftKingsSource {
       ws._socket?.setNoDelay(true);
       this.backoff = 1000;
       this.subSentAt = Date.now();
-      ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'subscribe', id: randomUUID(), params: {
+      for (const lg of this.leagues) ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'subscribe', id: randomUUID(), params: {
         entity: 'events',
-        queryParams: { query: `$filter=leagueId eq '${LEAGUE}' AND clientMetadata/Subcategories/any(s: s/Id eq '${SUBCATEGORY}') and tags/any(t: t eq 'OSB')`,
+        queryParams: { query: `$filter=leagueId eq '${lg.dk}' AND clientMetadata/Subcategories/any(s: s/Id eq '${SUBCATEGORY}') and tags/any(t: t eq 'OSB')`,
           initialData: false, projection: 'sportsbook', locale: 'en',
           includeMarkets: `$filter=clientMetadata/subCategoryId eq '${SUBCATEGORY}' AND tags/all(t: t ne 'SportcastBetBuilder') and tags/any(t: t eq 'OSB')` },
         forwardedHeaders: {}, clientMetadata: { feature: 'league', 'X-Client-Name': 'web', 'X-Client-Version': '2643.4.1.10' },
         jwt: 'default-token', siteName: this.siteName } }));
       this.store.setSource(BOOK, { state: 'live', lastError: null, lastDataAt: Date.now() });
-      this.log('dk', `socket open + subscribed (${this.wsHost}, ${this.siteName})`);
+      this.log('dk', `socket open + subscribed (${this.wsHost}, ${this.siteName}, ${this.leagues.map((l) => l.label).join(' + ')})`);
       // Silence is normal on a delta feed (no line moved), so we ping to tell "quiet" from "dead".
       clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => {
@@ -304,7 +314,7 @@ export class DraftKingsSource {
     // removals first: a line move is remove(old id) + add(new id)
     for (const s of list(d.remove?.selections)) this.selIndex.delete(typeof s === 'string' ? s : s?.id);
     for (const m of list(d.remove?.markets)) { const id = typeof m === 'string' ? m : m?.id; const mk = this.marketIndex.get(id); if (mk) { this.marketIndex.delete(id); this.store.removeQuotes(BOOK, mk.gameKey, mk.market); } }
-    for (const e of list(d.add?.events)) { const g = this.gameFromEvent(e); if (g) { this.eventIndex.set(e.id, g.key); this.store.upsertGame(g); } }
+    for (const e of list(d.add?.events)) { const g = this.gameFromEvent(e, 'nfl'); if (g) { this.eventIndex.set(e.id, g.key); this.store.upsertGame(g); } }
     for (const m of list(d.add?.markets)) { const key = this.eventIndex.get(m.eventId); const g = key && this.store.games.get(key); if (g) this.indexMarket(m, g); }
     for (const s of list(d.add?.selections)) { if (this.applySelection(s, now, sourceTs)) applied++; else unknown++; }
     for (const s of list(d.change?.selections)) {

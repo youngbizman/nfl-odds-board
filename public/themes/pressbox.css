@@ -405,3 +405,10 @@ html[data-density=compact] .split { gap:1px; }
 html[data-scheme=dark] { --surface:#0e1319; --surface-raised:#151c24; }
 .hold-card { background:#f7f8fa; }
 html[data-scheme=dark] .hold-card { background:var(--surface-raised); }
+/* leagues: NFL · College · CFL */
+.segment button small { font:500 11px var(--font-price); color:var(--text-muted); margin-left:4px; }
+.segment button[aria-pressed=true] small { color:var(--accent); }
+.team.is-school .team-name { font-size:var(--text-md, 17px); letter-spacing:-.01em; line-height:1.2; overflow-wrap:anywhere; }
+.team.is-school .kit { opacity:.55; }
+.link-btn { border:0; background:none; padding:0; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+@media(max-width:720px) { .league-field { grid-column:1/-1; } .team.is-school .team-name { font-size:14px; } }

@@ -202,3 +202,10 @@ td[data-charted] { box-shadow:inset 0 -2px 0 var(--accent); }
 .g-pt td:last-child, .g-pt th:last-child { padding-right:0; }
 @media (max-width:1400px) { .g-spark, .g-spark-h { display:none; } }
 @media (max-width:900px) { .g-panel { max-height:120px; } .g-meta span:last-child { display:none; } }
+/* leagues */
+.g-team.is-school b { width:auto; max-width:170px; white-space:normal; font-size:12px; }
+.g-link { border:0; background:none; padding:0; color:var(--accent); font:inherit; text-decoration:underline; cursor:pointer; }
+/* feeds panel: the freshness bar shrinks with the panel instead of being cut off */
+.g-feedt td:last-child, .g-feedt th:last-child { width:100%; padding-right:0; }
+.g-feedt .bar { width:100%; min-width:24px; max-width:64px; }
+@media (max-width:1500px) { .g-feedt { font-size:11px; } .g-feedt th, .g-feedt td { padding-right:4px; } }

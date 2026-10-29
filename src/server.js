@@ -18,6 +18,7 @@ import { ExtrasStore, KINDS } from './extras.js';
 import { DraftKingsExtras } from './sources/draftkings-extras.js';
 import { FanDuelExtras } from './sources/fanduel-extras.js';
 import { makeHttp } from './transport/http.js';
+import { LEAGUES, LEAGUE_IDS, leagueOf, enabledLeagues } from './leagues.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -60,7 +61,9 @@ const saveHistory = () => checkpoint?.saveBlob(HISTORY_KEY, JSON.stringify(store
 setInterval(saveHistory, 60_000);
 
 // ---------- SSE fan-out ----------
-const clients = new Set();
+const clients = new Map(); // res -> league the viewer is looking at (each viewer gets only that league's games)
+const LEAGUES_ON = enabledLeagues().map((l) => l.id);
+const leagueParam = (q) => (LEAGUES[String(q || '').toLowerCase()] ? String(q).toLowerCase() : 'nfl');
 let pending = { quotes: new Map(), games: new Map(), sources: new Map(), firstAt: null, scheduled: false };
 function queue(kind, item, key) {
   pending[kind].set(key, item);
@@ -68,12 +71,19 @@ function queue(kind, item, key) {
   if (!pending.scheduled) { pending.scheduled = true; BATCH_MS > 0 ? setTimeout(flush, BATCH_MS) : setImmediate(flush); }
 }
 function flush() {
-  const batch = { serverTs: Date.now(), quotes: [...pending.quotes.values()], games: [...pending.games.values()], sources: Object.fromEntries(pending.sources) };
+  const serverTs = Date.now(), quotes = [...pending.quotes.values()], games = [...pending.games.values()], sources = Object.fromEntries(pending.sources);
   metrics.sse.coalesceWait.push(Date.now() - pending.firstAt);
   pending = { quotes: new Map(), games: new Map(), sources: new Map(), firstAt: null, scheduled: false };
-  const payload = `event: batch\ndata: ${JSON.stringify(batch)}\n\n`;
-  metrics.sse.batchesSent++; metrics.sse.batchSize.push(batch.quotes.length);
-  for (const res of clients) { res.write(payload); metrics.sse.bytesSent += payload.length; }
+  const payloads = new Map(); // built once per league, only for leagues someone is watching
+  const payloadFor = (lg) => {
+    if (!payloads.has(lg)) {
+      const q = quotes.filter((x) => leagueOf(x.gameKey) === lg), g = games.filter((x) => leagueOf(x.key) === lg);
+      payloads.set(lg, q.length || g.length || Object.keys(sources).length ? `event: batch\ndata: ${JSON.stringify({ serverTs, quotes: q, games: g, sources })}\n\n` : null);
+    }
+    return payloads.get(lg);
+  };
+  metrics.sse.batchesSent++; metrics.sse.batchSize.push(quotes.length);
+  for (const [res, lg] of clients) { const p = payloadFor(lg); if (p) { res.write(p); metrics.sse.bytesSent += p.length; } }
 }
 store.on('quote', (q) => queue('quotes', q, q.id));
 store.on('game', (g) => queue('games', g, g.key));
@@ -87,7 +97,7 @@ setInterval(() => { // live latency figures for the feed cards (ride the heartbe
 }, 5_000);
 setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps proxies from closing idle streams
   const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources })}\n\n`;
-  for (const res of clients) res.write(payload);
+  for (const res of clients.keys()) res.write(payload);
 }, 5_000);
 // Age beat: the moment a book's data timestamp moves (at most every 250 ms) push just the two timestamps per book,
 // so "data 0.4 s ago" on the page is exact rather than up to a heartbeat late.
@@ -99,7 +109,7 @@ setInterval(() => {
   if (sig === lastBeat.sig || now - lastBeat.at < 250) return;
   lastBeat = { at: now, sig };
   const payload = `event: beat\ndata: ${sig}\n\n`;
-  for (const res of clients) res.write(payload);
+  for (const res of clients.keys()) res.write(payload);
 }, 100);
 
 // per-game "more lines" stream: everything one upstream message changed for that game, in one event
@@ -127,15 +137,23 @@ app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAg
 // the browser uses the exact same comparison rules the tests check
 app.get('/lib/model.js', (req, res) => res.type('application/javascript').sendFile(path.join(__dirname, 'model.js')));
 
-const snapshot = () => ({ ...store.snapshot(), config: { staleMs: STALE_MS, batchMs: BATCH_MS } });
-// The snapshot is ~100 KB; serialising it per viewer would make a burst of joins CPU-bound. Serialise once per change.
-let boardVersion = 0, snapCache = { version: -1, sse: '' };
-for (const ev of ['quote', 'game', 'source']) store.on(ev, () => boardVersion++);
-function snapshotSse() {
-  if (snapCache.version !== boardVersion) snapCache = { version: boardVersion, sse: `retry: 2000\nevent: snapshot\ndata: ${JSON.stringify(snapshot())}\n\n` };
-  return snapCache.sse;
+/** The board for one league (or every league with league=all), plus which leagues exist and how many games each has. */
+function snapshot(league = 'nfl') {
+  const s = store.snapshot(); const pick = (k) => league === 'all' || leagueOf(k) === league;
+  const counts = Object.fromEntries(LEAGUES_ON.map((id) => [id, 0])); for (const g of s.games) if (counts[leagueOf(g.key)] != null) counts[leagueOf(g.key)]++;
+  return { ...s, league, games: s.games.filter((g) => pick(g.key)), quotes: s.quotes.filter((q) => pick(q.gameKey)),
+    leagues: LEAGUES_ON.map((id) => ({ id, label: LEAGUES[id].label, title: LEAGUES[id].title, games: counts[id] })), config: { staleMs: STALE_MS, batchMs: BATCH_MS } };
 }
-app.get('/api/board', (req, res) => res.json(snapshot()));
+// The snapshot is ~100 KB per league; serialising it per viewer would make a burst of joins CPU-bound. Serialise once per change.
+let boardVersion = 0; const snapCache = new Map(); // league -> { version, sse }
+for (const ev of ['quote', 'game', 'source']) store.on(ev, () => boardVersion++);
+function snapshotSse(league) {
+  const c = snapCache.get(league);
+  if (c?.version === boardVersion) return c.sse;
+  const sse = `retry: 2000\nevent: snapshot\ndata: ${JSON.stringify(snapshot(league))}\n\n`;
+  snapCache.set(league, { version: boardVersion, sse }); return sse;
+}
+app.get('/api/board', (req, res) => res.json(snapshot(req.query.league === 'all' ? 'all' : leagueParam(req.query.league))));
 app.get('/api/time', (req, res) => res.json({ serverTs: Date.now() }));
 app.get('/api/extras/summary', (req, res) => res.json({ kinds: KINDS, games: extras.summary(), holds: extras.holds(8), status: extras.status }));
 app.get('/api/extras', (req, res) => { const gk = String(req.query.game || ''); res.json({ gameKey: gk, kinds: KINDS, rows: extras.forGame(gk).map(rowOut), status: extras.status, serverTs: Date.now() }); });
@@ -153,8 +171,12 @@ app.get('/api/extras/stream', (req, res) => {
 let histCache = { at: 0, key: '', body: '' };
 app.get('/api/history', (req, res) => {
   const hours = Math.min(72, Math.max(1, Number(req.query.hours) || 48)), points = Math.min(240, Math.max(10, Number(req.query.points) || 90));
-  const key = `${hours}|${points}`;
-  if (histCache.key !== key || Date.now() - histCache.at > 5000) histCache = { at: Date.now(), key, body: JSON.stringify(store.historyView({ hours, points })) };
+  const league = leagueParam(req.query.league), key = `${hours}|${points}|${league}`;
+  if (histCache.key !== key || Date.now() - histCache.at > 5000) {
+    const v = store.historyView({ hours, points });
+    for (const id of Object.keys(v.series)) if (leagueOf(id) !== league) delete v.series[id];
+    histCache = { at: Date.now(), key, body: JSON.stringify(v) };
+  }
   res.type('application/json').send(histCache.body);
 });
 app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS,
@@ -170,15 +192,19 @@ app.get('/api/health', (req, res) => {
     const s = store.sources[b];
     return [b, { state: s.state, mode: s.mode, region: s.region, transport: s.transport, push: s.push, stale: s.stale, dataAgeMs: s.lastDataAt ? now - s.lastDataAt : null, snapshotAgeMs: s.lastSnapshotAt ? now - s.lastSnapshotAt : null, snapshotVia: s.snapshotVia, quotes: [...store.quotes.values()].filter((q) => q.book === b).length, lastError: s.lastError }];
   }));
-  const ok = store.games.size > 0 && BOOKS.every((b) => !books[b].stale && books[b].quotes > 0);
-  res.status(ok ? 200 : 503).json({ ok, version: VERSION, games: store.games.size, books, clients: clients.size });
+  const nflGames = [...store.games.keys()].filter((k) => leagueOf(k) === 'nfl').length;
+  const leagues = Object.fromEntries(LEAGUES_ON.map((id) => [id, { games: [...store.games.keys()].filter((k) => leagueOf(k) === id).length,
+    quotes: Object.fromEntries(BOOKS.map((b) => [b, [...store.quotes.values()].filter((q) => q.book === b && leagueOf(q.gameKey) === id).length])) }]));
+  const ok = nflGames > 0 && BOOKS.every((b) => !books[b].stale && books[b].quotes > 0);
+  res.status(ok ? 200 : 503).json({ ok, version: VERSION, games: nflGames, books, leagues, clients: clients.size });
 });
 
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
   res.socket?.setNoDelay(true); // small frames go out immediately (no Nagle delay)
-  res.write(snapshotSse());
-  clients.add(res); metrics.sse.clients = clients.size;
+  const league = leagueParam(req.query.league);
+  res.write(snapshotSse(league));
+  clients.set(res, league); metrics.sse.clients = clients.size;
   req.on('close', () => { clients.delete(res); metrics.sse.clients = clients.size; });
 });
 

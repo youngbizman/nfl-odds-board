@@ -19,7 +19,8 @@ function mount(r, a) {
   <a class="skip" href="#g-table">Skip to prices</a>
   <div class="g-app">
     <header class="g-top">
-      <div class="g-brand"><span class="g-logo" aria-hidden="true"></span><b>Odds Grid</b><span class="g-sub">NFL · Ontario · DraftKings × FanDuel · live</span></div>
+      <div class="g-brand"><span class="g-logo" aria-hidden="true"></span><b>Odds Grid</b><span class="g-sub">${esc(api.league().title)} · Ontario · DraftKings × FanDuel · live</span></div>
+      <div class="g-seg" role="group" aria-label="League" id="g-leagues"></div>
       <label class="g-search"><span class="sr">Find a team</span><input id="g-search" type="search" autocomplete="off" placeholder="Search team   /"></label>
       <div class="g-seg" role="group" aria-label="View"><button type="button" data-view="best">Best</button><button type="button" data-view="draftkings">DraftKings</button><button type="button" data-view="fanduel">FanDuel</button></div>
       <div class="g-seg" role="group" aria-label="Show"><button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred" title="Starred games">★</button></div>
@@ -45,6 +46,8 @@ function mount(r, a) {
     banner: root.querySelector('#g-banner'), meta: root.querySelector('#g-meta'), help: root.querySelector('#g-help') };
   root.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
   root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
+  root.querySelector('#g-leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
+  el.meta.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
   root.querySelector('#g-search').addEventListener('input', (e) => api.set('search', e.target.value));
   const f = root.querySelector('#g-format'); f.value = api.settings.format; f.addEventListener('change', (e) => api.set('format', e.target.value));
   root.querySelector('#g-theme')?.addEventListener('change', (e) => api.setTheme(e.target.value));
@@ -180,7 +183,7 @@ function gameRows(g) {
     const holdCell = idx === 0 ? `<td rowspan="2" class="g-hold">${hs.map(([m]) => `<span class="${holds[m].hold < 0 ? 'arb' : holds[m].hold < 0.02 ? 'low' : ''}"><em>${SHORT[m]}</em>${pct(holds[m].hold)}</span>`).join('')}</td>` : '';
     const evCell = `<td class="g-ev${e && e.ev > 0 ? ' pos' : ''}" title="Best expected value on this row against the no-vig fair price">${e ? `${sgnPct(e.ev)}<em>${SHORT[e.m]}</em>` : '—'}</td>`;
     const sparkCell = idx === 0 ? `<td rowspan="2" class="g-spark">${spark(g)}</td>` : '';
-    return `<tr class="${idx === 0 ? 'r-away' : 'r-home'}">${lead}<td class="g-team"><b>${esc(t.abbr)}</b><span>${esc(t.name)}</span></td><td class="g-win" title="Fair ${f.fair != null ? esc(api.fmtOdds(f.fair)) : '—'} from ${f.books} book${f.books === 1 ? '' : 's'}">${pct(f.p)}</td>${marketCells}${holdCell}${evCell}${sparkCell}</tr>`;
+    return `<tr class="${idx === 0 ? 'r-away' : 'r-home'}">${lead}<td class="g-team${t.nick ? '' : ' is-school'}"><b>${esc(t.abbr)}</b>${t.nick ? `<span>${esc(t.name)}</span>` : ''}</td><td class="g-win" title="Fair ${f.fair != null ? esc(api.fmtOdds(f.fair)) : '—'} from ${f.books} book${f.books === 1 ? '' : 's'}">${pct(f.p)}</td>${marketCells}${holdCell}${evCell}${sparkCell}</tr>`;
   };
   const xrow = open ? `<tr class="g-xrow"><td colspan="${colCount()}" data-extras="${esc(g.key)}">${extrasInner(g.key)}</td></tr>` : '';
   return `<tbody class="g-game${live ? ' is-live' : ''}${minHold != null && minHold < 0 ? ' is-arb' : ''}" data-game="${esc(g.key)}">${row(0)}${row(1)}${xrow}</tbody>`;
@@ -223,15 +226,18 @@ function sortedGames() {
 function render() {
   root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view())));
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
+  root.querySelector('#g-leagues').innerHTML = api.state.leagues.map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}${l.games != null ? ` · ${l.games} games` : ''}">${esc(l.label)}</button>`).join('');
   root.querySelector('#g-scheme').textContent = document.documentElement.dataset.scheme === 'dark' ? '☀' : '☾';
   el.table.dataset.view = view();
   const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.find((g) => g.live)?.games.length || 0;
-  el.meta.innerHTML = `<span>${total} games · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}</span><span>click a price to chart it · ★ = best book · ¢ = edge over the other book</span>`;
+  const hidden = api.hiddenSingles();
+  const singles = hidden ? ` · <button type="button" class="g-link" data-singles>+${hidden} priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="g-link" data-singles>hide single-book games</button>' : '';
+  el.meta.innerHTML = `<span>${total} games · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book · ¢ = edge over the other book</span>`;
   const thead = el.table.querySelector('thead'); thead.innerHTML = head();
   for (const tb of [...el.table.querySelectorAll('tbody')]) tb.remove();
   let html;
   if (!api.state.everConnected) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">Connecting to both books…</td></tr></tbody>`;
-  else if (!total) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">No games match. Clear the search or choose All.</td></tr></tbody>`;
+  else if (!total) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">${api.settings.search || api.settings.phase !== 'all' ? 'No games match. Clear the search or choose All.' : `Neither book has ${esc(api.league().title)} game lines up right now.`}</td></tr></tbody>`;
   else {
     const flat = sortedGames();
     html = flat ? flat.map(gameRows).join('') : groups.map((grp) => {

@@ -12,7 +12,10 @@ const MARKETS = [['spread', ['away', 'home']], ['total', ['over', 'under']], ['m
 const keep = { get(k, d) { try { return localStorage.getItem(`board.${k}`) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(`board.${k}`, v); } catch {} } };
 const qs = new URLSearchParams(location.search);
 
+const LEAGUE_IDS = ['nfl', 'ncaaf', 'cfl'];
 const settings = {
+  league: LEAGUE_IDS.includes(qs.get('league')) ? qs.get('league') : 'nfl', // nfl | ncaaf | cfl (?league= is shareable)
+  singleBook: false,                                                // college: also show games only one book prices
   view: qs.get('view') || 'best',                                   // best | draftkings | fanduel (?view= is shareable)
   phase: 'all',                                                     // all | live | pregame
   search: '',
@@ -29,7 +32,8 @@ const starred = new Set((() => { try { return JSON.parse(keep.get('starred', '[]
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
   offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map(),
   history: new Map(), histFrom: null, chartPick: new Map(), // movement charts: quote id -> [[t, odds, line]]
-  extrasSummary: {}, extrasKinds: {}, extras: new Map(), extrasHolds: [] };   // "more lines": per-game counts, and the open drop-downs
+  extrasSummary: {}, extrasKinds: {}, extras: new Map(), extrasHolds: [],
+  leagues: [{ id: 'nfl', label: 'NFL', title: 'NFL', games: null }, { id: 'ncaaf', label: 'College', title: 'College football', games: null }, { id: 'cfl', label: 'CFL', title: 'CFL', games: null }] };   // "more lines": per-game counts, and the open drop-downs
 const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: [] } };
 
 // ---------- helpers given to themes ----------
@@ -175,14 +179,25 @@ function holds(g) {
 /** The tightest markets across the board (game lines), lowest hold first. Negative hold = arbitrage. */
 function tightest(n = 6) {
   const out = [];
-  for (const g of state.games.values()) for (const [market, h] of Object.entries(holds(g))) if (h) out.push({ game: g, market, ...h });
+  for (const g of state.games.values()) for (const [market, h] of Object.entries(holds(g))) if (h && !h.a?.stale && !h.b?.stale) out.push({ game: g, market, ...h });
   return out.sort((a, b) => a.hold - b.hold).slice(0, n);
+}
+/** Games priced by only one book. In college football FanDuel also lists ~50 small-school (FCS) games DraftKings does not,
+ *  so outside the NFL those are hidden by default (nothing to compare) and one click shows them. */
+function bookCount(gk) { const b = new Set(); for (const q of state.quotes.values()) if (q.gameKey === gk) b.add(q.book); return b.size; }
+const hideSingles = () => settings.league !== 'nfl' && !settings.singleBook;
+function hiddenSingles() {
+  if (!hideSingles()) return 0;
+  const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
+  return [...state.games.values()].filter((g) => withPrices.has(g.key) && bookCount(g.key) < 2).length;
 }
 function visibleGames() {
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
   const term = settings.search.trim().toLowerCase();
+  const single = hideSingles();
   return [...state.games.values()]
     .filter((g) => withPrices.has(g.key))
+    .filter((g) => !single || bookCount(g.key) >= 2)
     .filter((g) => settings.phase === 'all' || (settings.phase === 'starred' ? starred.has(g.key) : phaseOf(g) === settings.phase))
     .filter((g) => !term || [g.away.abbr, g.home.abbr, g.away.name, g.home.name, g.away.nick, g.home.nick].some((x) => String(x || '').toLowerCase().includes(term)))
     .sort((a, b) => (phaseOf(a) === 'live' ? 0 : 1) - (phaseOf(b) === 'live' ? 0 : 1) || new Date(a.start) - new Date(b.start) || a.key.localeCompare(b.key));
@@ -217,7 +232,15 @@ function freshness(book, now = serverNow()) {
 }
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
-  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair,
+  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
+  league: () => state.leagues.find((l) => l.id === settings.league) || state.leagues[0],
+  setLeague(id) {
+    if (!LEAGUE_IDS.includes(id) || id === settings.league) return;
+    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; setParam('league', id, 'nfl');
+    for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
+    state.games = new Map(); state.quotes = new Map(); state.moves = []; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
+    mountTheme(theme); reconnect('league changed', 0);
+  },
   isStarred: (gk) => starred.has(gk),
   toggleStar(gk) { starred.has(gk) ? starred.delete(gk) : starred.add(gk); keep.set('starred', JSON.stringify([...starred])); theme.render(); },
   pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },
@@ -298,23 +321,23 @@ async function syncClock() {
 const STALL_MS = 12_000;
 let stream = null, lastMsgAt = 0, reconnectTimer = null, retryMs = 1000;
 function heard() { lastMsgAt = Date.now(); retryMs = 1000; }
-function reconnect(why) {
+function reconnect(why, delay = retryMs) {
   stream?.close(); stream = null;
   if (state.connected) { state.connected = false; theme.render(); }
   clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(connect, retryMs);
-  retryMs = Math.min(retryMs * 2, 15_000);
+  reconnectTimer = setTimeout(connect, delay);
+  if (delay) retryMs = Math.min(retryMs * 2, 15_000);
   console.info(`[board] stream ${why} → reconnecting`);
 }
 setInterval(() => { if (stream && lastMsgAt && Date.now() - lastMsgAt > STALL_MS) reconnect('silent for 12 s'); }, 2000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && stream && Date.now() - lastMsgAt > STALL_MS) reconnect('stale after the tab was hidden'); });
 function connect() {
-  const es = new EventSource('/api/stream'); stream = es; lastMsgAt = Date.now();
+  const es = new EventSource(`/api/stream?league=${settings.league}`); stream = es; lastMsgAt = Date.now();
   for (const ev of ['snapshot', 'batch', 'beat']) es.addEventListener(ev, heard);
   es.addEventListener('snapshot', (e) => {
     const s = JSON.parse(e.data);
     state.games = new Map(s.games.map((g) => [g.key, g])); state.quotes = new Map(s.quotes.map((q) => [q.id, q]));
-    state.sources = s.sources; if (s.config) state.config = s.config;
+    state.sources = s.sources; if (s.config) state.config = s.config; if (s.leagues?.length) state.leagues = s.leagues;
     state.connected = true; state.everConnected = true;
     theme.render();
     loadHistory();
@@ -329,7 +352,9 @@ function connect() {
 }
 async function loadHistory() { // the last 48 h of every price, for the movement charts
   try {
-    const h = await (await fetch('/api/history?hours=48&points=90', { cache: 'no-store' })).json();
+    const league = settings.league;
+    const h = await (await fetch(`/api/history?hours=48&points=90&league=${league}`, { cache: 'no-store' })).json();
+    if (league !== settings.league) return; // switched league while this was loading
     const live = state.history; state.histFrom = h.from;
     state.history = new Map(Object.entries(h.series).map(([id, pts]) => [id, pts.map(([sec, o, l]) => [h.from + sec * 1000, o, l])]));
     for (const [id, pts] of live) { const h2 = state.history.get(id) || []; const lastT = h2.length ? h2[h2.length - 1][0] : 0; for (const p of pts) if (p[0] > lastT) h2.push(p); state.history.set(id, h2); }

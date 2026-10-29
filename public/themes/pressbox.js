@@ -11,7 +11,10 @@ const KIT = { ARI: ['#97233f', '#f0e9df'], ATL: ['#a6323e', '#f0e9df'], BAL: ['#
   KC: ['#c8293b', '#f2c14e'], LV: ['#262626', '#b5bbbf'], LAC: ['#2a86c8', '#f6c445'], LAR: ['#1f3f8f', '#f2b134'], MIA: ['#1c8f96', '#ef7a3b'],
   MIN: ['#4f2d7f', '#f2c94c'], NE: ['#1b2f4d', '#c03a44'], NO: ['#262626', '#d3bc8d'], NYG: ['#22336e', '#b8414a'], NYJ: ['#1f5c46', '#f0f0f0'],
   PHI: ['#1d5157', '#b5bbbf'], PIT: ['#292c30', '#edc04b'], SF: ['#a8232b', '#c9ad73'], SEA: ['#1b2f4d', '#7cbf45'], TB: ['#c63a31', '#eadcc9'],
-  TEN: ['#5197d6', '#13294b'], WAS: ['#5a1f1f', '#f1b939'] };
+  TEN: ['#5197d6', '#13294b'], WAS: ['#5a1f1f', '#f1b939'],
+  // CFL
+  BC: ['#f15a22', '#1d1d1d'], CGY: ['#c8102e', '#f0f0f0'], EDM: ['#2b5134', '#f2b134'], SSK: ['#006341', '#f0f0f0'], WPG: ['#041e42', '#b9975b'],
+  HAM: ['#1d1d1d', '#ffb81c'], TOR: ['#6cace4', '#13294b'], OTT: ['#1d1d1d', '#a6192e'], MTL: ['#0b2240', '#a6192e'] };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const etTime = (d, opts) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
 
@@ -36,12 +39,13 @@ function mount(r, a) {
       <dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the game you are on</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl>
     </div>
     <section class="heading">
-      <div><h1>NFL / <span>odds.</span></h1><p class="subtitle">Best price across DraftKings and FanDuel, live. Kickoffs in ET.</p></div>
+      <div><h1>${esc(api.league().title)} / <span>odds.</span></h1><p class="subtitle">Best price across DraftKings and FanDuel, live. Kickoffs in ET.</p></div>
       <div class="view" role="group" aria-label="Sportsbook view">
         <button type="button" data-view="best">Best price</button><button type="button" data-view="draftkings">DraftKings only</button><button type="button" data-view="fanduel">FanDuel only</button>
       </div>
     </section>
     <div class="toolbar" aria-label="Board controls">
+      <div class="field league-field"><span id="league-label">League</span><div class="segment" role="group" aria-labelledby="league-label" id="leagues"></div></div>
       <div class="field phase-field"><span id="phase-label">Show</span><div class="segment" role="group" aria-labelledby="phase-label">
         <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
       <div class="field density-field"><span id="density-label">Density</span><div class="segment" role="group" aria-labelledby="density-label">
@@ -84,6 +88,8 @@ function mount(r, a) {
   });
   root.querySelectorAll('.view button').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
   root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
+  root.querySelector('#leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
+  el.results.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
   root.querySelector('#search').addEventListener('input', (e) => api.set('search', e.target.value));
   const fmt = root.querySelector('#odds-format'); fmt.value = api.settings.format; fmt.addEventListener('change', (e) => api.set('format', e.target.value));
   root.querySelector('#theme-picker')?.addEventListener('change', (e) => api.setTheme(e.target.value));
@@ -179,8 +185,9 @@ function priceCell(g, market, side, idx) {
 }
 
 function teamHtml(t, side) {
-  const [shirt, trim] = KIT[t.abbr] || ['#c9cfd5', '#5b6673'];
-  return `<div class="team ${side}"><span class="kit" style="--shirt:${shirt};--trim:${trim}" aria-hidden="true"><i></i></span><div><span class="team-name">${esc(t.abbr)}</span><span class="team-full">${esc(t.name)}</span></div></div>`;
+  const school = !t.nick; // college: the school name is the whole label, no nickname or kit colours
+  const [shirt, trim] = (!school && KIT[t.abbr]) || ['#c9cfd5', '#5b6673'];
+  return `<div class="team ${side}${school ? ' is-school' : ''}"><span class="kit" style="--shirt:${shirt};--trim:${trim}" aria-hidden="true"><i></i></span><div><span class="team-name">${esc(t.abbr)}</span>${school ? '' : `<span class="team-full">${esc(t.name)}</span>`}</div></div>`;
 }
 function gameInner(g) {
   const meta = g.status === 'live' ? `<span class="live-tag">● Live</span> · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}` : `${esc(etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} ET · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
@@ -304,14 +311,17 @@ function chartHtml(g) {
 function render() {
   root.querySelectorAll('.view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === api.settings.view)));
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
+  root.querySelector('#leagues').innerHTML = api.state.leagues.map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
   root.querySelectorAll('[data-density]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.density === api.settings.density)));
   const dark = document.documentElement.dataset.scheme === 'dark';
   const sb = root.querySelector('#scheme-btn'); sb.textContent = dark ? '☀' : '☾'; sb.setAttribute('aria-label', dark ? 'Switch to light' : 'Switch to dark');
   const groups = api.groups();
   const total = groups.reduce((n, g) => n + g.games.length, 0), live = groups.find((g) => g.live)?.games.length || 0;
-  el.results.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
+  const hidden = api.hiddenSingles();
+  const singles = hidden ? ` · <button type="button" class="link-btn" data-singles>show ${hidden} more priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="link-btn" data-singles>hide single-book games</button>' : '';
+  el.results.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live${singles}</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
   if (!api.state.everConnected) el.board.innerHTML = '';
-  else if (!total) el.board.innerHTML = `<div class="empty"><strong>No games match.</strong>${api.settings.search || api.settings.phase !== 'all' ? 'Clear the search or choose All to see every game.' : 'Neither book has NFL game lines up right now; the board fills itself as soon as one does.'}</div>`;
+  else if (!total) el.board.innerHTML = `<div class="empty"><strong>No games match.</strong>${api.settings.search || api.settings.phase !== 'all' ? 'Clear the search or choose All to see every game.' : `Neither book has ${esc(api.league().title)} game lines up right now; the board fills itself as soon as one does.`}</div>`;
   else el.board.innerHTML = groups.map((grp) => `<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
       ${grp.games.map((g) => `<article class="game" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g)}</article>`).join('')}</section>`).join('');
   renderFeeds(); renderBanner(); renderWire(); renderHolds();

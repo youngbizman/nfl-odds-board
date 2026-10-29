@@ -12,7 +12,8 @@
 // every game-line market on a fixed beat (start-to-start), split into parallel requests of at most 50 markets
 // (FanDuel answers at most 80 markets per request and silently drops the rest), reuses the HTTP connection, and
 // backs off automatically (×2, honouring Retry-After, max 30 s) if FanDuel answers 429/403/5xx.
-import { resolveTeam, gameKey, parseAmerican } from '../model.js';
+import { parseAmerican } from '../model.js';
+import { enabledLeagues, leagueGameKey, leagueOf, LEAGUES } from '../leagues.js';
 import { FanDuelPush } from './fanduel-push.js';
 
 const BOOK = 'fanduel';
@@ -38,9 +39,13 @@ export class FanDuelSource {
     this.maxPollMs = 30_000;
     this.pollMs = this.basePollMs;
     this.resnapshotMs = Number(opts.resnapshotMs || process.env.FD_RESNAPSHOT_MS || 60_000);
-    // Overridable endpoints (tests point these at a local fake FanDuel).
-    this.snapshotUrl = opts.snapshotUrl || process.env.FD_SNAPSHOT_URL ||
-      `${this.ep.snapshot}?page=CUSTOM&customPageId=nfl&pbHorizontal=false&_ak=${APP_KEY}&timezone=${this.ep.tz}`;
+    // One page per league (customPageId nfl / ncaaf / cfl). Tests point a single URL at a local fake FanDuel (NFL only).
+    const single = opts.snapshotUrl || process.env.FD_SNAPSHOT_URL;
+    this.leagues = single ? [LEAGUES.nfl] : (opts.leagues || enabledLeagues());
+    const base = opts.snapshotBase || process.env.FD_SNAPSHOT_BASE; // tests: one fake serving every league's page
+    this.snapshotUrls = Object.fromEntries(this.leagues.map((l) => [l.id, opts.snapshotUrls?.[l.id] || single || (base && `${base}${base.includes('?') ? '&' : '?'}customPageId=${l.fd}`) ||
+      `${this.ep.snapshot}?page=CUSTOM&customPageId=${l.fd}&pbHorizontal=false&_ak=${APP_KEY}&timezone=${this.ep.tz}`]));
+    this.snapshotUrl = this.snapshotUrls.nfl;
     this.pricesUrl = opts.pricesUrl || process.env.FD_PRICES_URL || `${this.ep.prices}?priceHistory=0`;
     this.chunkSize = Number(opts.chunkSize || process.env.FD_CHUNK || 50); // markets per request (FanDuel caps one answer at 80)
     this.pushEnabled = opts.push ?? process.env.FD_PUSH !== '0';
@@ -48,7 +53,10 @@ export class FanDuelSource {
     const fakePush = process.env.FD_PUSH_URL;
     this.pushOpts = opts.pushOpts || (fakePush ? { url: fakePush, getConfig: async () => ({ clientId: process.env.FD_PUSH_CLIENT_ID || 'local', endpoint: 'https://pir.on.sportsbook.fanduel.ca/graphql', wssUrl: fakePush }) } : {});
     this.push = null;
-    this.marketIds = [];           // game-line markets we poll
+    this.marketIds = [];           // every game-line market (push subscribes to all of them)
+    this.byLeague = new Map();     // league -> its market ids
+    this.primaryIds = [];          // NFL: polled every beat
+    this.otherChunks = []; this.rot = 0; // other leagues: one chunk per beat, in turn (the push carries their changes)
     this.selIndex = new Map();     // `${marketId}:${selectionId}` -> { gameKey, market, side }
     this.marketIndex = new Map();  // marketId -> { gameKey, market }
     this.stopped = false; this.lastPollAt = null; this.inFlight = false;
@@ -104,18 +112,28 @@ export class FanDuelSource {
   }
 
   // ---------- 1) snapshot ----------
-  async snapshot() {
-    const t0 = Date.now();
-    const r = await fetch(this.snapshotUrl, { headers: this.headers(), signal: AbortSignal.timeout(20_000) });
+  async fetchPage(league) {
+    const r = await fetch(this.snapshotUrls[league.id], { headers: this.headers(), signal: AbortSignal.timeout(20_000) });
     if (r.status !== 200) throw new Error(`HTTP ${r.status} ${(await r.text()).slice(0, 120)}`);
-    const data = await r.json();
-    const now = Date.now();
-    const n = this.applySnapshot(data, now);
-    this.metrics.fd.snapshots++;
-    this.store.setSource(BOOK, { lastSnapshotAt: now, lastDataAt: now, lastError: null, detail: `${n.games} games, ${n.markets} markets, snapshot ${now - t0} ms, poll every ${this.pollMs} ms` });
+    return r.json();
   }
 
-  applySnapshot(data, now = Date.now()) {
+  /** Every league's page, in parallel. The NFL page must succeed; another league failing only logs. */
+  async snapshot() {
+    const t0 = Date.now();
+    const results = await Promise.allSettled(this.leagues.map((lg) => this.fetchPage(lg)));
+    if (results[0].status === 'rejected') throw results[0].reason;
+    const now = Date.now(); let games = 0, markets = 0;
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') return this.log('fd', `snapshot ${this.leagues[i].id} failed: ${r.reason?.message}`);
+      const n = this.applySnapshot(r.value, now, this.leagues[i].id); games += n.games; markets += n.markets;
+    });
+    this.metrics.fd.snapshots++;
+    this.store.setSource(BOOK, { lastSnapshotAt: now, lastDataAt: now, lastError: null, detail: `${games} games, ${markets} markets (${this.leagues.map((l) => l.label).join(' + ')}), snapshot ${now - t0} ms, poll every ${this.pollMs} ms` });
+  }
+
+  applySnapshot(data, now = Date.now(), leagueId = 'nfl') {
+    const league = LEAGUES[leagueId] || LEAGUES.nfl;
     const events = data.attachments?.events || {};
     const all = Object.values(data.attachments?.markets || {}).filter((m) => MARKET_MAP[m.marketType]);
     // Build games from moneyline/spread runners (they name the teams); totals borrow the game from their event.
@@ -123,12 +141,12 @@ export class FanDuelSource {
     for (const m of all) {
       if (MARKET_MAP[m.marketType] === 'total') continue;
       const homeR = m.runners?.find((r) => r.result?.type === 'HOME'), awayR = m.runners?.find((r) => r.result?.type === 'AWAY');
-      const home = resolveTeam(homeR?.runnerName), away = resolveTeam(awayR?.runnerName);
+      const home = league.resolve(homeR?.runnerName), away = league.resolve(awayR?.runnerName);
       if (!home || !away) continue;
       const ev = events[m.eventId] || {};
       const start = ev.openDate || m.marketTime;
-      const key = gameKey(away, home, start);
-      if (!gameByEvent.has(String(m.eventId))) gameByEvent.set(String(m.eventId), { key, home, away, start, books: { [BOOK]: { eventId: String(m.eventId), live: false } } });
+      const key = leagueGameKey(league.id, away, home, start);
+      if (!gameByEvent.has(String(m.eventId))) gameByEvent.set(String(m.eventId), { key, league: league.id, home, away, start, books: { [BOOK]: { eventId: String(m.eventId), live: false } } });
     }
     const ids = [], seen = new Set();
     for (const m of all) {
@@ -148,10 +166,14 @@ export class FanDuelSource {
     }
     for (const g of gameByEvent.values()) this.store.upsertGame(g);
     if (gameByEvent.size) for (const q of [...this.store.quotes.values()]) {
-      if (q.book === BOOK && !seen.has(`${q.gameKey}|${q.market}|${q.side}`)) this.store.removeQuotes(BOOK, q.gameKey, q.market);
+      if (q.book === BOOK && leagueOf(q.gameKey) === league.id && !seen.has(`${q.gameKey}|${q.market}|${q.side}`)) this.store.removeQuotes(BOOK, q.gameKey, q.market);
     }
-    this.marketIds = ids;
-    this.push?.setMarketIds(ids);
+    this.byLeague.set(league.id, ids);
+    this.primaryIds = this.byLeague.get('nfl') || [];
+    const others = [...this.byLeague].filter(([id]) => id !== 'nfl').flatMap(([, x]) => x);
+    this.otherChunks = others.length ? chunk(others, this.chunkSize) : [];
+    this.marketIds = [...this.primaryIds, ...others];
+    this.push?.setMarketIds(this.marketIds);
     return { games: gameByEvent.size, markets: ids.length };
   }
 
@@ -159,8 +181,9 @@ export class FanDuelSource {
     const t = runner.result?.type;
     if (market === 'total') return t === 'OVER' ? 'over' : t === 'UNDER' ? 'under' : (/^over/i.test(runner.runnerName) ? 'over' : /^under/i.test(runner.runnerName) ? 'under' : null);
     if (t === 'HOME') return 'home'; if (t === 'AWAY') return 'away';
-    const team = resolveTeam(runner.runnerName);
-    return team ? (team.abbr === game.home.abbr ? 'home' : team.abbr === game.away.abbr ? 'away' : null) : null;
+    const team = (LEAGUES[game.league || 'nfl'] || LEAGUES.nfl).resolve(runner.runnerName);
+    const k = (x) => x?.key ?? x?.abbr;
+    return team ? (k(team) === k(game.home) ? 'home' : k(team) === k(game.away) ? 'away' : null) : null;
   }
 
   // ---------- 2) polling loop: fixed beat, start-to-start ----------
@@ -168,7 +191,7 @@ export class FanDuelSource {
     if (this.stopped) return;
     this.pollTimer = setTimeout(async () => {
       const t0 = Date.now();
-      if (this.onMidBeat && this.marketIds.length) { clearTimeout(this.midTimer); this.midTimer = setTimeout(() => this.onMidBeat(this.marketIds), this.pollMs / 2); }
+      if (this.onMidBeat && this.primaryIds.length) { clearTimeout(this.midTimer); this.midTimer = setTimeout(() => this.onMidBeat(this.primaryIds), this.pollMs / 2); }
       await this.poll();
       this.loop(Math.max(0, this.pollMs - (Date.now() - t0))); // a 16 ms request does not stretch a 1 s beat to 1.016 s
     }, delay);
@@ -219,7 +242,9 @@ export class FanDuelSource {
     this.lastPollAt = t0;
     try {
       // All chunks at once; each is applied the moment it lands, so one slow chunk never holds back the others.
-      const parts = chunk(this.marketIds, this.chunkSize);
+      // NFL every beat; the other leagues one chunk per beat, in turn
+      const parts = [...(this.primaryIds.length ? chunk(this.primaryIds, this.chunkSize) : []), ...(this.otherChunks.length ? [this.otherChunks[this.rot++ % this.otherChunks.length]] : [])];
+      const requested = parts.reduce((a, p) => a + p.length, 0);
       const results = await Promise.all(parts.map((ids) => this.pollChunk(ids, t0)));
       const now = Date.now();
       this.metrics.fd.pollDuration.push(now - t0); this.metrics.fd.polls++;
@@ -235,10 +260,10 @@ export class FanDuelSource {
       this.pollMs = Math.max(this.basePollMs, Math.round(this.pollMs * 0.7)); // recover gradually after an error
       const changes = results.reduce((a, r) => a + r.changes, 0), returned = results.reduce((a, r) => a + r.returned, 0);
       this.metrics.fd.changesPerPoll.push(changes); this.markFresh(now);
-      this.metrics.fd.marketsMissing = this.marketIds.length - returned; // FanDuel leaving markets out of an answer
+      this.metrics.fd.marketsMissing = requested - returned; // FanDuel leaving markets out of an answer
       const interleave = now - this.edgeLastAt < 3 * this.pollMs;
       this.store.setSource(BOOK, { state: 'polling', lastDataAt: now, lastError: null, polls: this.metrics.fd.polls, pollMs: this.pollMs, lastPollMs: now - t0, interleave,
-        detail: `${returned}/${this.marketIds.length} markets in ${parts.length} parallel request${parts.length > 1 ? 's' : ''}, ${now - t0} ms, every ${this.pollMs} ms${this.push?.state === 'live' ? ' + push' : ''}` });
+        detail: `${returned}/${requested} markets in ${parts.length} parallel request${parts.length > 1 ? 's' : ''}, ${now - t0} ms, every ${this.pollMs} ms${this.otherChunks.length ? ` (other leagues: 1 of ${this.otherChunks.length} chunks per beat)` : ''}${this.push?.state === 'live' ? ' + push on all ' + this.marketIds.length : ''}` });
     } catch (e) {
       this.fail('poll', e);
     } finally { this.inFlight = false; }

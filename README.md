@@ -5,10 +5,13 @@
 A side-by-side NFL board (moneyline, spread, total; pregame and in-game) that pulls from DraftKings and FanDuel,
 normalizes both into one model, shows the best price with the book underneath, and pushes every line move to the
 browser without a refresh. Toggle at the top: **Best price / DraftKings only / FanDuel only** (shareable as `?view=`).
+Also **college football and the CFL** from the same two books: *League* switch on the page (`?league=ncaaf`, `?league=cfl`).
 
 ![board](docs/board.png)
 
 What is on the page, beyond the board itself:
+* **Three leagues** — NFL, college football (NCAAF) and CFL, same rules and same live updates; each viewer's stream
+  carries only the league on screen (§3, "Other leagues").
 * **More lines** on every game — alternate spreads and totals, anytime touchdown scorer, and passing / rushing /
   receiving yards and receptions milestones (e.g. "Josh Allen 250+ passing yards"), both books side by side, best
   price only where both books offer the exact same line and player (§3, "More lines").
@@ -182,6 +185,27 @@ prop prices never touch the main board's stream. Checked live (`tools/check-extr
 price on the board identical to what each book served at that moment (2,001 prices, 0 different, 0 missing), with
 801 bets priced by both books.
 
+### Other leagues: college football and the CFL
+Both books serve every football league through the same endpoints and the same market shapes; only the league id
+changes (DraftKings `leagueId` 88808 NFL, 87637 NCAAF, 33567 CFL, subcategory 4518 "Game Lines" for all three;
+FanDuel `customPageId` nfl / ncaaf / cfl). Found by recording each league's page, as for the NFL. One worker per book
+still: DraftKings fetches one snapshot per league and opens one subscription per league on the same socket; FanDuel loads
+one page per league and puts every market on the push. `LEAGUES=nfl,ncaaf,cfl` (default) chooses them; NFL is always on.
+* **Matching teams.** CFL works like the NFL (nine unique nicknames: "SSK Roughriders" = "Saskatchewan Roughriders").
+  College has 130+ schools and neither book uses nicknames, but both write the school name the same way ~95% of the
+  time; a short alias list covers the rest ("Miami FL" = "Miami Florida", "UConn" = "Connecticut", "ULM" = "UL Monroe").
+  Checked on Oct 29: 58 of DraftKings' 65 college games found their FanDuel twin; the other 7 are next week's games
+  FanDuel had not posted yet.
+* **Kept apart.** Each league's snapshot can only remove that league's prices. NFL game keys are unchanged
+  (`CAR@GB:2026-10-29`), other leagues are prefixed (`ncaaf:troy@james-madison:2026-10-29`, `cfl:WPG@TOR:2026-10-31`),
+  so stored history still matches. `/api/stream?league=`, `/api/board?league=` (or `all`) and `/api/history?league=`
+  send only that league, so the NFL page is not slowed by ~1,400 college prices.
+* **Polling budget.** The NFL is polled every beat as before; the other leagues' ~360 markets take turns, one batch of
+  ≤ 50 per beat (each refreshed every ~8 s), because the push already delivers their changes as they happen. That keeps
+  FanDuel at about 3 requests a second in total.
+* **Small schools.** FanDuel also lists ~50 FCS games DraftKings does not; with nothing to compare they are hidden by
+  default in college, and one click shows them ("only available offer"). Alt lines and player props stay NFL-only.
+
 ### Same jurisdiction for both books: Ontario
 Both books run a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
 Ontario (§6), so the board uses **Ontario for both books**: DraftKings `CA-ON-SB` and FanDuel Ontario
@@ -333,7 +357,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 58 tests, ~10 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 64 tests, ~12 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
@@ -364,6 +388,10 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
   TD, Josh Allen 250+), DK 260+ / FD 275+ stay single-book, the 1st-TD market is not mixed in, player names match
   across suffixes and dots, a DK socket frame moves a prop, a selection missing from the next snapshot is dropped,
   FanDuel suspension is shown, and FanDuel polls open games every 3 s and the rest every 60 s, ≤ 50 markets a request.
+* **Other leagues, on real recorded payloads** (`test/fixtures/{dk,fd}-{ncaaf,cfl}.json`): school-name aliases and CFL
+  nicknames match across books; the same college and CFL games get the same key from both books; one league's
+  snapshot never removes another league's prices; DraftKings starts with one snapshot and one subscription per league;
+  FanDuel polls the NFL every beat and the other leagues in turn; the server sends each viewer only its league.
 * **Runs on its own:** with its own DraftKings snapshots working, the server counts and ignores an edge's snapshot
   (a changed price in it never reaches the board).
 * **Price history:** one point per real change, restored after a restart, and charted from the price in force at the
@@ -408,10 +436,10 @@ under a restart-on-exit supervisor.)
 | Show the odds moving (flash / previous price) | Yes — green/red flash + struck-through previous value for 8 s + line-move notice + the wire |
 | Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen for both books (each stamps its pushes) |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
-| Props, alt lines, other leagues | **Alt lines + player props: yes** — alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number (§3). Other leagues: not built; the adapters take a league id and market map, so NBA is a config change plus a team table. |
+| Props, alt lines, other leagues | **Yes, all three.** Alt lines + player props: alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number. Other leagues: **college football and the CFL**, game lines from both books, live, with a League switch (§3). |
 | What changes for a third book, or ten; where AI helps | §11 |
 
 ## 13. With more time
 A push chart to rank unlike lines; over/under player props (FanDuel has them, DraftKings Ontario only sells
-milestones); other leagues; FanDuel push for the "more lines" markets too (they still poll); Prometheus metrics; a
+milestones); props for college and CFL; other sports (NBA is a league id plus a team table); FanDuel push for the "more lines" markets too (they still poll); Prometheus metrics; a
 second region for failover.

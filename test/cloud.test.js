@@ -17,7 +17,7 @@ test('own DraftKings snapshots work → edge snapshots are ignored and counted',
   await new Promise((r) => rest.listen(0, '127.0.0.1', r));
   const sock = new WebSocketServer({ port: 0 }); await new Promise((r) => sock.once('listening', r));
   const port = await freePort(), base = `http://127.0.0.1:${port}`;
-  const proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'draftkings', INGEST_TOKEN: 't', EXTRAS: '0', DK_HTTP: 'native',
+  const proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'draftkings', INGEST_TOKEN: 't', EXTRAS: '0', DK_HTTP: 'native', LEAGUES: 'nfl',
     DK_NASH_BASE: `http://127.0.0.1:${rest.address().port}`, DK_WS_URL: `ws://127.0.0.1:${sock.address().port}/websocket` }, stdio: 'ignore' });
   try {
     await waitFor(async () => { try { return (await (await fetch(`${base}/api/health`)).json()).books.draftkings.snapshotVia === 'direct'; } catch { return false; } }, 6000);
