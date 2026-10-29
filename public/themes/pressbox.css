@@ -412,3 +412,137 @@ html[data-scheme=dark] .hold-card { background:var(--surface-raised); }
 .team.is-school .kit { opacity:.55; }
 .link-btn { border:0; background:none; padding:0; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 @media(max-width:720px) { .league-field { grid-column:1/-1; } .team.is-school .team-name { font-size:14px; } }
+
+/* ================= game page, big chart, ladder, moved prices, controls ================= */
+:root { --chart-dk:#7a3fc4; --chart-fd:#0b8a86; --move-bar:7px; }
+html[data-scheme=dark] { --chart-dk:#c49dff; --chart-fd:#3fd3c8; --price-up-bg:#123a25; --price-down-bg:#47192a; }
+
+/* selects in the design system: no browser chrome, a chevron, the same height and border as the segments */
+.select { position:relative; display:block; }
+.select::after { content:''; position:absolute; right:12px; top:50%; width:7px; height:7px; margin-top:-6px; border:solid var(--text-muted); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); pointer-events:none; }
+.field select, .ld-select { -webkit-appearance:none; appearance:none; min-height:38px; padding:7px 34px 7px 12px; background:var(--surface); color:var(--text); border:1px solid var(--border-control); border-radius:var(--radius-sm); font:500 var(--text-sm) var(--font-ui); }
+.field select:hover, .ld-select:hover { border-color:var(--accent); }
+.ld-select { min-height:32px; background-image:linear-gradient(45deg,transparent 50%,var(--text-muted) 50%),linear-gradient(135deg,var(--text-muted) 50%,transparent 50%); background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%; background-size:5px 5px; background-repeat:no-repeat; }
+.design-field .segment button[aria-pressed=true] { background:var(--accent); color:var(--surface); }
+.design-field .segment button[aria-pressed=true]:hover { background:var(--accent-hover); }
+
+/* a moved price: quick strong flash, then a thick green/red bar + tint and the old price in a pill for 8 s */
+.match .price.moved-up, .match .price.moved-down { transition:background 300ms; }
+.match .price.moved-up { border-left-color:var(--price-up); box-shadow:inset calc(var(--move-bar) - 3px) 0 0 var(--price-up); background:var(--price-up-bg); }
+.match .price.moved-down { border-left-color:var(--price-down); box-shadow:inset calc(var(--move-bar) - 3px) 0 0 var(--price-down); background:var(--price-down-bg); }
+.match .price.moved-up.is-charted { box-shadow:inset calc(var(--move-bar) - 3px) 0 0 var(--price-up), inset 0 -2px 0 var(--accent); }
+.match .price.moved-down.is-charted { box-shadow:inset calc(var(--move-bar) - 3px) 0 0 var(--price-down), inset 0 -2px 0 var(--accent); }
+.match .price.moved-up .odds { color:var(--price-up); } .match .price.moved-down .odds { color:var(--price-down); }
+.match .price.moved-up.is-up { animation:moved-up var(--motion-flash) ease-out; }
+.match .price.moved-down.is-down { animation:moved-down var(--motion-flash) ease-out; }
+@keyframes moved-up { from { background:color-mix(in srgb, var(--price-up) 38%, var(--surface)); } to { background:var(--price-up-bg); } }
+@keyframes moved-down { from { background:color-mix(in srgb, var(--price-down) 38%, var(--surface)); } to { background:var(--price-down-bg); } }
+@keyframes flash-up { from { background:color-mix(in srgb, var(--price-up) 38%, var(--surface)); } to { background:transparent; } }
+@keyframes flash-down { from { background:color-mix(in srgb, var(--price-down) 38%, var(--surface)); } to { background:transparent; } }
+.match .change { display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border-radius:999px; font:600 var(--text-xs) var(--font-meta); color:var(--surface); background:var(--price-up); }
+.match .change.down { background:var(--price-down); }
+.match .change s { color:inherit; opacity:.9; }
+.match .change.line-change { background:var(--accent); }
+.match .price.is-line { box-shadow:inset calc(var(--move-bar) - 3px) 0 0 var(--accent); }
+.x-table td.x-up { box-shadow:inset 4px 0 var(--price-up); } .x-table td.x-down { box-shadow:inset 4px 0 var(--price-down); }
+.x-table td .change { font-weight:600; } .x-table td.x-up s, .x-table td.x-down s { text-decoration-thickness:1.5px; }
+.move-up .move-value b { color:var(--price-up); } .move-down .move-value b { color:var(--price-down); } .move-line .move-value b { color:var(--accent); }
+.move-value b { font-weight:600; }
+
+/* the small chart in the list: thicker, clearly different lines; click (or Enter) opens the game page */
+.plot path { stroke-width:2.5; }
+.plot .s-dk { stroke:var(--chart-dk); } .plot .s-fd { stroke:var(--chart-fd); }
+.chart-now .book.dk { color:var(--chart-dk); } .chart-now .book.fd { color:var(--chart-fd); }
+.chart.is-clickable { position:relative; cursor:zoom-in; border-radius:var(--radius-sm); transition:background var(--motion-fast); }
+.chart.is-clickable:hover { background:var(--accent-soft); }
+.chart-zoom { position:absolute; right:8px; bottom:-2px; font:600 10px var(--font-ui); color:var(--accent); opacity:0; transition:opacity var(--motion-fast); }
+.chart.is-clickable:hover .chart-zoom, .chart.is-clickable:focus-visible .chart-zoom { opacity:1; }
+.open-game { color:var(--text); font-weight:600; text-decoration:none; border-bottom:1px dotted var(--border-control); }
+.open-game:hover { color:var(--accent); border-bottom-color:var(--accent); }
+
+/* game page */
+.on-gamepage .columns, .on-gamepage .holds, .on-gamepage .results, .on-gamepage > .wire, .on-gamepage .phase-field, .on-gamepage .density-field, .on-gamepage .search { display:none; }
+.gamepage-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:6px 0 14px; border-bottom:2px solid var(--accent); margin-bottom:6px; }
+.back-link { display:inline-flex; align-items:center; min-height:36px; padding:6px 14px; border:1px solid var(--border-control); border-radius:var(--radius-sm); color:var(--accent); font-weight:600; font-size:var(--text-sm); text-decoration:none; }
+.back-link:hover { background:var(--accent-soft); border-color:var(--accent); }
+.gamepage-title { font:600 22px/1.2 var(--font-price); letter-spacing:-.03em; }
+.gamepage-hint { margin-left:auto; font:400 var(--text-xs) var(--font-meta); color:var(--text-muted); }
+.game.is-page { border-bottom:0; }
+.match.is-page { grid-template-columns:var(--team-column) repeat(var(--markets,3),minmax(0,1fr)); }
+.match.is-page .market-label { position:static; width:auto; height:auto; overflow:visible; clip:auto; }
+.game-moves { margin-top:24px; }
+.game-moves h3 { font:500 17px/1.2 var(--font-price); color:var(--accent); margin:0 0 10px; }
+
+/* big movement chart */
+.bc { margin-top:20px; padding:16px 18px 14px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface-raised); }
+.bc-head { display:flex; justify-content:space-between; align-items:start; gap:12px 20px; flex-wrap:wrap; }
+.bc-head h3 { font:600 19px/1.2 var(--font-price); letter-spacing:-.02em; margin:0; }
+.bc-head h3 span { font:400 var(--text-xs) var(--font-ui); color:var(--text-muted); letter-spacing:0; }
+.bc-legend { display:flex; gap:6px 18px; flex-wrap:wrap; margin-top:6px; font:400 var(--text-xs) var(--font-meta); color:var(--text-muted); }
+.bc-now { display:inline-flex; align-items:center; gap:6px; } .bc-now b { font:600 14px var(--font-price); color:var(--text); }
+.bc-now i, .ld-key i { display:inline-block; width:18px; height:4px; border-radius:2px; background:currentColor; }
+.bc-now.dk, .ld-key.dk { color:var(--chart-dk); } .bc-now.fd, .ld-key.fd { color:var(--chart-fd); }
+.bc-ranges, .bc-picks, .ld-subjects { display:flex; flex-wrap:wrap; gap:4px; }
+.bc-ranges button, .bc-picks button, .ld-subjects button { border:1px solid var(--border-control); border-radius:999px; background:var(--surface); color:var(--text-muted); font-size:var(--text-xs); min-height:30px; padding:3px 12px; }
+.bc-ranges button[aria-pressed=true], .bc-picks button[aria-pressed=true], .ld-subjects button[aria-pressed=true] { background:var(--accent); border-color:var(--accent); color:var(--surface); font-weight:600; }
+.bc-picks { margin:12px 0 4px; }
+.bc-plot { position:relative; height:320px; margin:14px 52px 0 0; }
+.bc-plot svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.bc-grid line { stroke:var(--border); stroke-dasharray:3 5; vector-effect:non-scaling-stroke; }
+.bc-line { fill:none; stroke-width:3.5; vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round; }
+.bc-line.dk { stroke:var(--chart-dk); } .bc-line.fd { stroke:var(--chart-fd); }
+.bc-dot { position:absolute; width:11px; height:11px; margin:-5.5px 0 0 -5.5px; border-radius:50%; border:2.5px solid var(--surface-raised); box-shadow:0 0 0 1px var(--border); cursor:help; }
+.bc-dot.dk { background:var(--chart-dk); } .bc-dot.fd { background:var(--chart-fd); }
+.bc-dot.is-line { width:15px; height:15px; margin:-7.5px 0 0 -7.5px; background:var(--surface-raised); border:3px solid var(--accent); }
+.bc-dot:hover { transform:scale(1.35); }
+.bc-y { position:absolute; right:-52px; transform:translateY(-50%); font:400 11px var(--font-meta); color:var(--text-muted); }
+.bc-axis { position:relative; height:20px; margin:6px 52px 0 0; }
+.bc-x { position:absolute; transform:translateX(-50%); font:400 11px var(--font-meta); color:var(--text-muted); white-space:nowrap; }
+.bc-x:first-child { transform:none; } .bc-x:last-child { transform:translateX(-100%); }
+.bc-note, .ld-note { font-size:var(--text-xs); color:var(--text-muted); margin-top:10px; }
+.bc-empty, .ld-empty { padding:40px 0; text-align:center; color:var(--text-muted); font-size:var(--text-sm); }
+
+/* more lines: the table on the left, a ladder chart filling the right */
+.x-body { display:grid; grid-template-columns:minmax(0,760px) minmax(300px,1fr); gap:24px; align-items:start; }
+.x-body .x-scroll { max-width:none; }
+.ld { min-width:0; padding:14px 16px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface-raised); }
+.ld h4 { margin:0 0 10px; font:600 16px/1.25 var(--font-price); letter-spacing:-.02em; }
+.ld h4 span { font:400 var(--text-xs) var(--font-ui); color:var(--text-muted); }
+.ld-legend { display:flex; gap:16px; margin:10px 0 6px; font-size:var(--text-xs); }
+.ld-key { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+.ld-plot { position:relative; aspect-ratio:600/220; margin-right:38px; }
+.ld-plot svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.ld-grid line { stroke:var(--border); stroke-dasharray:3 5; }
+.ld-line { fill:none; stroke-width:3; stroke-linejoin:round; } .ld-line.dk { stroke:var(--chart-dk); } .ld-line.fd { stroke:var(--chart-fd); }
+.ld-pt { stroke:var(--surface-raised); stroke-width:1.5; } .ld-pt.dk { fill:var(--chart-dk); } .ld-pt.fd { fill:var(--chart-fd); }
+.ld-pt.is-best { stroke-width:3; stroke:var(--price-up); }
+.ld-y { position:absolute; right:-38px; transform:translateY(-50%); font:400 10px var(--font-meta); color:var(--text-muted); }
+.ld-axis { position:relative; height:18px; margin:4px 38px 0 0; }
+.ld-x { position:absolute; transform:translateX(-50%); font:400 10px var(--font-meta); color:var(--text-muted); white-space:nowrap; }
+.ld-bars { list-style:none; margin:8px 0 0; padding:0; display:grid; gap:8px; }
+.ld-bars li { display:grid; grid-template-columns:120px 1fr; gap:10px; align-items:center; font-size:var(--text-xs); }
+.ld-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ld-pair { display:grid; gap:3px; }
+.ld-bar { display:block; height:13px; border-radius:2px; min-width:30px; position:relative; }
+.ld-bar.dk { background:var(--chart-dk); } .ld-bar.fd { background:var(--chart-fd); } .ld-bar.is-none { background:none; }
+.ld-bar b { position:absolute; right:4px; top:-1px; font:600 10px var(--font-meta); color:#fff; }
+.ld-bar.is-best { outline:2px solid var(--price-up); outline-offset:1px; }
+html[data-scheme=dark] .ld-bar b { color:#0e1319; }
+
+@media(max-width:1250px) { .x-body { grid-template-columns:1fr; } .ld { position:static; } }
+@media(max-width:700px) {
+  .design-field { grid-column:1/-1; }
+  .gamepage-hint { display:none; } .gamepage-title { font-size:18px; width:100%; }
+  .match.is-page { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .bc { padding:12px; } .bc-plot { height:220px; margin-right:40px; } .bc-y { right:-40px; font-size:10px; } .bc-axis { margin-right:40px; }
+  .bc-x:nth-child(2), .bc-x:nth-child(4) { display:none; }
+  .bc-ranges { width:100%; } .bc-ranges button { flex:1; padding:3px 4px; }
+  .chart-zoom { opacity:1; }
+}
+.bc-gap { position:absolute; left:0; top:0; bottom:0; background:repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--border) 70%, transparent) 7px 8px); border-right:1px dashed var(--border-control); display:flex; align-items:center; justify-content:center; }
+.bc-gap em { font:400 var(--text-xs) var(--font-meta); font-style:normal; color:var(--text-muted); background:var(--surface-raised); padding:2px 8px; border-radius:3px; }
+.bc-end { position:absolute; left:100%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; border:2px solid var(--surface-raised); }
+.bc-end.dk { background:var(--chart-dk); } .bc-end.fd { background:var(--chart-fd); }
+.chart-zoom { left:50%; top:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); padding:4px 10px; border-radius:999px; background:var(--accent); color:var(--surface); font-size:var(--text-xs); box-shadow:0 2px 10px rgba(0,0,0,.18); }
+@media(max-width:700px) { .chart-zoom { opacity:0; } }
+@media(max-width:700px) { .match .price.moved-up, .match .price.moved-down, .match .price.is-line { padding:4px 4px 4px 9px; border-radius:2px; } }

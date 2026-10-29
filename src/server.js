@@ -170,6 +170,13 @@ app.get('/api/extras/stream', (req, res) => {
 // Movement charts: every quote's recent history, downsampled (built at most once per 5 s, shared by all viewers)
 let histCache = { at: 0, key: '', body: '' };
 app.get('/api/history', (req, res) => {
+  // one game in detail (its page: up to a week, last 6 h at full resolution), or a league's board (downsampled)
+  const game = String(req.query.game || '');
+  if (game) {
+    if (!store.games.has(game)) return res.status(404).json({ error: 'unknown game' });
+    const hours = Math.min(192, Math.max(0.1, Number(req.query.hours) || 168));
+    return res.json(store.historyView({ hours, points: 600, recentHours: Math.min(hours, 6), recentMax: 3000, only: (id) => id.startsWith(`${game}|`) }));
+  }
   const hours = Math.min(72, Math.max(1, Number(req.query.hours) || 48)), points = Math.min(240, Math.max(10, Number(req.query.points) || 90));
   const league = leagueParam(req.query.league), key = `${hours}|${points}|${league}`;
   if (histCache.key !== key || Date.now() - histCache.at > 5000) {

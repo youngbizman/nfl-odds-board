@@ -18,18 +18,21 @@ const KIT = { ARI: ['#97233f', '#f0e9df'], ATL: ['#a6323e', '#f0e9df'], BAL: ['#
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const etTime = (d, opts) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
 
+import { bigChart, ladderChart } from '/charts.js';
+
 let api, root, el = {};
 
 function mount(r, a) {
   api = a; root = r;
+  // the design switch sits in plain sight with the other board controls, as two buttons
   const picker = api.themes.length > 1
-    ? `<label class="field theme-field">Design<select id="theme-picker">${api.themes.map((t) => `<option value="${t.id}"${t.id === api.settings.theme ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : '';
+    ? `<div class="field design-field"><span id="design-label">Design</span><div class="segment" role="group" aria-labelledby="design-label">${api.themes.map((t) => `<button type="button" data-theme-switch="${t.id}" aria-pressed="${t.id === api.settings.theme}" title="${esc(t.name)}">${esc(t.short || t.name)}</button>`).join('')}</div></div>` : '';
   root.innerHTML = `
   <a class="skip" href="#board">Skip to prices</a>
   <div class="app">
     <header class="mast">
       <span class="wordmark">PRESSBOX / ODDS</span>
-      <div class="mast-links"><span class="demo-label">Ontario · DraftKings + FanDuel · live</span><a href="${REPO}#readme">How it works</a>${picker}
+      <div class="mast-links"><span class="demo-label">Ontario · DraftKings + FanDuel · live</span><a href="${REPO}#readme">How it works</a>
         <button type="button" class="icon-btn" id="scheme-btn" title="Light / dark (d)" aria-label="Switch light or dark"></button>
         <button type="button" class="icon-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button></div>
     </header>
@@ -45,13 +48,14 @@ function mount(r, a) {
       </div>
     </section>
     <div class="toolbar" aria-label="Board controls">
+      ${picker}
       <div class="field league-field"><span id="league-label">League</span><div class="segment" role="group" aria-labelledby="league-label" id="leagues"></div></div>
       <div class="field phase-field"><span id="phase-label">Show</span><div class="segment" role="group" aria-labelledby="phase-label">
         <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
       <div class="field density-field"><span id="density-label">Density</span><div class="segment" role="group" aria-labelledby="density-label">
         <button type="button" data-density="comfortable">Comfortable</button><button type="button" data-density="compact">Compact</button></div></div>
       <label class="field search"><span>Find a team <kbd>/</kbd></span><input id="search" type="search" autocomplete="off" placeholder="Team or abbreviation"></label>
-      <label class="field">Odds<select id="odds-format"><option value="american">American</option><option value="decimal">Decimal</option></select></label>
+      <div class="field format-field"><span id="format-label">Odds</span><div class="segment" role="group" aria-labelledby="format-label"><button type="button" data-format="american">American</button><button type="button" data-format="decimal">Decimal</button></div></div>
     </div>
     <section class="holds" id="holds" aria-label="Tightest markets right now"></section>
     <div class="sentinel" aria-hidden="true"></div>
@@ -91,17 +95,28 @@ function mount(r, a) {
   root.querySelector('#leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
   el.results.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
   root.querySelector('#search').addEventListener('input', (e) => api.set('search', e.target.value));
-  const fmt = root.querySelector('#odds-format'); fmt.value = api.settings.format; fmt.addEventListener('change', (e) => api.set('format', e.target.value));
-  root.querySelector('#theme-picker')?.addEventListener('change', (e) => api.setTheme(e.target.value));
+  root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
+  root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
   const pickFrom = (t) => { const c = t.closest('.price[data-market]'); const gEl = c?.closest('[data-game]'); if (c && gEl) { api.pickChart(gEl.dataset.game, c.dataset.market, c.dataset.side); gEl.querySelector(`.price[data-market="${c.dataset.market}"][data-side="${c.dataset.side}"]`)?.focus({ preventScroll: true }); } };
   el.board.addEventListener('click', (e) => {
+    const og = e.target.closest('[data-open-game]'); if (og) { if (og.tagName === 'A' && (e.metaKey || e.ctrlKey || e.shiftKey)) return; e.preventDefault(); return api.openGame(og.dataset.openGame); }
+    if (e.target.closest('[data-back]')) { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); return api.closeGame(); }
+    const rg = e.target.closest('[data-range]'); if (rg) return api.setRange(rg.dataset.range);
+    const pk = e.target.closest('[data-pick]'); if (pk) { const [m, sd] = pk.dataset.pick.split('|'); return api.pickChart(pk.closest('[data-game]').dataset.game, m, sd); }
+    const ld = e.target.closest('[data-ladder]'); if (ld) return api.setExtras(ld.closest('[data-extras]').dataset.extras, { ladder: ld.dataset.ladder });
     const t = e.target.closest('[data-extras-toggle]'); if (t) return api.toggleExtras(t.dataset.extrasToggle);
     const st = e.target.closest('[data-star]'); if (st) return api.toggleStar(st.dataset.star);
     const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind });
     pickFrom(e.target);
   });
-  el.board.addEventListener('change', (e) => { if (e.target.matches('[data-x-both]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { bothOnly: e.target.checked }); });
-  el.board.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.price[data-market]')) { e.preventDefault(); pickFrom(e.target); } });
+  el.board.addEventListener('change', (e) => {
+    if (e.target.matches('[data-x-both]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { bothOnly: e.target.checked });
+    if (e.target.matches('[data-ladder-select]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { ladder: e.target.value });
+  });
+  el.board.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.price[data-market]')) { e.preventDefault(); pickFrom(e.target); }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.chart[data-open-game]')) { e.preventDefault(); api.openGame(e.target.dataset.openGame); }
+  });
 }
 let observer = null;
 function unmount() { observer?.disconnect(); root.innerHTML = ''; }
@@ -116,7 +131,8 @@ function changeHtml(q, ch) {
   if (!ch.dir) return '';
   return `<span class="change ${ch.dir}" aria-label="Previous price ${esc(api.fmtOdds(ch.prevOdds))}">${ch.dir === 'up' ? '↑' : '↓'} <s>${esc(api.fmtOdds(ch.prevOdds))}</s></span>`;
 }
-function stateClass(ch) { return ch ? (ch.lineMoved ? 'is-line' : ch.flash && ch.dir ? `is-${ch.dir}` : '') : ''; }
+// a moved price: a quick flash, then a thick coloured bar + tint for 8 s (green = the odds went up, red = down), so a move is noticed
+function stateClass(ch) { return ch ? (ch.lineMoved ? 'is-line' : ch.dir ? `moved-${ch.dir}${ch.flash ? ` is-${ch.dir}` : ''}` : '') : ''; }
 function tag(q) { return q ? ` data-q="${esc(`${q.gameKey}|${q.market}|${q.side}|${q.book}`)}" data-odds="${q.odds ?? ''}" data-line="${q.line ?? ''}"` : ''; }
 function otherBadge(o) {
   if (!o) return '';
@@ -189,12 +205,24 @@ function teamHtml(t, side) {
   const [shirt, trim] = (!school && KIT[t.abbr]) || ['#c9cfd5', '#5b6673'];
   return `<div class="team ${side}${school ? ' is-school' : ''}"><span class="kit" style="--shirt:${shirt};--trim:${trim}" aria-hidden="true"><i></i></span><div><span class="team-name">${esc(t.abbr)}</span>${school ? '' : `<span class="team-full">${esc(t.name)}</span>`}</div></div>`;
 }
-function gameInner(g) {
-  const meta = g.status === 'live' ? `<span class="live-tag">● Live</span> · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}` : `${esc(etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} ET · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
+const gameHref = (g) => { const u = new URL(location.href); u.searchParams.set('game', g.key); return u.pathname + u.search; };
+function gameInner(g, page = false) {
+  const when = g.status === 'live' ? '<span class="live-tag">● Live</span>' : esc(`${etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET`);
+  const name = `${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
+  const meta = page ? `${when} · ${name}` : `${when} · <a class="open-game" href="${esc(gameHref(g))}" data-open-game="${esc(g.key)}" title="Open this game: big chart, every line">${name} <span aria-hidden="true">›</span></a>`;
   const cells = (idx) => api.MARKETS.map(([m, sides]) => priceCell(g, m, sides[idx], idx)).join('');
   const star = api.isStarred(g.key);
-  return `<div class="game-meta"><span class="meta-left"><button type="button" class="star${star ? ' is-on' : ''}" data-star="${esc(g.key)}" aria-pressed="${star}" title="${star ? 'Unstar' : 'Star'} this game (s)">${star ? '★' : '☆'}</button>${meta}</span>${holdsLine(g)}${extrasToggle(g)}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${chartHtml(g)}</div>
-    ${api.extrasOpen(g.key) ? `<section class="extras" data-extras="${esc(g.key)}" aria-label="More lines for ${esc(`${g.away.abbr} @ ${g.home.abbr}`)}">${extrasInner(g.key)}</section>` : ''}`;
+  const extras = api.extrasOpen(g.key) ? `<section class="extras" data-extras="${esc(g.key)}" aria-label="More lines for ${esc(`${g.away.abbr} @ ${g.home.abbr}`)}">${extrasInner(g.key)}</section>` : '';
+  return `<div class="game-meta"><span class="meta-left"><button type="button" class="star${star ? ' is-on' : ''}" data-star="${esc(g.key)}" aria-pressed="${star}" title="${star ? 'Unstar' : 'Star'} this game (s)">${star ? '★' : '☆'}</button>${meta}</span>${holdsLine(g)}${extrasToggle(g)}</div><div class="match${page ? ' is-page' : ''}" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${page ? '' : chartHtml(g)}</div>
+    ${page ? bigChart(api, g, { pick: api.chartPick(g.key), range: api.settings.range }) : ''}${extras}${page ? gameMoves(g) : ''}`;
+}
+function gameMoves(g) {
+  const moves = api.state.moves.filter((m) => m.gameKey === g.key).slice(0, 12);
+  return `<section class="game-moves" aria-label="Price moves in this game"><h3>Moves in this game</h3>${moves.length ? `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>` : '<p class="x-note">No price has moved since this page opened.</p>'}</section>`;
+}
+function gamePage(g) {
+  return `<div class="gamepage-bar"><a class="back-link" href="${esc(location.pathname)}" data-back>‹ All games</a><span class="gamepage-title">${esc(g.away.name)} @ ${esc(g.home.name)}</span><span class="gamepage-hint">Esc to go back</span></div>
+    <article class="game is-page" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g, true)}</article>`;
 }
 
 // ---------- hold: the books' combined margin at the best price on each side ----------
@@ -251,8 +279,8 @@ function extrasInner(gk) {
   const st = v.status || {};
   const head = `<div class="x-bar"><div class="segment x-tabs" role="group" aria-label="Kind of bet">${tabs}</div>
     <label class="x-both"><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> Only lines both books offer</label></div>`;
-  const body = v.rows.length ? `<div class="x-scroll" tabindex="0" aria-label="${esc(api.state.extrasKinds[v.kind] || v.kind)} table"><table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
-    <tbody>${v.rows.slice(0, 250).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table></div>
+  const body = v.rows.length ? `<div class="x-body"><div class="x-scroll" tabindex="0" aria-label="${esc(api.state.extrasKinds[v.kind] || v.kind)} table"><table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
+    <tbody>${v.rows.slice(0, 250).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table></div>${ladderChart(api, gk, v)}</div>
     ${v.rows.length > 250 ? `<p class="x-note">Showing 250 of ${v.rows.length}.</p>` : ''}`
     : `<p class="x-note">${v.bothOnly ? 'No line here that both books offer at the same number. Untick the box to see each book\'s own lines.' : 'Nothing here right now.'}</p>`;
   const foot = `<p class="x-note">Best = higher odds on the exact same line and threshold; anything else is shown, never ranked. DraftKings pushes changes as they happen (<span data-x-age="draftkings" data-age-ts="${st.draftkings?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.draftkings?.lastDataAt))}</span>); FanDuel is re-checked every 3 s while this is open (<span data-x-age="fanduel" data-age-ts="${st.fanduel?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.fanduel?.lastDataAt))}</span>).</p>`;
@@ -283,7 +311,8 @@ function chartHtml(g) {
   let lo = Infinity, hi = -Infinity, moves = 0;
   for (const b of books) { const pts = S.books[b]; moves += Math.max(0, pts.length - 1); for (const p of pts) { const v = chance(p[1]); lo = Math.min(lo, v); hi = Math.max(hi, v); } }
   const head = `<div class="chart-head" title="Implied chance = 1 ÷ decimal odds. It includes the book's margin, so the two sides add up to a bit over 100%."><span>${esc(what)} · implied chance</span>`;
-  if (!Number.isFinite(lo)) return `<div class="chart">${head}</div><p class="chart-empty">No price yet.</p></div>`;
+  const open = ` data-open-game="${esc(g.key)}" tabindex="0" title="Click to enlarge: the game's own page, with 10 min to 1 week"`;
+  if (!Number.isFinite(lo)) return `<div class="chart is-clickable"${open}>${head}</div><p class="chart-empty">No price yet.</p></div>`;
   const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 1.5); lo = mid - half; hi = mid + half;
   const span = Math.max(1, S.to - S.from);
   const X = (t) => ((Math.min(Math.max(t, S.from), S.to) - S.from) / span) * 1000, Y = (v) => (1 - (v - lo) / (hi - lo)) * 100;
@@ -301,10 +330,10 @@ function chartHtml(g) {
   }
   const t0 = new Date(S.from).toLocaleString('en-US', { timeZone: 'America/Toronto', weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const label = `${what}, implied chance: ${books.map((b) => { const p = S.books[b]; return p.length ? `${api.BOOK[b].label} ${chance(p[p.length - 1][1]).toFixed(1)}%` : ''; }).filter(Boolean).join(', ')}; ${moves} ${moves === 1 ? 'move' : 'moves'} since ${t0}.`;
-  return `<div class="chart" role="img" aria-label="${esc(label)}">${head}<span class="chart-now">${now}</span></div>
+  return `<div class="chart is-clickable" role="button" aria-label="${esc(`${label} Open the game page for a bigger chart.`)}"${open}>${head}<span class="chart-now">${now}</span></div>
     <div class="plot"><svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" x2="1000" y1="50" y2="50"/>${paths}</svg>
       <span class="y y-hi">${hi.toFixed(1)}%</span><span class="y y-lo">${lo.toFixed(1)}%</span>${dots}</div>
-    <div class="chart-foot"><span>${S.live ? 'kickoff' : esc(t0)}</span><span>${moves ? `${moves} ${moves === 1 ? 'move' : 'moves'}` : 'no moves yet'}</span><span>now</span></div></div>`;
+    <div class="chart-foot"><span>${S.live ? 'kickoff' : esc(t0)}</span><span>${moves ? `${moves} ${moves === 1 ? 'move' : 'moves'}` : 'no moves yet'}</span><span>now</span></div><span class="chart-zoom" aria-hidden="true">⤢ enlarge</span></div>`;
 }
 
 // ---------- sections ----------
@@ -313,6 +342,9 @@ function render() {
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
   root.querySelector('#leagues').innerHTML = api.state.leagues.map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
   root.querySelectorAll('[data-density]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.density === api.settings.density)));
+  root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
+  root.querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === api.settings.format)));
+  root.querySelector('.app').classList.toggle('on-gamepage', !!api.settings.game);
   const dark = document.documentElement.dataset.scheme === 'dark';
   const sb = root.querySelector('#scheme-btn'); sb.textContent = dark ? '☀' : '☾'; sb.setAttribute('aria-label', dark ? 'Switch to light' : 'Switch to dark');
   const groups = api.groups();
@@ -320,7 +352,9 @@ function render() {
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="link-btn" data-singles>show ${hidden} more priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="link-btn" data-singles>hide single-book games</button>' : '';
   el.results.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live${singles}</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
+  const pg = api.game();
   if (!api.state.everConnected) el.board.innerHTML = '';
+  else if (api.settings.game) el.board.innerHTML = pg ? gamePage(pg) : `<div class="empty"><strong>This game is not on the board any more.</strong><a href="${esc(location.pathname)}" data-back>‹ All games</a></div>`;
   else if (!total) el.board.innerHTML = `<div class="empty"><strong>No games match.</strong>${api.settings.search || api.settings.phase !== 'all' ? 'Clear the search or choose All to see every game.' : `Neither book has ${esc(api.league().title)} game lines up right now; the board fills itself as soon as one does.`}</div>`;
   else el.board.innerHTML = groups.map((grp) => `<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
       ${grp.games.map((g) => `<article class="game" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g)}</article>`).join('')}</section>`).join('');
@@ -330,7 +364,7 @@ function renderGame(key) {
   const g = api.state.games.get(key); const node = el.board.querySelector(`[data-game="${CSS.escape(key)}"]`);
   if (!g || !node) return;
   const top = node.querySelector('.x-scroll')?.scrollTop || 0;
-  node.innerHTML = gameInner(g);
+  node.innerHTML = gameInner(g, api.settings.game === key);
   const sc = node.querySelector('.x-scroll'); if (sc && top) sc.scrollTop = top;
 }
 function renderFeeds() {
@@ -365,13 +399,14 @@ function renderBanner() {
 function renderWire() {
   const moves = api.state.moves.slice(0, 6);
   if (!moves.length) { el.wire.innerHTML = '<div class="empty"><strong>No price moves yet.</strong>Lines are quiet midweek; they move constantly on Sundays and during live games.</div>'; return; }
-  el.wire.innerHTML = `<ul class="wire-list">${moves.map((m) => {
-    const lineMoved = m.prevLine != null && m.prevLine !== m.line;
-    const from = lineMoved ? `${api.fmtLine(m.market, m.side, m.prevLine)} ${api.fmtOdds(m.prevOdds)}` : api.fmtOdds(m.prevOdds);
-    const to = lineMoved ? `${api.fmtLine(m.market, m.side, m.line)} ${api.fmtOdds(m.odds)}` : api.fmtOdds(m.odds);
-    const arrow = lineMoved ? '↔' : m.odds > m.prevOdds ? '↑' : '↓';
-    return `<li class="move">${esc(m.game)} · ${esc(m.sideName)} ${esc(m.market === 'moneyline' ? 'Moneyline' : m.market === 'spread' ? 'Spread' : 'Total')}<span class="move-value"><s>${esc(from)}</s> ${arrow} ${esc(to)}</span><span class="move-source">${api.BOOK[m.book].label} · <time data-age-local="${m.at}">${esc(api.ago(m.at, Date.now()))}</time></span></li>`;
-  }).join('')}</ul>`;
+  el.wire.innerHTML = `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>`;
+}
+function moveHtml(m) {
+  const lineMoved = m.prevLine != null && m.prevLine !== m.line;
+  const from = lineMoved ? `${api.fmtLine(m.market, m.side, m.prevLine)} ${api.fmtOdds(m.prevOdds)}` : api.fmtOdds(m.prevOdds);
+  const to = lineMoved ? `${api.fmtLine(m.market, m.side, m.line)} ${api.fmtOdds(m.odds)}` : api.fmtOdds(m.odds);
+  const dir = lineMoved ? 'line' : m.odds > m.prevOdds ? 'up' : 'down';
+  return `<li class="move move-${dir}">${esc(m.game)} · ${esc(m.sideName)} ${esc(m.market === 'moneyline' ? 'Moneyline' : m.market === 'spread' ? 'Spread' : 'Total')}<span class="move-value"><s>${esc(from)}</s> ${dir === 'line' ? '↔' : dir === 'up' ? '↑' : '↓'} <b>${esc(to)}</b></span><span class="move-source">${api.BOOK[m.book].label} · <time data-age-local="${m.at}">${esc(api.ago(m.at, Date.now()))}</time></span></li>`;
 }
 function countdown(t) {
   const s = (t - api.serverNow()) / 1000; if (s <= 0) return 'kicking off';
@@ -389,6 +424,6 @@ function tick() {
   if (sig !== tick.sig) { tick.sig = sig; render(); }
 }
 
-export default { id: 'pressbox', name: 'Pressbox', css: '/themes/pressbox.css',
+export default { id: 'pressbox', name: 'Pressbox', short: 'Pressbox', css: '/themes/pressbox.css',
   fonts: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap',
   mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, renderHolds, focusSearch, toggleHelp, closeHelp, tick };

@@ -209,3 +209,141 @@ td[data-charted] { box-shadow:inset 0 -2px 0 var(--accent); }
 .g-feedt td:last-child, .g-feedt th:last-child { width:100%; padding-right:0; }
 .g-feedt .bar { width:100%; min-width:24px; max-width:64px; }
 @media (max-width:1500px) { .g-feedt { font-size:11px; } .g-feedt th, .g-feedt td { padding-right:4px; } }
+
+/* ================= design switch, odds buttons, feeds panel, moved prices, game page, charts ================= */
+:root { --chart-dk:#7a3fc4; --chart-fd:#0b8a86; }
+html[data-scheme=dark] { --chart-dk:#c49dff; --chart-fd:#3fd3c8; --up-bg:#123a25; --down-bg:#47192a; }
+.g-ctl { display:inline-flex; align-items:center; gap:6px; }
+.g-lbl { font-size:11px; color:var(--muted); }
+
+.g-brand { margin-right:0; }
+.g-design + .g-seg { margin-left:auto; }
+.g-design .g-seg button { padding:0 12px; font-weight:600; }
+.g-design .g-seg button[aria-pressed=true] { background:var(--best); }
+html[data-scheme=dark] .g-design .g-seg button[aria-pressed=true] { background:var(--accent); }
+.g-top { gap:10px 14px; }
+
+/* feeds: its own full-width row, larger type, no scroll bar */
+.g-feeds-panel { margin:10px 0 0; border:1px solid var(--line-strong); border-radius:8px; background:var(--panel); padding:10px 14px 12px; }
+.g-feeds-panel h2 { margin:0 0 8px; font:600 11px var(--font); letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }
+.g-feedt { width:100%; border-collapse:collapse; font:400 13.5px/1.35 var(--mono); }
+.g-feedt th, .g-feedt td { text-align:left; padding:6px 18px 6px 0; white-space:nowrap; border-bottom:1px solid var(--line); vertical-align:middle; }
+.g-feedt tbody tr:last-child th, .g-feedt tbody tr:last-child td { border-bottom:0; }
+.g-feedt thead th { font:600 10.5px var(--font); letter-spacing:.06em; text-transform:uppercase; color:var(--faint); padding-top:0; }
+.g-feedt tbody th { font:700 14px var(--font); }
+.g-feedt .num { text-align:right; font-variant-numeric:tabular-nums; }
+.g-feedt td.big { font-weight:700; color:var(--num); font-size:15px; }
+.g-feedt td.st { font-weight:600; text-transform:uppercase; font-size:12px; letter-spacing:.04em; }
+.g-feedt .f-live td.st { color:var(--up); }
+.g-feedt .dot { width:9px; height:9px; }
+.g-feedt .f-live .dot { box-shadow:0 0 0 3px color-mix(in srgb, var(--up) 25%, transparent); }
+.g-feedt td.fr, .g-feedt th:last-child { width:24%; padding-right:0; }
+.g-feedt .bar { width:100%; max-width:none; height:8px; border-radius:4px; }
+.g-bk { display:inline-block; width:4px; height:14px; border-radius:2px; margin-right:8px; vertical-align:-2px; background:var(--faint); }
+.g-bk.g-dk { background:var(--dk); } .g-bk.g-fd { background:var(--fd); }
+.g-panels { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+@media (max-width:1100px) { .g-feeds-panel { overflow-x:auto; } .g-feedt { min-width:900px; } }
+@media (max-width:900px) { .g-panels { grid-template-columns:1fr; } .g-design + .g-seg { margin-left:0; } }
+
+/* a moved price: quick flash (also on the dark best-price cells), then a thick green/red bar and the old price on a tag for 8 s */
+td[data-market].mv-up { box-shadow:inset 4px 0 0 var(--up); }
+td[data-market].mv-down { box-shadow:inset 4px 0 0 var(--down); }
+td[data-market].mv-line { box-shadow:inset 4px 0 0 var(--accent); }
+td[data-market][data-charted].mv-up { box-shadow:inset 4px 0 0 var(--up), inset 0 -2px 0 var(--accent); }
+td[data-market][data-charted].mv-down { box-shadow:inset 4px 0 0 var(--down), inset 0 -2px 0 var(--accent); }
+.c-bk.mv-up { background:var(--up-bg); } .c-bk.mv-down { background:var(--down-bg); }
+.c-bk.mv-up .od { color:var(--up); } .c-bk.mv-down .od { color:var(--down); }
+.fl-up, .fl-down, .fl-line { animation:none; }
+td[data-market].fl-up::after, td[data-market].fl-down::after, td[data-market].fl-line::after, .g-xt td.fl-up::after, .g-xt td.fl-down::after { content:''; position:absolute; inset:0; pointer-events:none; animation:g-flash .9s ease-out forwards; }
+td.fl-up::after { --fl:var(--up); } td.fl-down::after { --fl:var(--down); } td.fl-line::after { --fl:var(--accent); }
+@keyframes g-flash { from { background:color-mix(in srgb, var(--fl) 45%, transparent); } to { background:transparent; } }
+.g-xt td { position:relative; }
+.was { position:absolute; left:5px; top:-7px; z-index:2; padding:0 4px; border-radius:3px; font:600 9.5px/13px var(--mono); color:#fff; background:var(--up); text-decoration:line-through; text-decoration-thickness:1px; pointer-events:none; }
+.was.down { background:var(--down); } .was.line { background:var(--accent); }
+html[data-scheme=dark] .was { color:#0d1117; }
+.mv { font-size:10px; }
+.c-best .mv.up { color:#8ff0b8; } .c-best .mv.down { color:#ffb0ba; }
+tr.r-away .was { top:-6px; }
+
+/* the team and the sparkline open the game page */
+.g-team a { color:inherit; text-decoration:none; }
+.g-team a:hover b { color:var(--accent); text-decoration:underline; }
+.g-spark[data-open-game] { cursor:zoom-in; }
+.g-spark[data-open-game]:hover { background:var(--accent-soft) !important; }
+.g-spark[data-open-game]:hover .g-sp-l::after { content:' · enlarge ⤢'; color:var(--accent); }
+.g-spark path { stroke-width:2.25; } .g-spark .s-dk { stroke:var(--chart-dk); } .g-spark .s-fd { stroke:var(--chart-fd); }
+
+/* game page */
+.g-pagebar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:12px 0 4px; padding:8px 0; border-bottom:2px solid var(--accent); }
+.g-pagebar b { font-size:17px; letter-spacing:-.01em; }
+.g-pagebar .mut { font:400 11px var(--mono); margin-left:auto; }
+.g-back { display:inline-flex; align-items:center; height:30px; padding:0 12px; border:1px solid var(--line-strong); border-radius:6px; background:var(--bg); color:var(--accent); font-weight:600; font-size:12px; text-decoration:none; }
+.g-back:hover { border-color:var(--accent); background:var(--accent-soft); }
+.on-gamepage .g-panels { display:none; }
+
+/* big movement chart */
+.g-big:empty { display:none; }
+.bc { margin-top:14px; padding:12px 14px; border:1px solid var(--line-strong); border-radius:8px; background:var(--panel); }
+.bc-head { display:flex; justify-content:space-between; align-items:start; gap:10px 16px; flex-wrap:wrap; }
+.bc-head h3 { margin:0; font:700 15px var(--font); } .bc-head h3 span { font-weight:400; font-size:11px; color:var(--muted); }
+.bc-legend { display:flex; gap:4px 16px; flex-wrap:wrap; margin-top:4px; font:400 11.5px var(--mono); color:var(--muted); }
+.bc-now { display:inline-flex; align-items:center; gap:6px; } .bc-now b { color:var(--text); font-weight:700; }
+.bc-now i, .ld-key i { display:inline-block; width:16px; height:4px; border-radius:2px; background:currentColor; }
+.bc-now.dk, .ld-key.dk { color:var(--chart-dk); } .bc-now.fd, .ld-key.fd { color:var(--chart-fd); }
+.bc-ranges, .bc-picks, .ld-subjects { display:inline-flex; flex-wrap:wrap; border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; }
+.bc-ranges button, .bc-picks button, .ld-subjects button { border:0; border-right:1px solid var(--line); background:var(--bg); height:28px; padding:0 10px; font-size:12px; color:var(--muted); }
+.bc-ranges button:last-child, .bc-picks button:last-child, .ld-subjects button:last-child { border-right:0; }
+.bc-ranges button[aria-pressed=true], .bc-picks button[aria-pressed=true], .ld-subjects button[aria-pressed=true] { background:var(--accent); color:#fff; font-weight:600; }
+.bc-picks { margin:10px 0 2px; }
+.bc-plot { position:relative; height:320px; margin:12px 50px 0 0; background:var(--bg); border:1px solid var(--line); border-radius:4px; }
+.bc-plot svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.bc-grid line { stroke:var(--line); stroke-dasharray:3 4; vector-effect:non-scaling-stroke; }
+.bc-line { fill:none; stroke-width:3.5; vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round; }
+.bc-line.dk { stroke:var(--chart-dk); } .bc-line.fd { stroke:var(--chart-fd); }
+.bc-dot { position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; border:2px solid var(--bg); cursor:help; }
+.bc-dot.dk { background:var(--chart-dk); } .bc-dot.fd { background:var(--chart-fd); }
+.bc-dot.is-line { width:14px; height:14px; margin:-7px 0 0 -7px; background:var(--bg); border:3px solid var(--accent); }
+.bc-dot:hover { transform:scale(1.4); }
+.bc-y { position:absolute; right:-50px; transform:translateY(-50%); font:400 10.5px var(--mono); color:var(--muted); }
+.bc-axis { position:relative; height:18px; margin:4px 50px 0 0; }
+.bc-x { position:absolute; transform:translateX(-50%); font:400 10.5px var(--mono); color:var(--muted); white-space:nowrap; }
+.bc-x:first-child { transform:none; } .bc-x:last-child { transform:translateX(-100%); }
+.bc-note, .ld-note { font-size:11px; color:var(--muted); margin:8px 0 0; }
+.bc-empty, .ld-empty { padding:30px 0; text-align:center; color:var(--muted); }
+
+/* more lines: table left, ladder chart right */
+.g-xbody { display:grid; grid-template-columns:minmax(0,620px) minmax(320px,1fr); gap:16px; align-items:start; }
+.g-xbody .g-xscroll { max-width:none; }
+.ld { min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:var(--bg); }
+.ld h4 { margin:0 0 8px; font:700 13px var(--font); } .ld h4 span { font-weight:400; font-size:11px; color:var(--muted); }
+.ld-legend { display:flex; gap:14px; margin:8px 0 4px; font-size:11px; }
+.ld-key { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+.ld-select { height:28px; border:1px solid var(--line-strong); border-radius:6px; background:var(--bg); padding:0 26px 0 8px; font-size:12px; -webkit-appearance:none; appearance:none; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 13px) 50%,calc(100% - 8px) 50%; background-size:5px 5px; background-repeat:no-repeat; }
+.ld-plot { position:relative; aspect-ratio:600/220; margin-right:36px; }
+.ld-plot svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.ld-grid line { stroke:var(--line); stroke-dasharray:3 4; }
+.ld-line { fill:none; stroke-width:3; stroke-linejoin:round; } .ld-line.dk { stroke:var(--chart-dk); } .ld-line.fd { stroke:var(--chart-fd); }
+.ld-pt { stroke:var(--bg); stroke-width:1.5; } .ld-pt.dk { fill:var(--chart-dk); } .ld-pt.fd { fill:var(--chart-fd); }
+.ld-pt.is-best { stroke:var(--up); stroke-width:3; }
+.ld-y { position:absolute; right:-36px; transform:translateY(-50%); font:400 10px var(--mono); color:var(--muted); }
+.ld-axis { position:relative; height:16px; margin:4px 36px 0 0; }
+.ld-x { position:absolute; transform:translateX(-50%); font:400 10px var(--mono); color:var(--muted); white-space:nowrap; }
+.ld-bars { list-style:none; margin:6px 0 0; padding:0; display:grid; gap:6px; }
+.ld-bars li { display:grid; grid-template-columns:120px 1fr; gap:8px; align-items:center; font-size:11.5px; }
+.ld-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ld-pair { display:grid; gap:2px; }
+.ld-bar { display:block; height:12px; border-radius:2px; min-width:28px; position:relative; }
+.ld-bar.dk { background:var(--chart-dk); } .ld-bar.fd { background:var(--chart-fd); } .ld-bar.is-none { background:none; }
+.ld-bar b { position:absolute; right:4px; top:-1px; font:600 9.5px var(--mono); color:#fff; }
+html[data-scheme=dark] .ld-bar b { color:#0d1117; }
+.ld-bar.is-best { outline:2px solid var(--up); outline-offset:1px; }
+@media (max-width:1100px) { .g-xbody { grid-template-columns:1fr; } }
+@media (max-width:700px) { .bc-plot { height:220px; margin-right:40px; } .bc-y { right:-40px; } .bc-axis { margin-right:40px; } .bc-x:nth-child(2), .bc-x:nth-child(4) { display:none; } }
+.bc-gap { position:absolute; left:0; top:0; bottom:0; background:repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--line-strong) 60%, transparent) 7px 8px); border-right:1px dashed var(--line-strong); display:flex; align-items:center; justify-content:center; }
+.bc-gap em { font:400 11px var(--mono); font-style:normal; color:var(--muted); background:var(--bg); padding:2px 8px; border-radius:3px; }
+.bc-end { position:absolute; left:100%; width:11px; height:11px; margin:-5.5px 0 0 -5.5px; border-radius:50%; border:2px solid var(--bg); }
+.bc-end.dk { background:var(--chart-dk); } .bc-end.fd { background:var(--chart-fd); }
+.g-search input { width:160px; }
+.g-top { gap:8px 10px; }
+.g-icons { margin-left:0; }
+@media (max-width:1500px) { .g-ctl:not(.g-design) .g-lbl { display:none; } }

@@ -16,6 +16,8 @@ const LEAGUE_IDS = ['nfl', 'ncaaf', 'cfl'];
 const settings = {
   league: LEAGUE_IDS.includes(qs.get('league')) ? qs.get('league') : 'nfl', // nfl | ncaaf | cfl (?league= is shareable)
   singleBook: false,                                                // college: also show games only one book prices
+  game: qs.get('game') || null,                                     // a game's own page (?game=KEY)
+  range: ['10m', '1h', '6h', '1d', '1w'].includes(qs.get('range')) ? qs.get('range') : '1d', // its chart window
   view: qs.get('view') || 'best',                                   // best | draftkings | fanduel (?view= is shareable)
   phase: 'all',                                                     // all | live | pregame
   search: '',
@@ -30,9 +32,10 @@ try { localStorage.removeItem('board.theme'); localStorage.removeItem('board.sch
 const setParam = (k, v, dflt) => { const u = new URL(location.href); v === dflt ? u.searchParams.delete(k) : u.searchParams.set(k, v); history.replaceState(null, '', u); };
 const starred = new Set((() => { try { return JSON.parse(keep.get('starred', '[]')); } catch { return []; } })());
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
-  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map(),
+  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], moveCount: { draftkings: 0, fanduel: 0 }, changedAt: new Map(),
   history: new Map(), histFrom: null, chartPick: new Map(), // movement charts: quote id -> [[t, odds, line]]
   extrasSummary: {}, extrasKinds: {}, extras: new Map(), extrasHolds: [],
+  gameHistory: null, // the open game's page: { key, map: quote id -> [[t, odds, line]] } at full resolution, up to a week
   leagues: [{ id: 'nfl', label: 'NFL', title: 'NFL', games: null }, { id: 'ncaaf', label: 'College', title: 'College football', games: null }, { id: 'cfl', label: 'CFL', title: 'CFL', games: null }] };   // "more lines": per-game counts, and the open drop-downs
 const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: [] } };
 
@@ -91,12 +94,51 @@ function series(g, market, side) {
   }
   return { from, to: now, live, books };
 }
+/** Same as series(), for a chosen window, from the open game's full-resolution history when it is loaded. */
+function seriesRange(g, market, side, ms) {
+  const now = serverNow(); const from = now - ms; const books = {}; let recordedFrom = now;
+  const src = state.gameHistory?.key === g.key ? state.gameHistory.map : state.history;
+  for (const b of Object.keys(BOOK)) {
+    const id = `${g.key}|${market}|${side}|${b}`; const all = src.get(id) || state.history.get(id) || []; const q = state.quotes.get(id);
+    if (all.length) recordedFrom = Math.min(recordedFrom, all[0][0]);
+    let pts = all.filter((p) => p[0] >= from); const before = all.filter((p) => p[0] < from).pop();
+    if (before) pts = [[from, before[1], before[2]], ...pts];
+    if (!pts.length && q?.odds != null) pts = [[from, q.odds, q.line ?? null]];
+    books[b] = pts;
+  }
+  return { from, to: now, books, recordedFrom };
+}
+async function loadGameHistory(key) {
+  try {
+    const h = await (await fetch(`/api/history?game=${encodeURIComponent(key)}&hours=192`, { cache: 'no-store' })).json();
+    if (settings.game !== key || !h.series) return;
+    const map = new Map(Object.entries(h.series).map(([id, pts]) => [id, pts.map(([sec, o, l]) => [h.from + sec * 1000, o, l])]));
+    for (const [id, pts] of state.history) if (id.startsWith(`${key}|`)) { const m = map.get(id) || []; const lastT = m.length ? m[m.length - 1][0] : 0; for (const p of pts) if (p[0] > lastT) m.push(p); map.set(id, m); }
+    state.gameHistory = { key, map }; theme.render();
+  } catch {}
+}
+function openGame(key, { push = true } = {}) {
+  if (!key) return closeGame({ push });
+  settings.game = key; state.gameHistory = null;
+  if (push) { const u = new URL(location.href); u.searchParams.set('game', key); history.pushState({ game: key }, '', u); }
+  // its alt lines and props open by themselves on its page (NFL)
+  if (state.extrasSummary[key] && !state.extras.has(key)) toggleExtras(key);
+  loadGameHistory(key); theme.render(); window.scrollTo({ top: 0 });
+}
+function closeGame({ push = true } = {}) {
+  if (!settings.game) return;
+  const was = settings.game; settings.game = null; state.gameHistory = null;
+  if (push) { const u = new URL(location.href); u.searchParams.delete('game'); history.pushState({}, '', u); }
+  theme.render(); requestAnimationFrame(() => document.querySelector(`[data-game="${CSS.escape(was)}"]`)?.scrollIntoView({ block: 'center' }));
+}
+window.addEventListener('popstate', () => { const k = new URLSearchParams(location.search).get('game'); if (k !== settings.game) (k ? openGame(k, { push: false }) : closeGame({ push: false })); });
 const chartPick = (gk) => state.chartPick.get(gk) || { market: 'moneyline', side: 'home' };
 
 // ---------- "more lines" drop-down: one stream per open game ----------
 const KIND_ORDER = ['alt-spread', 'alt-total', 'td', 'pass-yds', 'rush-yds', 'rec-yds', 'receptions'];
 async function loadExtrasSummary() {
   try { const r = await (await fetch('/api/extras/summary', { cache: 'no-store' })).json(); state.extrasSummary = r.games || {}; state.extrasKinds = r.kinds || {}; state.extrasHolds = r.holds || []; theme.renderExtrasToggles?.(); theme.renderHolds?.(); } catch {}
+  if (settings.game && state.extrasSummary[settings.game] && !state.extras.has(settings.game)) toggleExtras(settings.game); // a game page opened from a link
 }
 function toggleExtras(gk) {
   const cur = state.extras.get(gk);
@@ -192,6 +234,7 @@ function hiddenSingles() {
   return [...state.games.values()].filter((g) => withPrices.has(g.key) && bookCount(g.key) < 2).length;
 }
 function visibleGames() {
+  if (settings.game) { const g = state.games.get(settings.game); return g ? [g] : []; } // a game's own page
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
   const term = settings.search.trim().toLowerCase();
   const single = hideSingles();
@@ -232,13 +275,15 @@ function freshness(book, now = serverNow()) {
 }
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
-  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
+  feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
+  openGame, closeGame, game: () => (settings.game ? state.games.get(settings.game) || null : null),
+  setRange(r) { settings.range = r; setParam('range', r, '1d'); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
   league: () => state.leagues.find((l) => l.id === settings.league) || state.leagues[0],
   setLeague(id) {
     if (!LEAGUE_IDS.includes(id) || id === settings.league) return;
-    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; setParam('league', id, 'nfl');
+    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = null; state.gameHistory = null; setParam('game', null, null); setParam('league', id, 'nfl');
     for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
-    state.games = new Map(); state.quotes = new Map(); state.moves = []; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
+    state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = { draftkings: 0, fanduel: 0 }; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
     mountTheme(theme); reconnect('league changed', 0);
   },
   isStarred: (gk) => starred.has(gk),
@@ -278,7 +323,7 @@ applyLook();
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
-  if (e.key === 'Escape') { if (typing) e.target.blur(); theme.closeHelp?.(); return; }
+  if (e.key === 'Escape') { if (typing) e.target.blur(); else if (settings.game) closeGame(); theme.closeHelp?.(); return; }
   if (typing) return;
   const act = {
     '/': () => theme.focusSearch?.(),
@@ -341,6 +386,7 @@ function connect() {
     state.connected = true; state.everConnected = true;
     theme.render();
     loadHistory();
+    if (settings.game && !state.gameHistory) { if (state.games.has(settings.game)) loadGameHistory(settings.game); }
   });
   es.addEventListener('batch', (e) => applyBatch(JSON.parse(e.data)));
   es.addEventListener('beat', (e) => { for (const [b, [d, c]] of Object.entries(JSON.parse(e.data))) { const s = state.sources[b]; if (s) { s.lastDataAt = d; s.lastChangeAt = c; } } theme.renderFeeds(); });
@@ -365,6 +411,7 @@ function pushHistory(q) {
   if (q.odds == null) return;
   const h = state.history.get(q.id) || []; const last = h[h.length - 1];
   if (!last || last[1] !== q.odds || last[2] !== (q.line ?? null)) { h.push([q.updatedAt, q.odds, q.line ?? null]); if (h.length > 2000) h.shift(); state.history.set(q.id, h); }
+  const gh = state.gameHistory; if (gh && q.gameKey === gh.key) { const m = gh.map.get(q.id) || []; const l2 = m[m.length - 1]; if (!l2 || l2[1] !== q.odds || l2[2] !== (q.line ?? null)) { m.push([q.updatedAt, q.odds, q.line ?? null]); gh.map.set(q.id, m); } }
 }
 function applyBatch(b) {
   const now = serverNow(), local = Date.now(); const touched = new Set(); let structural = false;
@@ -391,6 +438,7 @@ function recordMove(q, at) {
     sideName: q.market === 'total' ? (q.side === 'over' ? 'Over' : 'Under') : (q.side === 'home' ? g.home.abbr : g.away.abbr),
     prevOdds: q.prevOdds, odds: q.odds, prevLine: q.prevLine, line: q.line });
   state.moves.length = Math.min(state.moves.length, 30);
+  state.moveCount[q.book] = (state.moveCount[q.book] || 0) + 1;
 }
 
 // ---------- timers ----------

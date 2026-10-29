@@ -169,5 +169,10 @@ test('server: the stream, board and history carry only the league asked for; hea
     assert.equal(h.games, 3); assert.equal(h.leagues.ncaaf.quotes.fanduel, 24);
     const hist = await (await fetch(`${base}/api/history?league=cfl`)).json();
     assert.ok(Object.keys(hist.series).length > 0 && Object.keys(hist.series).every((id) => leagueOf(id) === 'cfl'));
+    // one game's own page: only that game's prices, up to a week back; an unknown game is a 404
+    const gk = cfl.games[0].key;
+    const one = await (await fetch(`${base}/api/history?game=${encodeURIComponent(gk)}&hours=168`)).json();
+    assert.ok(Object.keys(one.series).length > 0 && Object.keys(one.series).every((id) => id.startsWith(`${gk}|`)));
+    assert.equal((await fetch(`${base}/api/history?game=nope`)).status, 404);
   } finally { proc.kill(); fdSrv.close(); }
 });

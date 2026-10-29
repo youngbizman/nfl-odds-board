@@ -29,7 +29,13 @@ What is on the page, beyond the board itself:
 * **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `c` compact · `d` dark · `s` star the focused
   game · `Enter` chart the focused price · `?` help.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
-* **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
+* **A moved price stands out** — a strong green/red flash, then for 8 s a thick green (odds up) or red (odds down) bar,
+  a tint, and the old price on a pill beside the new one, in both designs and both colour schemes.
+* **Every game has its own page** — click the matchup, or click its chart ("enlarge"): a big chart of each book's
+  implied chance with **10 min / 1 hour / 6 hours / 1 day / 1 week** windows and any of the six prices, its alt lines and
+  props, and the moves in that game. It has its own link (`?game=…`), so it can be shared; Esc or Back returns.
+* **More lines has a chart beside the table** — each book's chance at every alt spread / total / yardage threshold
+  (ringed where that book pays more), or a bar per player for anytime touchdowns.
 * **Per-book feed cards** — how the book is read (push, poll, or both); **book to screen**, the latency *this browser*
   measured (the speed); **last heard**, how long since the book last sent anything (DraftKings only sends when a price
   changes, plus a connection check every 10 s, so on a quiet day this counts up to ~10 s — it is proof of life, not a
@@ -449,7 +455,7 @@ under a restart-on-exit supervisor.)
 ## 12. Above & beyond checklist
 | Asked for | Done |
 | --- | --- |
-| Show the odds moving (flash / previous price) | Yes — green/red flash + struck-through previous value for 8 s + line-move notice + the wire |
+| Show the odds moving (flash / previous price) | Yes — strong green/red flash, then a thick coloured bar + the previous price on a pill for 8 s, line-move notice, the wire, and per-game charts from 10 min to 1 week |
 | Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen for both books (each stamps its pushes) |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
 | Props, alt lines, other leagues | **Yes, all three.** Alt lines + player props: alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number. Other leagues: **college football and the CFL**, game lines from both books, live, with a League switch (§3). |

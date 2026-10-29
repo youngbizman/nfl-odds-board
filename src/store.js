@@ -3,8 +3,8 @@
 import { EventEmitter } from 'node:events';
 import { BOOKS } from './model.js';
 
-const HISTORY_KEEP_MS = 72 * 3600_000; // price history kept per quote (for the movement charts)
-const HISTORY_MAX = 3000;              // and at most this many points per quote
+const HISTORY_KEEP_MS = 8 * 24 * 3600_000; // price history kept per quote (movement charts go back up to a week)
+const HISTORY_MAX = 5000;                   // and at most this many points per quote
 
 export class BoardStore extends EventEmitter {
   constructor() {
@@ -105,12 +105,13 @@ export class BoardStore extends EventEmitter {
    * `points` (last value per time bucket); the last `recentHours` stay at full resolution (capped) so a live game's
    * chart is exact. Each series starts with the price in force at `from`. Times are seconds after `from`.
    */
-  historyView({ hours = 48, points = 90, recentHours = 4, recentMax = 300, now = Date.now() } = {}) {
+  historyView({ hours = 48, points = 90, recentHours = 4, recentMax = 300, now = Date.now(), only = null } = {}) {
     let earliest = now;
-    for (const id of this.quotes.keys()) { const h = this.history.get(id); if (h?.length) earliest = Math.min(earliest, h[0][0]); }
+    for (const id of this.quotes.keys()) { if (only && !only(id)) continue; const h = this.history.get(id); if (h?.length) earliest = Math.min(earliest, h[0][0]); }
     const from = Math.max(now - hours * 3600_000, earliest), bucket = Math.max(1, now - from) / points, recentFrom = now - recentHours * 3600_000;
     const series = {};
     for (const id of this.quotes.keys()) {
+      if (only && !only(id)) continue;
       const h = this.history.get(id); if (!h?.length) continue;
       let start = null; const byBucket = new Map(), recent = [];
       for (const p of h) {
