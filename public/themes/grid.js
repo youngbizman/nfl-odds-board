@@ -112,7 +112,8 @@ function bestCell(g, market, side) {
   if (cmp.kind === 'best' || cmp.kind === 'tie') {
     const q = cmp.best; const m = moveMark(q); const other = cmp.offers.find((o) => o.book !== q.book);
     const who = cmp.kind === 'tie' ? 'tie' : api.BOOK[q.book].short;
-    const edge = cmp.kind === 'best' && other ? `<span class="ed">+${api.cents(q.odds, other.odds)}¢</span>` : '';
+    const ed = cmp.kind === 'best' && other ? api.edge(q.odds, other.odds) : null;
+    const edge = ed ? `<span class="ed" title="${esc(ed.title)}">${esc(ed.text)}</span>` : '';
     return `<td class="c-best ${cmp.kind === 'tie' ? 'tie' : `win-${api.BOOK[q.book].cls}`}${m.cls}" ${a}>${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b>${m.mark}<span class="bk">${who}</span>${edge}</td>`;
   }
   if (cmp.kind === 'partial') { const q = cmp.best; return `<td class="c-best partial" ${a} title="the only open, fresh offer">${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b><span class="bk">${api.BOOK[q.book].short} only</span></td>`; }

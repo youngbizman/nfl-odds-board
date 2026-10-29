@@ -389,3 +389,19 @@ html[data-density=compact] .offer-value { font-size:15px; }
 html[data-density=compact] .offers { gap:6px; }
 .hold-card { min-width:0; overflow:hidden; }
 @media(max-width:700px) { .hc-legs { flex-wrap:wrap; white-space:normal; gap:4px 12px; } }
+
+/* different lines: one compact row per book (book · line · price), same height as a best-price cell */
+.split { display:grid; gap:3px; }
+.split-row { display:grid; grid-template-columns:28px minmax(52px, auto) auto auto; align-items:baseline; gap:8px; justify-content:start; }
+.split-row .book { font:600 var(--text-xs) var(--font-ui); }
+.split-row .line { font-size:13px; }
+.split-odds { font:500 19px/1.15 var(--font-price); font-variant-numeric:tabular-nums; }
+.is-different .notice { margin-top:4px; }
+html[data-density=compact] .split-odds { font-size:15px; }
+html[data-density=compact] .split { gap:1px; }
+
+/* opens on a plain white page */
+:root { --surface:#ffffff; --surface-raised:#ffffff; }
+html[data-scheme=dark] { --surface:#0e1319; --surface-raised:#151c24; }
+.hold-card { background:#f7f8fa; }
+html[data-scheme=dark] .hold-card { background:var(--surface-raised); }

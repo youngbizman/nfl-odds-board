@@ -154,14 +154,15 @@ function priceCell(g, market, side, idx) {
         <div class="compare"><span class="book dk">DraftKings</span> + <span class="book fd">FanDuel</span></div>${lineNotice(q, ch)}</div>`;
     }
     const other = cmp.offers.find((o) => o.book !== q.book);
-    const edge = api.cents(q.odds, other.odds);
+    const edge = api.edge(q.odds, other.odds);
     return `${head(`is-best win-${B[q.book].cls} ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong>${changeHtml(q, ch)}</div>
-      <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span> <span class="edge" title="${edge}¢ better than ${B[other.book].label}">+${edge}¢</span><span class="separator">·</span><span class="other"><span class="book ${B[other.book].cls}">${B[other.book].short}</span> ${esc(api.fmtOdds(other.odds))}</span></div>${lineNotice(q, ch)}</div>`;
+      <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span> <span class="edge" title="${esc(edge.title)} at ${B[other.book].label}">${esc(edge.text)}</span><span class="separator">·</span><span class="other"><span class="book ${B[other.book].cls}">${B[other.book].short}</span> ${esc(api.fmtOdds(other.odds))}</span></div>${lineNotice(q, ch)}</div>`;
   }
   if (cmp.kind === 'different') {
-    const offer = (q) => { const ch = api.change(q); return `<div class="offer"${tag(q)}><div class="offer-value"><span class="line">${esc(api.fmtLine(market, side, q.line))}</span><span class="offer-odds">${esc(api.fmtOdds(q.odds))}</span>${changeHtml(q, ch)}</div><span class="book ${B[q.book].cls}">${B[q.book].label}</span></div>`; };
+    // one compact row per book: book · its line · its price. Same height as a best-price cell, nothing wraps.
+    const row = (q) => { const ch = api.change(q); return `<div class="split-row"${tag(q)}><span class="book ${B[q.book].cls}">${B[q.book].short}</span><span class="line">${esc(api.fmtLine(market, side, q.line))}</span><b class="split-odds">${esc(api.fmtOdds(q.odds))}</b>${changeHtml(q, ch)}</div>`; };
     const moved = cmp.offers.map((q) => api.change(q)).find((ch) => ch);
-    return `${head(`is-different ${stateClass(moved)}`, null)}<div class="offers">${[dk, fd].map(offer).join('')}</div><div class="notice">≠ Different lines · no best price</div></div>`;
+    return `${head(`is-different ${stateClass(moved)}`, null)}<div class="split">${[dk, fd].map(row).join('')}</div><div class="notice" title="The books post different numbers, so the prices are not comparable">≠ different lines · not ranked</div></div>`;
   }
   if (cmp.kind === 'partial') {
     const q = cmp.best; const ch = api.change(q); const otherBook = q.book === 'draftkings' ? 'fanduel' : 'draftkings'; const o = otherBook === 'draftkings' ? dk : fd;
@@ -377,6 +378,6 @@ function tick() {
   if (sig !== tick.sig) { tick.sig = sig; render(); }
 }
 
-export default { id: 'pressbox', name: 'Pressbox (light)', css: '/themes/pressbox.css',
+export default { id: 'pressbox', name: 'Pressbox', css: '/themes/pressbox.css',
   fonts: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap',
   mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, renderHolds, focusSearch, toggleHelp, closeHelp, tick };

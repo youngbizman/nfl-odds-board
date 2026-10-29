@@ -17,10 +17,14 @@ const settings = {
   phase: 'all',                                                     // all | live | pregame
   search: '',
   format: keep.get('format', 'american'),                           // american | decimal
-  theme: qs.get('theme') || keep.get('theme', THEMES[0].id),
+  // The page always opens light, in the first design. Another design or dark mode is a choice that lives in the link
+  // (?theme=grid, ?scheme=dark), so a reload keeps it but a fresh visit never starts dark or in the engineering view.
+  theme: THEMES.some((t) => t.id === qs.get('theme')) ? qs.get('theme') : THEMES[0].id,
   density: keep.get('density', 'comfortable'),                      // comfortable | compact
-  scheme: keep.get('scheme', 'auto'),                               // auto | light | dark
+  scheme: qs.get('scheme') === 'dark' ? 'dark' : 'light',          // light (default) | dark
 };
+try { localStorage.removeItem('board.theme'); localStorage.removeItem('board.scheme'); } catch {} // older versions remembered these
+const setParam = (k, v, dflt) => { const u = new URL(location.href); v === dflt ? u.searchParams.delete(k) : u.searchParams.set(k, v); history.replaceState(null, '', u); };
 const starred = new Set((() => { try { return JSON.parse(keep.get('starred', '[]')); } catch { return []; } })());
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
   offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map(),
@@ -216,18 +220,32 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },
   toggleExtras, extrasView, extrasOpen: (gk) => state.extras.has(gk), extrasCount: (gk) => state.extrasSummary[gk] || null,
   setExtras(gk, patch) { const x = state.extras.get(gk); if (!x) return; Object.assign(x, patch); theme.renderExtras(gk); },
-  set(key, value) { settings[key] = value; if (['format', 'density', 'scheme'].includes(key)) keep.set(key, value); if (key === 'density' || key === 'scheme') applyLook(); if (key === 'view') { const u = new URL(location.href); value === 'best' ? u.searchParams.delete('view') : u.searchParams.set('view', value); history.replaceState(null, '', u); } theme.render(); },
-  setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; keep.set('theme', id); settings.theme = id; mountTheme(t); },
+  set(key, value) {
+    settings[key] = value;
+    if (['format', 'density'].includes(key)) keep.set(key, value);
+    if (key === 'density' || key === 'scheme') applyLook();
+    if (key === 'scheme') setParam('scheme', value, 'light');
+    if (key === 'view') setParam('view', value, 'best');
+    theme.render();
+  },
+  setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; settings.theme = id; setParam('theme', id, THEMES[0].id); mountTheme(t); },
+  /** How much better price a is than b, in the unit bettors use: cents near even money, % more profit for big favourites/longshots. */
+  edge(a, b) {
+    if (a == null || b == null) return null;
+    const c = cents(a, b);
+    if (c <= 30) return { text: `+${c}¢`, title: `${c} cents better (${fmtOdds(a)} vs ${fmtOdds(b)})` };
+    // −650 vs −800 is "150 cents", which means nothing to most people: say how much more it pays instead
+    const pa = decimalOdds(a) - 1, pb = decimalOdds(b) - 1; const p = Math.round(((pa - pb) / pb) * 100);
+    return { text: `+${p}% payout`, title: `wins ${p}% more than ${fmtOdds(b)} for the same stake` };
+  },
 };
 
 // ---------- look: density + light/dark (attributes on <html>; themes style them) ----------
-const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 function applyLook() {
   const html = document.documentElement;
   html.dataset.density = settings.density;
-  html.dataset.scheme = settings.scheme === 'auto' ? (darkQuery.matches ? 'dark' : 'light') : settings.scheme;
+  html.dataset.scheme = settings.scheme;
 }
-darkQuery.addEventListener?.('change', () => { if (settings.scheme === 'auto') applyLook(); });
 applyLook();
 
 // ---------- keyboard: / search · 1 2 3 views · c compact · d dark · s star · ? help ----------
