@@ -24,3 +24,7 @@ Board: https://nfl-odds-board-hgim.onrender.com · version bda4b24 · server res
 | 18:07:00 | — | 0/0 | 0/0 | 0/0 | — | — | 576/576 · 899/899 | yes |
 
 During live play a price can change between the two reads of a comparison, so a few differences on live games are expected; pregame prices must match exactly.
+
+## The page (tools/site-check.mjs)
+
+* 18:08:33: ✔ no errors — league switch in the page          ok /  / ✔ no errors
