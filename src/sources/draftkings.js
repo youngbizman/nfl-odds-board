@@ -42,7 +42,7 @@ export class DraftKingsSource {
     this.leagues = opts.leagues || enabledLeagues(); // NFL first; college football and the CFL from the same hosts
     this.resnapshotMs = Number(opts.resnapshotMs || process.env.DK_RESNAPSHOT_MS || 30_000); // a reconciliation check; the socket carries every change
     this.http = opts.http || makeHttp({ log });
-    this.pingMs = Number(opts.pingMs || 30_000);
+    this.pingMs = Number(opts.pingMs || 10_000); // proof of life when no price moves (DK only sends changes)
     this.selIndex = new Map();    // DK selection id -> { gameKey, market, side }
     this.familyIndex = new Map(); // "HC84695615_3" -> { gameKey, market, side } (survives line moves)
     this.marketIndex = new Map(); // DK market id -> { gameKey, market }

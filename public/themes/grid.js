@@ -266,7 +266,7 @@ function renderFeeds() {
     return `<tr class="f-${f}"><th>${api.BOOK[b].label}</th><td><i class="dot"></i>${esc(f)}</td><td>${esc(mode)}</td>
       <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td>${esc(lat)}</td><td><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
-  el.feeds.innerHTML = `<table class="g-pt g-feedt"><thead><tr><th></th><th>state</th><th>mode</th><th>data</th><th>latency</th><th>fresh</th></tr></thead><tbody>${rows}
+  el.feeds.innerHTML = `<table class="g-pt g-feedt"><thead><tr><th></th><th>state</th><th>mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">heard</th><th title="How long a price change takes to reach this screen">latency</th><th>fresh</th></tr></thead><tbody>${rows}
     <tr class="f-${api.state.connected ? 'live' : 'lost'}"><th>Stream</th><td><i class="dot"></i>${api.state.connected ? 'open' : 'reconnecting'}</td><td>SSE</td><td colspan="3">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms</td></tr></tbody></table>`;
 }
 function renderBanner() {

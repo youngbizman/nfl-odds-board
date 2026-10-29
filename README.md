@@ -30,8 +30,10 @@ What is on the page, beyond the board itself:
   game · `Enter` chart the focused price · `?` help.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price flashes** green/red and keeps its old value struck through beside it for a few seconds.
-* **Per-book feed cards** — how the book is read (push, poll, or both), a freshness bar that drains as data ages, last
-  data / last move, and the latency *this browser* measured (book→screen for both books: each book stamps its pushes).
+* **Per-book feed cards** — how the book is read (push, poll, or both); **book to screen**, the latency *this browser*
+  measured (the speed); **last heard**, how long since the book last sent anything (DraftKings only sends when a price
+  changes, plus a connection check every 10 s, so on a quiet day this counts up to ~10 s — it is proof of life, not a
+  delay); **last price move**; and a freshness bar that drains as that silence approaches the stale limit.
 * **Stale handling** — a book that stops answering turns red, its prices grey out, a banner says so; the other book
   keeps moving. Lost server connection → "reconnecting" banner, then a fresh snapshot. A stream that dies *silently*
   (the connection stays open but nothing arrives — seen on a home network where HTTP/3 kept timing out) is caught too:
@@ -226,7 +228,7 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 | Feed type | **deltas** (changes only) | push: **one whole market** per change · poll: **full picture** |
 | State kept by | **us**: snapshot into the store, apply each delta by selection id | nobody: each pushed market and each poll is authoritative for its markets (newest wins) |
 | Safety net | line moves applied from the push itself (`remove`+`add`); full re-snapshot every 30 s, 3 s after a push names an id we cannot place, and after every reconnect | polling every 1 s under the push; full re-snapshot every 60 s (new games, markets going in-play) |
-| Quiet ≠ dead | ping/pong every 30 s; no pong in 10 s → reconnect (backoff 1 → 30 s) | push: AppSync keep-alives, silence past the advertised timeout → reconnect; poll: a failed/slow poll is visible immediately |
+| Quiet ≠ dead | ping/pong every 10 s; no pong in 10 s → reconnect (backoff 1 → 30 s) | push: AppSync keep-alives, silence past the advertised timeout → reconnect; poll: a failed/slow poll is visible immediately |
 
 ## 5. Push to the browser
 
@@ -329,7 +331,7 @@ the restored board is then re-confirmed by the server's own snapshot.
 | Batching to browsers | fixed 40 ms window | **flush per upstream message** → 40 ms → **0 ms** |
 | DK relay | every price via Ontario: HTTPS POST per batch, ~100–200 ms | one open WebSocket, ~26 ms one way → then **no relay on the price path at all**: cloud holds the socket, edge sends snapshots only |
 | DK line moves (spread −3 → −3.5) | waited for a re-snapshot, ~3 s | **mapped from the selection id**, same speed as a price move |
-| Stale detection | DK 150 s / FD 15 s | DK 75 s (ping/pong every 30 s) / FD 10 s |
+| Stale detection | DK 150 s / FD 15 s | DK 75 s (ping/pong every 10 s) / FD 10 s |
 
 Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) is measured automatically; results land in
 `research/latency/` and this table is updated from them.
