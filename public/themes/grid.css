@@ -242,7 +242,6 @@ html[data-scheme=dark] .g-design .g-seg button[aria-pressed=true] { background:v
 .g-bk { display:inline-block; width:4px; height:14px; border-radius:2px; margin-right:8px; vertical-align:-2px; background:var(--faint); }
 .g-bk.g-dk { background:var(--dk); } .g-bk.g-fd { background:var(--fd); }
 .g-panels { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
-@media (max-width:1100px) { .g-feeds-panel { overflow-x:auto; } .g-feedt { min-width:900px; } }
 @media (max-width:900px) { .g-panels { grid-template-columns:1fr; } .g-design + .g-seg { margin-left:0; } }
 
 /* a moved price: quick flash (also on the dark best-price cells), then a thick green/red bar and the old price on a tag for 8 s */
@@ -347,3 +346,52 @@ html[data-scheme=dark] .ld-bar b { color:#0d1117; }
 .g-top { gap:8px 10px; }
 .g-icons { margin-left:0; }
 @media (max-width:1500px) { .g-ctl:not(.g-design) .g-lbl { display:none; } }
+
+/* ---- no sideways scrolling: the table fits the window ---- */
+.chart.is-clickable, .g-spark { user-select:none; }
+@media (max-width:1260px) {
+  .g-wrap { overflow-x:visible; border:0; border-radius:0; }
+  .g-table { min-width:0; }
+  .g-table thead th { position:sticky; }
+  .g-table td.g-team, .g-table thead th.g-team-h { position:static; box-shadow:none; }
+  .g-table td[data-market] { padding:3px 6px; height:auto; line-height:1.2; }
+  .g-table td[data-market] .ln { display:block; font-size:10px; margin:0 0 1px; }
+  .g-table .c-best .ed { display:none; }
+  .g-table .c-best .bk { margin-left:4px; }
+  .g-table thead th { padding:5px 6px; }
+  .g-time { width:64px; } .g-win { width:48px; }
+  .g-ev em { display:none; } .g-ev { width:56px; }
+  .g-hold { width:76px; }
+}
+@media (max-width:1050px) { .g-ev, .g-ev-h { display:none; } .g-team.is-school b { max-width:110px; } }
+@media (max-width:760px) {
+  /* a phone: best prices only (the two books' own columns come back with the DraftKings / FanDuel buttons) */
+  .g-table[data-view=best] .c-bk, .g-table[data-view=best] .g-grp.g-dk, .g-table[data-view=best] .g-grp.g-fd, .g-table[data-view=best] th.gs-bk { display:none; }
+  .g-hold, .g-hold-h, .g-win, .g-win-h { display:none; }
+  .g-table { font-size:12px; }
+  .g-time { width:52px; font-size:10px; } .g-team.is-school b { max-width:84px; font-size:11px; }
+  .g-table td[data-market] { padding:3px 4px; }
+  .g-sep td { font-size:10px; }
+}
+/* feeds: fewer columns on narrow screens instead of a scroll bar */
+.g-feeds-panel { overflow:visible; }
+@media (max-width:1100px) {
+  .g-feedt { min-width:0; font-size:12.5px; }
+  .g-feedt tr > :nth-child(6), .g-feedt tr > :nth-child(8), .g-feedt tr > :nth-child(9) { display:none; }
+  .g-feedt th, .g-feedt td { padding-right:12px; }
+}
+@media (max-width:700px) {
+  .g-feedt { font-size:12px; }
+  .g-feedt tr > :nth-child(3), .g-feedt tr > :nth-child(7) { display:none; }
+  .g-feedt tbody th { font-size:12.5px; } .g-feedt td.big { font-size:13px; }
+  .g-feedt th, .g-feedt td { padding-right:8px; white-space:normal; }
+  .g-feedt td.fr, .g-feedt th:last-child { width:22%; }
+  .g-panel { overflow-x:hidden; } .g-pt td, .g-pt th { white-space:normal; }
+}
+@media (max-width:760px) {
+  .g-time { white-space:normal; width:46px; } .g-time .g-t { line-height:1.15; }
+  .g-star { width:18px; padding:0 !important; }
+  .bk-only { display:none; }
+  .g-table td { padding-left:4px; padding-right:4px; }
+  .g-table thead th { padding:5px 4px; }
+}

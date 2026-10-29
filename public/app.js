@@ -59,8 +59,12 @@ function ago(ts, now = serverNow()) {
 const secs = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 const pct = (arr, q) => { if (!arr.length) return null; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
 const quote = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book}`);
-const bookDown = (book) => { const s = state.sources[book]; return !s || s.stale || s.state === 'down' || !state.connected; };
-const feedState = (book) => { const s = state.sources[book] || {}; if (!state.connected && state.everConnected) return 'lost'; if (s.state === 'down') return 'reconnecting'; if (s.stale) return 'stale'; if (s.state === 'connecting' || !s.lastDataAt) return 'connecting'; return 'live'; };
+// A dropped stream only counts as lost after a short grace (a league switch or a 1 s network blip reconnects by itself;
+// flashing a red "connection lost" for that would cry wolf). Within the grace the page says "connecting", in neutral colours.
+const LOST_GRACE_MS = 4000;
+const connectionLost = () => !state.connected && state.everConnected && !state.switching && state.lostSince != null && Date.now() - state.lostSince > LOST_GRACE_MS;
+const bookDown = (book) => { const s = state.sources[book]; return !s || s.stale || s.state === 'down' || connectionLost(); };
+const feedState = (book) => { const s = state.sources[book] || {}; if (connectionLost()) return 'lost'; if (!state.connected) return 'connecting'; if (s.state === 'down') return 'reconnecting'; if (s.stale) return 'stale'; if (s.state === 'connecting' || !s.lastDataAt) return 'connecting'; return 'live'; };
 
 /** How a quote moved recently: for flashes (≤ 0.7 s) and the struck-through previous value (≤ 8 s). */
 function change(q, now = Date.now()) {
@@ -275,7 +279,7 @@ function freshness(book, now = serverNow()) {
 }
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
-  feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
+  connectionLost, feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
   openGame, closeGame, game: () => (settings.game ? state.games.get(settings.game) || null : null),
   setRange(r) { settings.range = r; setParam('range', r, '1d'); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
   league: () => state.leagues.find((l) => l.id === settings.league) || state.leagues[0],
@@ -284,7 +288,7 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
     settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = null; state.gameHistory = null; setParam('game', null, null); setParam('league', id, 'nfl');
     for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
     state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = { draftkings: 0, fanduel: 0 }; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
-    mountTheme(theme); reconnect('league changed', 0);
+    state.switching = true; mountTheme(theme); reconnect('league changed', 0);
   },
   isStarred: (gk) => starred.has(gk),
   toggleStar(gk) { starred.has(gk) ? starred.delete(gk) : starred.add(gk); keep.set('starred', JSON.stringify([...starred])); theme.render(); },
@@ -368,6 +372,7 @@ let stream = null, lastMsgAt = 0, reconnectTimer = null, retryMs = 1000;
 function heard() { lastMsgAt = Date.now(); retryMs = 1000; }
 function reconnect(why, delay = retryMs) {
   stream?.close(); stream = null;
+  if (state.lostSince == null) state.lostSince = Date.now();
   if (state.connected) { state.connected = false; theme.render(); }
   clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(connect, delay);
@@ -381,9 +386,12 @@ function connect() {
   for (const ev of ['snapshot', 'batch', 'beat']) es.addEventListener(ev, heard);
   es.addEventListener('snapshot', (e) => {
     const s = JSON.parse(e.data);
+    // a new deploy: the server came back with another version → load the new page once (open tabs never keep old code)
+    if (s.version && state.version && s.version !== state.version && s.version !== 'dev') { location.reload(); return; }
+    state.version = s.version;
     state.games = new Map(s.games.map((g) => [g.key, g])); state.quotes = new Map(s.quotes.map((q) => [q.id, q]));
     state.sources = s.sources; if (s.config) state.config = s.config; if (s.leagues?.length) state.leagues = s.leagues;
-    state.connected = true; state.everConnected = true;
+    state.connected = true; state.everConnected = true; state.lostSince = null; state.switching = false;
     theme.render();
     loadHistory();
     if (settings.game && !state.gameHistory) { if (state.games.has(settings.game)) loadGameHistory(settings.game); }
@@ -393,6 +401,7 @@ function connect() {
   es.onerror = () => {
     if (es !== stream) return;
     if (es.readyState === EventSource.CLOSED) return reconnect('closed'); // the browser gave up (HTTP error): we retry with backoff
+    if (state.lostSince == null) state.lostSince = Date.now();
     state.connected = false; theme.renderBanner(); theme.renderFeeds();   // otherwise EventSource retries by itself; a fresh snapshot follows
   };
 }

@@ -107,7 +107,8 @@ function head() {
   };
   const groups = V === 'best' ? `<th colspan="3" class="g-grp g-best">Best available</th>${bookHead('draftkings')}${bookHead('fanduel')}` : bookHead(V);
   const n = V === 'best' ? 3 : 1;
-  const sub = Array.from({ length: n }, () => MK.map(([, l], i) => `<th class="g-mk${i === 0 ? ' g-first' : ''}">${l}</th>`).join('')).join('');
+  const grp = V === 'best' ? ['best', 'bk', 'bk'] : ['bk'];
+  const sub = Array.from({ length: n }, (_, gi) => MK.map(([, l], i) => `<th class="g-mk gs-${grp[gi]}${i === 0 ? ' g-first' : ''}">${l}</th>`).join('')).join('');
   const sortBtn = (id, label, title) => `<button type="button" data-sort="${id}" class="g-sort${sort === id ? ' on' : ''}" title="${title}">${label}${sort === id && id !== 'time' ? ' ▼' : ''}</button>`;
   return `<tr class="g-h1"><th rowspan="2" class="g-star-h"><span class="sr">Star</span></th><th rowspan="2" class="g-time-h">${sortBtn('time', 'Time', 'Sort by kickoff')}</th><th rowspan="2" class="g-team-h">Team</th><th rowspan="2" class="g-win-h" title="No-vig fair chance to win, from both books">Win%</th>
     ${groups}<th rowspan="2" class="g-hold-h">${sortBtn('hold', 'Hold', 'Tightest market first')}</th><th rowspan="2" class="g-ev-h">${sortBtn('ev', 'EV', 'Best expected value vs the no-vig price first')}</th><th rowspan="2" class="g-spark-h">48 h</th></tr>
@@ -134,7 +135,7 @@ function bestCell(g, market, side) {
     const edge = ed ? `<span class="ed" title="${esc(ed.title)}">${esc(ed.text)}</span>` : '';
     return `<td class="c-best ${cmp.kind === 'tie' ? 'tie' : `win-${api.BOOK[q.book].cls}`}${m.cls}" ${a}>${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b>${m.mark}<span class="bk">${who}</span>${edge}</td>`;
   }
-  if (cmp.kind === 'partial') { const q = cmp.best; return `<td class="c-best partial" ${a} title="the only open, fresh offer">${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b><span class="bk">${api.BOOK[q.book].short} only</span></td>`; }
+  if (cmp.kind === 'partial') { const q = cmp.best; return `<td class="c-best partial" ${a} title="the only open, fresh offer">${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b><span class="bk">${api.BOOK[q.book].short}<span class="bk-only"> only</span></span></td>`; }
   if (cmp.kind === 'different') return `<td class="c-best diff" ${a} title="the books post different lines: see their columns; never ranked">≠ lines</td>`;
   return `<td class="c-best none" ${a}>—</td>`;
 }
@@ -296,13 +297,15 @@ function renderFeeds() {
       <td class="fr"><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
   el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th>Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th title="How long a price change takes to reach this screen">Latency to screen</th><th title="Full re-download that double-checks the stream">Snapshot</th><th class="num">Prices</th><th class="num" title="Price moves seen since this page opened">Moves</th><th class="num">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
-    <tr class="f-${api.state.connected ? 'live' : 'lost'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : 'reconnecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
+    <tr class="f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : 'reconnecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
 }
 function renderBanner() {
   const st = api.state; const b = el.banner;
   const set = (cls, txt) => { b.hidden = false; b.className = `g-banner ${cls}`; b.setAttribute('role', cls === 'info' ? 'status' : 'alert'); b.innerHTML = txt; };
   if (!st.everConnected) return set('info', '<b>Connecting…</b> waiting for the first snapshot.');
-  if (!st.connected) return set('bad', '<b>Connection lost · reconnecting.</b> Prices shown are from before the drop and are greyed out.');
+  if (st.switching) return set('info', `<b>Loading ${esc(api.league().title)}…</b> getting both books' prices.`);
+  if (api.connectionLost()) return set('bad', '<b>Connection lost · reconnecting.</b> Prices shown are from before the drop and are greyed out.');
+  if (!st.connected) return set('info', '<b>Reconnecting…</b> prices stay on screen and refresh in a moment.');
   const down = BOOKS.filter((x) => !['live', 'connecting'].includes(api.feedState(x)));
   if (down.length) return set('warn', `<b>${down.map((x) => api.BOOK[x].label).join(' and ')} ${down.length > 1 ? 'are' : 'is'} stale.</b> Those prices are greyed and cannot win.`);
   b.hidden = true;
@@ -329,7 +332,7 @@ function tick() {
   for (const n of root.querySelectorAll('[data-countdown]')) n.textContent = countdown(Number(n.dataset.countdown));
   for (const n of root.querySelectorAll('[data-fresh]')) n.style.width = `${(api.freshness(n.dataset.fresh).fill * 100).toFixed(0)}%`;
   if ((tick.n = (tick.n || 0) + 1) % 8 === 0) renderHolds();
-  const sig = BOOKS.map(api.feedState).join('|') + api.state.connected;
+  const sig = BOOKS.map(api.feedState).join('|') + api.state.connected + api.connectionLost();
   if (sig !== tick.sig) { tick.sig = sig; render(); }
 }
 

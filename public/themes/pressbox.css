@@ -409,7 +409,7 @@ html[data-scheme=dark] .hold-card { background:var(--surface-raised); }
 .segment button small { font:500 11px var(--font-price); color:var(--text-muted); margin-left:4px; }
 .segment button[aria-pressed=true] small { color:var(--accent); }
 .team.is-school .team-name { font-size:var(--text-md, 17px); letter-spacing:-.01em; line-height:1.2; overflow-wrap:anywhere; }
-.team.is-school .kit { opacity:.55; }
+.team.no-kit .kit { opacity:.55; }
 .link-btn { border:0; background:none; padding:0; color:var(--accent); font:inherit; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 @media(max-width:720px) { .league-field { grid-column:1/-1; } .team.is-school .team-name { font-size:14px; } }
 
@@ -546,3 +546,13 @@ html[data-scheme=dark] .ld-bar b { color:#0e1319; }
 .chart-zoom { left:50%; top:50%; right:auto; bottom:auto; transform:translate(-50%,-50%); padding:4px 10px; border-radius:999px; background:var(--accent); color:var(--surface); font-size:var(--text-xs); box-shadow:0 2px 10px rgba(0,0,0,.18); }
 @media(max-width:700px) { .chart-zoom { opacity:0; } }
 @media(max-width:700px) { .match .price.moved-up, .match .price.moved-down, .match .price.is-line { padding:4px 4px 4px 9px; border-radius:2px; } }
+/* the design switch sits top-left beside the name, the same place as in the Engineering design */
+.mast-left { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.mast .design-field { flex-direction:row; align-items:center; gap:8px; font-size:var(--text-xs); }
+.mast .design-field .segment button { min-height:30px; padding:3px 14px; font-size:var(--text-sm); }
+/* feed cards: a thicker freshness bar and side line, so the state is noticed */
+.feed { border-left-width:4px; }
+.freshness { height:5px; border-radius:3px; margin-top:9px; }
+.freshness span { height:5px; border-radius:3px; }
+@media(max-width:700px) { .mast { flex-wrap:wrap; } .mast-left { width:100%; justify-content:space-between; } .mast .design-field { grid-column:auto; } }
+.chart.is-clickable { user-select:none; -webkit-user-select:none; }

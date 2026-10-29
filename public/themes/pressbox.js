@@ -31,7 +31,7 @@ function mount(r, a) {
   <a class="skip" href="#board">Skip to prices</a>
   <div class="app">
     <header class="mast">
-      <span class="wordmark">PRESSBOX / ODDS</span>
+      <div class="mast-left"><span class="wordmark">PRESSBOX / ODDS</span>${picker}</div>
       <div class="mast-links"><span class="demo-label">Ontario · DraftKings + FanDuel · live</span><a href="${REPO}#readme">How it works</a>
         <button type="button" class="icon-btn" id="scheme-btn" title="Light / dark (d)" aria-label="Switch light or dark"></button>
         <button type="button" class="icon-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button></div>
@@ -48,7 +48,6 @@ function mount(r, a) {
       </div>
     </section>
     <div class="toolbar" aria-label="Board controls">
-      ${picker}
       <div class="field league-field"><span id="league-label">League</span><div class="segment" role="group" aria-labelledby="league-label" id="leagues"></div></div>
       <div class="field phase-field"><span id="phase-label">Show</span><div class="segment" role="group" aria-labelledby="phase-label">
         <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
@@ -200,10 +199,17 @@ function priceCell(g, market, side, idx) {
     <div class="notice">${lost ? 'Before disconnect · unavailable' : 'No live, open price right now'}</div></div>`;
 }
 
+// college colours (ESPN's team list) load only when a college game is on screen
+let COLLEGE = null, collegeLoading = false;
+function collegeKit(t) {
+  if (!COLLEGE) { if (!collegeLoading) { collegeLoading = true; import('/college-colors.js').then((m) => { COLLEGE = m.default; if (el.board?.isConnected) render(); }).catch(() => {}); } return null; }
+  const c = COLLEGE[t.key]; return c ? c.split(',').map((x) => `#${x}`) : null;
+}
 function teamHtml(t, side) {
-  const school = !t.nick; // college: the school name is the whole label, no nickname or kit colours
-  const [shirt, trim] = (!school && KIT[t.abbr]) || ['#c9cfd5', '#5b6673'];
-  return `<div class="team ${side}${school ? ' is-school' : ''}"><span class="kit" style="--shirt:${shirt};--trim:${trim}" aria-hidden="true"><i></i></span><div><span class="team-name">${esc(t.abbr)}</span>${school ? '' : `<span class="team-full">${esc(t.name)}</span>`}</div></div>`;
+  const school = !t.nick; // college: the school name is the whole label, no nickname
+  const kit = school ? collegeKit(t) : KIT[t.abbr];
+  const [shirt, trim] = kit || ['#c9cfd5', '#5b6673'];
+  return `<div class="team ${side}${school ? ' is-school' : ''}${kit ? '' : ' no-kit'}"><span class="kit" style="--shirt:${shirt};--trim:${trim}" aria-hidden="true"><i></i></span><div><span class="team-name">${esc(t.abbr)}</span>${school ? '' : `<span class="team-full">${esc(t.name)}</span>`}</div></div>`;
 }
 const gameHref = (g) => { const u = new URL(location.href); u.searchParams.set('game', g.key); return u.pathname + u.search; };
 function gameInner(g, page = false) {
@@ -310,8 +316,8 @@ function chartHtml(g) {
   const what = pick.market === 'moneyline' ? `${sideName} to win` : pick.market === 'spread' ? `${sideName} spread` : `Total · ${sideName}`;
   let lo = Infinity, hi = -Infinity, moves = 0;
   for (const b of books) { const pts = S.books[b]; moves += Math.max(0, pts.length - 1); for (const p of pts) { const v = chance(p[1]); lo = Math.min(lo, v); hi = Math.max(hi, v); } }
-  const head = `<div class="chart-head" title="Implied chance = 1 ÷ decimal odds. It includes the book's margin, so the two sides add up to a bit over 100%."><span>${esc(what)} · implied chance</span>`;
-  const open = ` data-open-game="${esc(g.key)}" tabindex="0" title="Click to enlarge: the game's own page, with 10 min to 1 week"`;
+  const head = `<div class="chart-head"><span>${esc(what)} · implied chance</span>`;
+  const open = ` data-open-game="${esc(g.key)}" tabindex="0" title="Click to open the full chart (10 min to 1 week) on this game's own page. Implied chance = 1 ÷ decimal odds, so it includes the book's margin."`;
   if (!Number.isFinite(lo)) return `<div class="chart is-clickable"${open}>${head}</div><p class="chart-empty">No price yet.</p></div>`;
   const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 1.5); lo = mid - half; hi = mid + half;
   const span = Math.max(1, S.to - S.from);
@@ -333,7 +339,7 @@ function chartHtml(g) {
   return `<div class="chart is-clickable" role="button" aria-label="${esc(`${label} Open the game page for a bigger chart.`)}"${open}>${head}<span class="chart-now">${now}</span></div>
     <div class="plot"><svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" x2="1000" y1="50" y2="50"/>${paths}</svg>
       <span class="y y-hi">${hi.toFixed(1)}%</span><span class="y y-lo">${lo.toFixed(1)}%</span>${dots}</div>
-    <div class="chart-foot"><span>${S.live ? 'kickoff' : esc(t0)}</span><span>${moves ? `${moves} ${moves === 1 ? 'move' : 'moves'}` : 'no moves yet'}</span><span>now</span></div><span class="chart-zoom" aria-hidden="true">⤢ enlarge</span></div>`;
+    <div class="chart-foot"><span>${S.live ? 'kickoff' : esc(t0)}</span><span>${moves ? `${moves} ${moves === 1 ? 'move' : 'moves'}` : 'no moves yet'}</span><span>now</span></div><span class="chart-zoom" aria-hidden="true">⤢ Open full chart</span></div>`;
 }
 
 // ---------- sections ----------
@@ -388,7 +394,9 @@ function renderBanner() {
   const st = api.state; const b = el.banner;
   const set = (cls, html) => { b.hidden = false; b.className = `banner${cls ? ' ' + cls : ''}`; b.setAttribute('role', cls === 'loading' ? 'status' : 'alert'); b.innerHTML = html; };
   if (!st.everConnected) return set('loading', '<strong>Connecting to sportsbooks…</strong> Waiting for the first complete snapshot.');
-  if (!st.connected) return set('lost', '<strong>Connection lost · reconnecting.</strong> All displayed prices are from before the drop and unavailable.');
+  if (st.switching) return set('loading', `<strong>Loading ${esc(api.league().title)}…</strong> Getting both books' prices.`);
+  if (api.connectionLost()) return set('lost', '<strong>Connection lost · reconnecting.</strong> All displayed prices are from before the drop and unavailable.');
+  if (!st.connected) return set('loading', '<strong>Reconnecting…</strong> Prices stay on screen; they refresh in a moment.');
   const down = ['draftkings', 'fanduel'].filter((x) => api.feedState(x) !== 'live' && api.feedState(x) !== 'connecting');
   if (down.length === 2) return set('lost', '<strong>Both books unavailable.</strong> Prices shown may be old; none of them can win.');
   if (down.length === 1) { const d = api.BOOK[down[0]].label, ok = api.BOOK[down[0] === 'draftkings' ? 'fanduel' : 'draftkings'].label; return set('', `<strong>${d} ${api.feedState(down[0]) === 'stale' ? 'stale' : 'reconnecting'}.</strong> Its prices may be old. ${ok} is still live; unavailable offers cannot win.`); }
@@ -420,7 +428,7 @@ function tick() {
   for (const n of root.querySelectorAll('[data-age-local]')) n.textContent = api.ago(Number(n.dataset.ageLocal), Date.now());
   for (const n of root.querySelectorAll('[data-fresh]')) { const fr = api.freshness(n.dataset.fresh); n.style.width = `${(fr.fill * 100).toFixed(1)}%`; n.parentElement.setAttribute('aria-valuenow', String(Math.round(fr.fill * 100))); }
   // stale/connection state can change without a data event: refresh banner + feed classes + eligibility once a second
-  const sig = ['draftkings', 'fanduel'].map(api.feedState).join('|') + api.state.connected;
+  const sig = ['draftkings', 'fanduel'].map(api.feedState).join('|') + api.state.connected + api.connectionLost();
   if (sig !== tick.sig) { tick.sig = sig; render(); }
 }
 
