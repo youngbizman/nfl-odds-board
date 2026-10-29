@@ -178,8 +178,8 @@ function extrasInner(gk) {
   const st = v.status || {};
   const head = `<div class="x-bar"><div class="segment x-tabs" role="group" aria-label="Kind of bet">${tabs}</div>
     <label class="x-both"><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> Only lines both books offer</label></div>`;
-  const body = v.rows.length ? `<table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
-    <tbody>${v.rows.slice(0, 250).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table>
+  const body = v.rows.length ? `<div class="x-scroll" tabindex="0" aria-label="${esc(api.state.extrasKinds[v.kind] || v.kind)} table"><table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
+    <tbody>${v.rows.slice(0, 250).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table></div>
     ${v.rows.length > 250 ? `<p class="x-note">Showing 250 of ${v.rows.length}.</p>` : ''}`
     : `<p class="x-note">${v.bothOnly ? 'No line here that both books offer at the same number. Untick the box to see each book\'s own lines.' : 'Nothing here right now.'}</p>`;
   const foot = `<p class="x-note">Best = higher odds on the exact same line and threshold; anything else is shown, never ranked. DraftKings pushes changes as they happen (<span data-x-age="draftkings" data-age-ts="${st.draftkings?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.draftkings?.lastDataAt))}</span>); FanDuel is re-checked every 3 s while this is open (<span data-x-age="fanduel" data-age-ts="${st.fanduel?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.fanduel?.lastDataAt))}</span>).</p>`;
@@ -187,7 +187,10 @@ function extrasInner(gk) {
 }
 function renderExtras(gk) {
   const node = el.board.querySelector(`[data-extras="${CSS.escape(gk)}"]`);
-  if (node) node.innerHTML = extrasInner(gk); else renderGame(gk);
+  if (!node) return renderGame(gk);
+  const top = node.querySelector('.x-scroll')?.scrollTop || 0;
+  node.innerHTML = extrasInner(gk);
+  const sc = node.querySelector('.x-scroll'); if (sc && top) sc.scrollTop = top;
 }
 function renderExtrasToggles() {
   for (const node of el.board.querySelectorAll('[data-game]')) {
@@ -247,7 +250,9 @@ function render() {
 function renderGame(key) {
   const g = api.state.games.get(key); const node = el.board.querySelector(`[data-game="${CSS.escape(key)}"]`);
   if (!g || !node) return;
+  const top = node.querySelector('.x-scroll')?.scrollTop || 0;
   node.innerHTML = gameInner(g);
+  const sc = node.querySelector('.x-scroll'); if (sc && top) sc.scrollTop = top;
 }
 function renderFeeds() {
   el.feeds.innerHTML = ['draftkings', 'fanduel'].map((b) => {

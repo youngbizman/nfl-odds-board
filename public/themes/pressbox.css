@@ -272,3 +272,6 @@ h2 { font:500 21px/1.2 var(--font-price); letter-spacing:-.035em; }
 .x-table tbody tr:hover th, .x-table tbody tr:hover td:not(.x-best) { background:var(--surface-raised); }
 .x-note { font-size:var(--text-xs); color:var(--text-muted); margin:10px 0 0; max-width:760px; }
 @media(max-width:700px) { .x-tabs { flex-wrap:nowrap; overflow-x:auto; max-width:100%; scrollbar-width:none; } .x-table th, .x-table td { padding:6px 6px; } .x-table td strong { font-size:14px; } .x-tabs button { min-height:36px; } }
+.x-scroll { max-width:760px; max-height:440px; overflow:auto; border-bottom:1px solid var(--border); }
+.x-scroll .x-table thead th { position:sticky; top:0; background:var(--surface); z-index:1; }
+@media(max-width:700px) { .x-scroll { max-height:60vh; } }
