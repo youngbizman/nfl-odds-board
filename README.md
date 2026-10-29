@@ -329,7 +329,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 57 tests, ~10 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 58 tests, ~10 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
@@ -360,6 +360,8 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
   TD, Josh Allen 250+), DK 260+ / FD 275+ stay single-book, the 1st-TD market is not mixed in, player names match
   across suffixes and dots, a DK socket frame moves a prop, a selection missing from the next snapshot is dropped,
   FanDuel suspension is shown, and FanDuel polls open games every 3 s and the rest every 60 s, ≤ 50 markets a request.
+* **Runs on its own:** with its own DraftKings snapshots working, the server counts and ignores an edge's snapshot
+  (a changed price in it never reaches the board).
 * **Price history:** one point per real change, restored after a restart, and charted from the price in force at the
   window start.
 * **Black box:** the real server process against a fake FanDuel and a relay client — a FanDuel change reaches an SSE viewer
