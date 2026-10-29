@@ -145,3 +145,16 @@ export function bestHold(sideA, sideB, pair = (l) => l) {
   return best;
 }
 export const oppositeLine = (l) => (l == null ? null : l === 0 ? 0 : -l);
+
+/**
+ * Fair (no-vig) chance of side A. Each book that prices BOTH sides on the same line is de-vigged
+ * (implied A ÷ (implied A + implied B)); the books are then averaged. pairs: [[oddsA, oddsB], ...]. Null if none.
+ */
+export function fairProb(pairs) {
+  const ps = pairs.filter((p) => p && p[0] != null && p[1] != null).map(([a, b]) => { const ia = impliedProb(a), ib = impliedProb(b); return ia / (ia + ib); });
+  return ps.length ? ps.reduce((x, y) => x + y, 0) / ps.length : null;
+}
+/** A chance as a fair American price: 0.6429 → −180, 0.3571 → +180. */
+export function fairAmerican(p) { if (!(p > 0 && p < 1)) return null; return p >= 0.5 ? -Math.round((100 * p) / (1 - p)) : Math.round((100 * (1 - p)) / p); }
+/** Expected value of a price against a fair chance: +0.02 = 2% expected return per unit staked. */
+export function ev(odds, p) { const d = decimalOdds(odds); return d && p != null ? d * p - 1 : null; }

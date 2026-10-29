@@ -68,7 +68,7 @@ test('serves the board and a liveness check', async () => {
   const page = await (await fetch(`${base}/`)).text();
   assert.match(page, /<script type="module" src="\/app.js"><\/script>/);
   // the page is an ES-module app: the core, the shared price rules and every theme must be served with JS/CSS types
-  for (const [path, type] of [['/app.js', /javascript/], ['/lib/model.js', /javascript/], ['/themes/pressbox.js', /javascript/], ['/themes/pressbox.css', /css/]]) {
+  for (const [path, type] of [['/app.js', /javascript/], ['/lib/model.js', /javascript/], ['/themes/pressbox.js', /javascript/], ['/themes/pressbox.css', /css/], ['/themes/grid.js', /javascript/], ['/themes/grid.css', /css/]]) {
     const r = await fetch(`${base}${path}`);
     assert.equal(r.status, 200, path);
     assert.match(r.headers.get('content-type'), type, path);

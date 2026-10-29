@@ -89,3 +89,16 @@ test('hold: best price per side across both books, only on matching lines; negat
   // books disagree enough → arbitrage (negative hold)
   assert.ok(bestHold([o('draftkings', 120)], [o('fanduel', 110)]).hold < 0);
 });
+
+test('fair line: each book de-vigged, books averaged; EV of a price against it', async () => {
+  const { fairProb, fairAmerican, ev } = await import('../src/model.js');
+  assert.equal(fairProb([[-110, -110]]), 0.5);
+  const p = fairProb([[-200, 170]]);                       // 66.7% and 37.0% → 64.3% fair
+  assert.ok(Math.abs(p - (2 / 3) / (2 / 3 + 100 / 270)) < 1e-12);
+  assert.equal(fairAmerican(p), -180);
+  assert.equal(fairAmerican(1 - p), 180);
+  assert.ok(Math.abs(fairProb([[-110, -110], [-120, 100]]) - (0.5 + (120 / 220) / (120 / 220 + 0.5)) / 2) < 1e-12, 'two books are averaged');
+  assert.equal(fairProb([[null, -110]]), null);
+  assert.ok(Math.abs(ev(100, 0.5)) < 1e-12);
+  assert.ok(ev(-105, 0.52) > 0 && ev(-120, 0.52) < 0);
+});

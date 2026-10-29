@@ -1,10 +1,11 @@
 // Board core: one SSE connection, local copy of games + quotes, filters/settings, latency measurement.
 // Everything visual lives in a theme (public/themes/*.js + .css). Themes only draw; the rules live here and in
 // /lib/model.js (the same file the server tests check), so switching design can never change what is shown.
-import { compare, decimalOdds, cents, impliedProb, bestHold, oppositeLine } from '/lib/model.js';
+import { compare, decimalOdds, cents, impliedProb, bestHold, oppositeLine, fairProb, fairAmerican, ev } from '/lib/model.js';
 import pressbox from '/themes/pressbox.js';
+import grid from '/themes/grid.js';
 
-const THEMES = [pressbox]; // add a second design here and a "Design" picker appears in every theme
+const THEMES = [pressbox, grid]; // each design is one file; with two or more, a "Design" picker appears in every theme
 
 const BOOK = { draftkings: { label: 'DraftKings', short: 'DK', cls: 'dk' }, fanduel: { label: 'FanDuel', short: 'FD', cls: 'fd' } };
 const MARKETS = [['spread', ['away', 'home']], ['total', ['over', 'under']], ['moneyline', ['away', 'home']]];
@@ -137,6 +138,26 @@ function extrasView(gk) {
   return { kind: x.kind, bothOnly: x.bothOnly, loaded: x.loaded, status: x.status, rows, counts, kinds: KIND_ORDER.filter((k) => counts[k]).map((k) => ({ id: k, label: state.extrasKinds[k] || k, ...counts[k] })) };
 }
 
+/** Both books' offers for one side of one market, whatever the view (the grid design shows all columns at once). */
+function both(g, market, side) {
+  const offer = (book) => { const q = quote(g.key, market, side, book); return q ? { ...q, book, stale: bookDown(book) } : null; };
+  const dk = offer('draftkings'), fd = offer('fanduel');
+  return { dk, fd, cmp: compare([dk, fd]) };
+}
+const OTHER = { away: 'home', home: 'away', over: 'under', under: 'over' };
+/** Fair (no-vig) chance of one side at the best line, from every book pricing both sides there; and the best price's EV. */
+function fair(g, market, side) {
+  const c = both(g, market, side); const line = c.cmp.best?.line ?? c.dk?.line ?? c.fd?.line ?? null;
+  const pair = market === 'spread' ? oppositeLine : (l) => l;
+  const pairs = Object.keys(BOOK).map((b) => {
+    const a = quote(g.key, market, side, b), o = quote(g.key, market, OTHER[side], b);
+    if (!a || !o || a.suspended || o.suspended || bookDown(b)) return null;
+    return (a.line ?? null) === (market === 'moneyline' ? null : line) && (o.line ?? null) === (market === 'moneyline' ? null : pair(line)) ? [a.odds, o.odds] : null;
+  }).filter(Boolean);
+  const p = fairProb(pairs);
+  return { p, fair: fairAmerican(p), ev: c.cmp.best && p != null ? ev(c.cmp.best.odds, p) : null, books: pairs.length, line };
+}
+
 function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
 /** Lowest hold per market for one game: best open price on each side from either book, matching lines only. */
 function holds(g) {
@@ -189,7 +210,7 @@ function freshness(book, now = serverNow()) {
 }
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
-  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds, cents, impliedProb, holds, tightest,
+  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair,
   isStarred: (gk) => starred.has(gk),
   toggleStar(gk) { starred.has(gk) ? starred.delete(gk) : starred.add(gk); keep.set('starred', JSON.stringify([...starred])); theme.render(); },
   pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },

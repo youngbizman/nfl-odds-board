@@ -36,8 +36,16 @@ What is on the page, beyond the board itself:
   opens a fresh stream (`tools/stall-check.mjs` pauses the server: noticed in 12.0 s, recovered 1 s after it resumed).
 * Games grouped by kickoff slot, live games first; the single-book views show "updated N s ago" on every number.
 * Team search, Live/Pregame filter, American or decimal odds (decimal to 3 places so −340 vs −350 stays visible).
-* **Swappable design.** Every design is a theme that only draws; the rules (which price wins, what is stale) live in
-  one place. Add a second theme and a *Design* picker appears in the header; the choice is remembered (`?theme=`).
+* **Two designs, one switch.** *Design* in the header (remembered; shareable as `?theme=grid` / `?theme=pressbox`):
+  * **Pressbox** — the readable board described above.
+  * **Grid (engineering)** — everything on one screen, spreadsheet-dense: each game is two rows; *Best available*,
+    *DraftKings* and *FanDuel* columns side by side (the best cell in dark, the winning book's cell starred, the edge in
+    cents); per row the **no-vig fair win %** (both books de-vigged on the same line and averaged) and the **EV** of the
+    best price against it; per game the **hold** per market and a 48 h sparkline; sortable by kickoff, hold or EV; feed
+    health (state, mode, data age, latency, freshness), tightest markets and the wire in panels on top; alt lines and
+    props open as a row inside the table. Monospaced numbers, colour only where it means something; light and dark.
+  Every design only draws; the rules (which price wins, what is stale, fair line, hold) live in one tested place, so
+  switching design can never change a number.
 
 The scraping is read-only and login-free: the same public odds endpoints the sites' own pages call, at or below
 the rate the pages themselves use, one connection per book.
@@ -312,11 +320,11 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 46 tests, ~6 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 47 tests, ~6 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
-  side across books, matching lines only, suspended prices never count).
+  side across books, matching lines only, suspended prices never count), and the no-vig fair price and EV.
 * **Store:** emits only real changes, tracks previous price/line, removals, stale flag on and off per book.
 * **Durability and timing:** a new process rebuilds the exact DraftKings board from checkpoint + frame log (line
   moves and live status included) and keeps applying pushes; DK's clock offset from the subscribe ack converts publish
