@@ -156,7 +156,8 @@ re-confirms every price each second. Every market remembers the time of the newe
 from when it arrived, a poll from when it *started*), so an older answer can never overwrite a newer one.
 **FanDuel answers at most 80 markets per request and silently drops the rest** — with 87 game-line markets, one
 request left 7 markets un-refreshed. Polling now splits them into the fewest requests of ≤ 50 (`FD_CHUNK`), sent in
-parallel, each applied the moment it lands; the page reports `returned/requested` so a cap can't hide again. If
+parallel, each applied the moment it lands; the page reports `returned/requested` so a cap can't hide again
+(live: **87/87 markets in 2 parallel requests, 52 ms**). If
 FanDuel answers 429/403/5xx the interval doubles (honouring `Retry-After`) up to 30 s and recovers by itself; if the
 push drops, it reconnects with backoff (1 → 30 s) and re-subscribes, while polling carries on.
 With the optional edge machine (§6) running, a second poller on another IP polls half a beat after ours, so a fresh
@@ -236,8 +237,9 @@ Ontario included, tested from this server (`/api/diag/dk-socket`).
 3. Now the cloud fetches the snapshot too. The 403 is about *how* the client connects, not where from: the same request
    made with Chrome's TLS and HTTP/2 handshake is accepted from the same cloud IP. `src/transport/http.js` tries Node
    first and, on the first 403, switches to a **browser-compatible client**: one long-lived Python worker
-   (`curl_worker.py`, curl_cffi impersonating Chrome) with warm keep-alive connections, so a snapshot costs one request
-   (~60–100 ms), not a process start and a fresh handshake. It is started once, restarted if it dies, and installed at
+   (`curl_worker.py`, curl_cffi impersonating Chrome) with warm keep-alive connections, so a snapshot costs one request,
+   not a process start and a fresh handshake. Measured on Render (Thu Oct 29): Node → 403, switch, first snapshot
+   10.8 s (worker start + first handshake), then **93–123 ms** per full snapshot. It is started once, restarted if it dies, and installed at
    build time (`tools/install-transport.mjs`, `requirements.txt`). **The deployment no longer needs any machine of
    mine:** the edge is an optional fallback that the server ignores (and counts, `edgeIgnored` in `/api/metrics`)
    while its own snapshots work, and re-tries on its own every 5 minutes if they ever stop.
@@ -311,6 +313,8 @@ Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) i
 * **Correctness, Wed Oct 28, three runs:** DraftKings 174/174 and FanDuel 174/174 prices identical to what the
   books' own pages hold, at the start and the end of each run (the last run against FanDuel's Ontario site, after
   switching to Ontario); screenshots in `research/race/`.
+* **Again Thu Oct 29, cloud only** (edge stopped; DraftKings snapshots fetched by the server itself, FanDuel on push +
+  poll): DraftKings **174/174** and FanDuel **174/174** identical to the books' own pages.
 * **Same channel as the book's own site, pregame and in-play.** DraftKings in-play uses the same WebSocket. FanDuel's
   widgets re-poll each market about every **5 s**; its app also holds the AppSync price subscription we now use.
 * **What that means:** for both books our server receives the same push the book's own page uses, directly from the
