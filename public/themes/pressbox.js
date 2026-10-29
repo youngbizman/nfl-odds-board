@@ -218,7 +218,7 @@ function gameInner(g, page = false) {
 }
 function gameMoves(g) {
   const moves = api.state.moves.filter((m) => m.gameKey === g.key).slice(0, 12);
-  return `<section class="game-moves" aria-label="Price moves in this game"><h3>Moves in this game</h3>${moves.length ? `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>` : '<p class="x-note">No price has moved since this page opened.</p>'}</section>`;
+  return `<section class="game-moves" aria-label="Price moves in this game"><h3>Moves in this game</h3>${moves.length ? `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>` : '<p class="x-note">No price has moved since this page opened; the chart above has the history.</p>'}</section>`;
 }
 function gamePage(g) {
   return `<div class="gamepage-bar"><a class="back-link" href="${esc(location.pathname)}" data-back>‹ All games</a><span class="gamepage-title">${esc(g.away.name)} @ ${esc(g.home.name)}</span><span class="gamepage-hint">Esc to go back</span></div>

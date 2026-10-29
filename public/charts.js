@@ -94,13 +94,13 @@ export function ladderChart(api, gk, v) {
   if (!rows.length) return `<aside class="ld"><h4>${esc(title)}</h4>${chooser}<p class="ld-empty">No lines for this one.</p></aside>`;
   const W = 600, H = 220, n = rows.length;
   const X = (i) => (n === 1 ? W / 2 : 24 + (i * (W - 48)) / (n - 1)), Y = (p) => H - 12 - (p / 100) * (H - 24);
-  let paths = '', marks = '';
+  let paths = '', marks = ''; const dense = n > 24; // many lines: smaller marks so the two curves stay readable
   BOOKS.forEach((b, bi) => {
     let d = ''; rows.forEach((r, i) => {
       const o = r.cells[bi]; if (!o) return; const p = chance(api, o.odds);
       d += `${d ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p).toFixed(1)}`;
       const best = r.cmp.kind === 'best' && r.cmp.best?.book === b;
-      marks += `<circle class="ld-pt ${B[b].cls}${best ? ' is-best' : ''}" cx="${X(i).toFixed(1)}" cy="${Y(p).toFixed(1)}" r="${best ? 5.5 : 3.5}"><title>${esc(`${B[b].label} · ${r.label}: ${api.fmtOdds(o.odds)} (${p.toFixed(1)}%)${best ? ' · best price' : ''}`)}</title></circle>`;
+      marks += `<circle class="ld-pt ${B[b].cls}${best ? ' is-best' : ''}" cx="${X(i).toFixed(1)}" cy="${Y(p).toFixed(1)}" r="${best ? (dense ? 3.6 : 5.5) : dense ? 1.8 : 3.5}"><title>${esc(`${B[b].label} · ${r.label}: ${api.fmtOdds(o.odds)} (${p.toFixed(1)}%)${best ? ' · best price' : ''}`)}</title></circle>`;
     });
     if (d) paths += `<path class="ld-line ${B[b].cls}" d="${d}"/>`;
   });
