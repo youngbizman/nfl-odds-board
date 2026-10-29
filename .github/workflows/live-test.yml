@@ -1,0 +1,36 @@
+name: live test
+# Game night without a laptop: a GitHub machine watches the deployed board through the live window (tools/live-watch.mjs)
+# and pushes what it saw to the `live-results` branch every 10 minutes (research/live/<date>/summary.md + samples.jsonl).
+# Start it by pushing to the `live-test` branch (or "Run workflow"); the watcher waits for the window by itself.
+on:
+  push:
+    branches: ["live-test"]
+  workflow_dispatch:
+    inputs:
+      start: { description: "window start, ET (HH:MM)", default: "19:20" }
+      end: { description: "window end, ET (HH:MM)", default: "22:20" }
+permissions:
+  contents: write
+concurrency:
+  group: live-test
+  cancel-in-progress: true
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        env:
+          INSTALL_CURL_TRANSPORT: "1"   # the browser-compatible client, to read DraftKings' API for the price comparison
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: watch the live board
+        env:
+          LIVE_WATCH_PUSH: "1"
+        run: node tools/live-watch.mjs https://nfl-odds-board-hgim.onrender.com "research/live/$(TZ=America/Toronto date +%F)" "${{ inputs.start || '19:20' }}" "${{ inputs.end || '22:20' }}"
