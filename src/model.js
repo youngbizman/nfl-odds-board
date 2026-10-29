@@ -115,3 +115,33 @@ export function compare(offers) {
 }
 
 export function decimalOdds(a) { return a == null ? null : a > 0 ? 1 + a / 100 : 1 + 100 / Math.abs(a); }
+
+/** Chance a price implies (includes the book's margin): −190 → 0.655, +164 → 0.379. */
+export function impliedProb(a) { const d = decimalOdds(a); return d ? 1 / d : null; }
+
+/**
+ * How much better price `a` is than `b`, in "cents" — bettors' unit, where −105 and +105 are 10 cents apart:
+ * −106 vs −108 → 2, +164 vs +160 → 4, +105 vs −105 → 10.
+ */
+export function cents(a, b) { const f = (x) => (x > 0 ? x - 100 : x + 100); return f(a) - f(b); }
+
+/**
+ * The lowest "hold" you can get on a two-sided market by taking the best open price on each side from either book.
+ * hold = implied(side A) + implied(side B) − 1. Positive = the books' combined margin; NEGATIVE = an arbitrage
+ * (backing both sides guarantees a profit). Sides only pair on matching lines: spread +3 with −3, total over 47.5 with
+ * under 47.5 (`pair` maps a side-A line to the side-B line). Suspended or stale prices never count.
+ * offers: [{ book, odds, line, suspended, stale }]. Returns { hold, a, b } or null.
+ */
+export function bestHold(sideA, sideB, pair = (l) => l) {
+  const ok = (o) => o && o.odds != null && !o.suspended && !o.stale;
+  const top = (list, line) => list.filter((o) => ok(o) && (o.line ?? null) === line).sort((x, y) => y.odds - x.odds)[0];
+  let best = null;
+  for (const line of new Set(sideA.filter(ok).map((o) => o.line ?? null))) {
+    const a = top(sideA, line), b = top(sideB, pair(line));
+    if (!a || !b) continue;
+    const hold = impliedProb(a.odds) + impliedProb(b.odds) - 1;
+    if (!best || hold < best.hold) best = { hold, a, b };
+  }
+  return best;
+}
+export const oppositeLine = (l) => (l == null ? null : l === 0 ? 0 : -l);

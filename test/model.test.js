@@ -65,3 +65,27 @@ test('compare(): best, tie, different lines, only-available, nothing eligible', 
   assert.equal(compare([null, null]).kind, 'none');
   assert.equal(decimalOdds(-340).toFixed(3), '1.294'); assert.equal(decimalOdds(-350).toFixed(3), '1.286'); assert.equal(decimalOdds(150), 2.5);
 });
+
+test('cents: the bettor\'s distance between two prices', async () => {
+  const { cents } = await import('../src/model.js');
+  assert.equal(cents(-106, -108), 2);
+  assert.equal(cents(164, 160), 4);
+  assert.equal(cents(105, -105), 10);
+  assert.equal(cents(-110, -110), 0);
+});
+
+test('hold: best price per side across both books, only on matching lines; negative = arbitrage', async () => {
+  const { bestHold, oppositeLine } = await import('../src/model.js');
+  const o = (book, odds, line = null, x = {}) => ({ book, odds, line, ...x });
+  // moneyline: CAR +164 (DK) and GB −190 (FD) → 37.9% + 65.5% − 1 = 3.4%
+  const ml = bestHold([o('draftkings', 164), o('fanduel', 160)], [o('draftkings', -198), o('fanduel', -190)]);
+  assert.equal(ml.a.book, 'draftkings'); assert.equal(ml.b.book, 'fanduel');
+  assert.ok(Math.abs(ml.hold - (100 / 264 + 190 / 290 - 1)) < 1e-9);
+  // spread: +3.5 pairs with −3.5 only; a −3 on the other side is ignored
+  const sp = bestHold([o('draftkings', -110, 3.5), o('fanduel', -102, 3)], [o('draftkings', -110, -3.5), o('fanduel', -118, -3)], oppositeLine);
+  assert.ok(sp);
+  // a suspended price never makes a market look tight
+  assert.equal(bestHold([o('draftkings', 300, null, { suspended: true })], [o('fanduel', -110)]), null);
+  // books disagree enough → arbitrage (negative hold)
+  assert.ok(bestHold([o('draftkings', 120)], [o('fanduel', 110)]).hold < 0);
+});

@@ -8,7 +8,7 @@
 // drop-down. They have their own workers, their own cadence and their own stream per game, so a busy Sunday of
 // props can never slow the main board down.
 import { EventEmitter } from 'node:events';
-import { parseAmerican } from './model.js';
+import { parseAmerican, bestHold, oppositeLine } from './model.js';
 
 export const KINDS = {
   'alt-spread': 'Alt spread', 'alt-total': 'Alt total', td: 'Anytime TD',
@@ -124,6 +124,21 @@ export class ExtrasStore extends EventEmitter {
   }
 
   forGame(gameKey) { return [...(this.byGame.get(gameKey) || [])].map((k) => this.rows.get(k)).filter(Boolean); }
+
+  /** The tightest alt lines on the board: per game and kind, the lowest hold from the best price on each side (either book). */
+  holds(limit = 8) {
+    const out = [];
+    for (const [gk, keys] of this.byGame) {
+      const rows = [...keys].map((k) => this.rows.get(k)).filter(Boolean);
+      for (const [kind, A, B, pair] of [['alt-spread', 'away', 'home', oppositeLine], ['alt-total', 'over', 'under', (l) => l]]) {
+        const offers = (subj) => rows.filter((r) => r.kind === kind && r.subject === subj)
+          .flatMap((r) => Object.entries(r.offers).map(([book, o]) => ({ book, odds: o.odds, line: r.line, suspended: o.suspended, subject: subj })));
+        const h = bestHold(offers(A), offers(B), pair);
+        if (h) out.push({ gameKey: gk, kind, hold: h.hold, a: h.a, b: h.b });
+      }
+    }
+    return out.sort((x, y) => x.hold - y.hold).slice(0, limit);
+  }
 
   /** Per game: how many rows each kind has, and how many both books price (the comparable ones). */
   summary() {

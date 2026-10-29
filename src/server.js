@@ -133,7 +133,7 @@ function snapshotSse() {
 }
 app.get('/api/board', (req, res) => res.json(snapshot()));
 app.get('/api/time', (req, res) => res.json({ serverTs: Date.now() }));
-app.get('/api/extras/summary', (req, res) => res.json({ kinds: KINDS, games: extras.summary(), status: extras.status }));
+app.get('/api/extras/summary', (req, res) => res.json({ kinds: KINDS, games: extras.summary(), holds: extras.holds(8), status: extras.status }));
 app.get('/api/extras', (req, res) => { const gk = String(req.query.game || ''); res.json({ gameKey: gk, kinds: KINDS, rows: extras.forGame(gk).map(rowOut), status: extras.status, serverTs: Date.now() }); });
 app.get('/api/extras/stream', (req, res) => {
   const gk = String(req.query.game || ''); if (!store.games.has(gk)) return res.status(404).end();

@@ -93,3 +93,12 @@ test('FanDuel polls open games every 3 s and the rest every 60 s, 50 markets per
     await fd.tick(10_000 + 30_000); assert.equal(bodies.length, 1, 'nobody watching: not due before 60 s');
   } finally { globalThis.fetch = realFetch; }
 });
+
+test('tightest alt lines: lowest combined hold per game, from the best price on each side', () => {
+  const { x } = setup();
+  const h = x.holds(5);
+  assert.ok(h.length >= 1);
+  for (const e of h) { assert.ok(e.hold > -0.2 && e.hold < 0.2, `plausible hold ${e.hold}`); assert.ok(e.a.subject !== e.b.subject); }
+  const spread = h.find((e) => e.kind === 'alt-spread');
+  assert.equal(spread.b.line, -spread.a.line, 'spread sides pair on opposite numbers');
+});

@@ -1,7 +1,7 @@
 // Board core: one SSE connection, local copy of games + quotes, filters/settings, latency measurement.
 // Everything visual lives in a theme (public/themes/*.js + .css). Themes only draw; the rules live here and in
 // /lib/model.js (the same file the server tests check), so switching design can never change what is shown.
-import { compare, decimalOdds } from '/lib/model.js';
+import { compare, decimalOdds, cents, impliedProb, bestHold, oppositeLine } from '/lib/model.js';
 import pressbox from '/themes/pressbox.js';
 
 const THEMES = [pressbox]; // add a second design here and a "Design" picker appears in every theme
@@ -17,11 +17,14 @@ const settings = {
   search: '',
   format: keep.get('format', 'american'),                           // american | decimal
   theme: qs.get('theme') || keep.get('theme', THEMES[0].id),
+  density: keep.get('density', 'comfortable'),                      // comfortable | compact
+  scheme: keep.get('scheme', 'auto'),                               // auto | light | dark
 };
+const starred = new Set((() => { try { return JSON.parse(keep.get('starred', '[]')); } catch { return []; } })());
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
   offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map(),
   history: new Map(), histFrom: null, chartPick: new Map(), // movement charts: quote id -> [[t, odds, line]]
-  extrasSummary: {}, extrasKinds: {}, extras: new Map() };   // "more lines": per-game counts, and the open drop-downs
+  extrasSummary: {}, extrasKinds: {}, extras: new Map(), extrasHolds: [] };   // "more lines": per-game counts, and the open drop-downs
 const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: [] } };
 
 // ---------- helpers given to themes ----------
@@ -84,7 +87,7 @@ const chartPick = (gk) => state.chartPick.get(gk) || { market: 'moneyline', side
 // ---------- "more lines" drop-down: one stream per open game ----------
 const KIND_ORDER = ['alt-spread', 'alt-total', 'td', 'pass-yds', 'rush-yds', 'rec-yds', 'receptions'];
 async function loadExtrasSummary() {
-  try { const r = await (await fetch('/api/extras/summary', { cache: 'no-store' })).json(); state.extrasSummary = r.games || {}; state.extrasKinds = r.kinds || {}; theme.renderExtrasToggles?.(); } catch {}
+  try { const r = await (await fetch('/api/extras/summary', { cache: 'no-store' })).json(); state.extrasSummary = r.games || {}; state.extrasKinds = r.kinds || {}; state.extrasHolds = r.holds || []; theme.renderExtrasToggles?.(); theme.renderHolds?.(); } catch {}
 }
 function toggleExtras(gk) {
   const cur = state.extras.get(gk);
@@ -132,18 +135,35 @@ function extrasView(gk) {
 }
 
 function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
+/** Lowest hold per market for one game: best open price on each side from either book, matching lines only. */
+function holds(g) {
+  const offers = (market, side) => Object.keys(BOOK).map((b) => { const q = quote(g.key, market, side, b); return q ? { ...q, book: b, stale: bookDown(b) } : null; }).filter(Boolean);
+  return {
+    spread: bestHold(offers('spread', 'away'), offers('spread', 'home'), oppositeLine),
+    total: bestHold(offers('total', 'over'), offers('total', 'under')),
+    moneyline: bestHold(offers('moneyline', 'away'), offers('moneyline', 'home')),
+  };
+}
+/** The tightest markets across the board (game lines), lowest hold first. Negative hold = arbitrage. */
+function tightest(n = 6) {
+  const out = [];
+  for (const g of state.games.values()) for (const [market, h] of Object.entries(holds(g))) if (h) out.push({ game: g, market, ...h });
+  return out.sort((a, b) => a.hold - b.hold).slice(0, n);
+}
 function visibleGames() {
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
   const term = settings.search.trim().toLowerCase();
   return [...state.games.values()]
     .filter((g) => withPrices.has(g.key))
-    .filter((g) => settings.phase === 'all' || phaseOf(g) === settings.phase)
+    .filter((g) => settings.phase === 'all' || (settings.phase === 'starred' ? starred.has(g.key) : phaseOf(g) === settings.phase))
     .filter((g) => !term || [g.away.abbr, g.home.abbr, g.away.name, g.home.name, g.away.nick, g.home.nick].some((x) => String(x || '').toLowerCase().includes(term)))
     .sort((a, b) => (phaseOf(a) === 'live' ? 0 : 1) - (phaseOf(b) === 'live' ? 0 : 1) || new Date(a.start) - new Date(b.start) || a.key.localeCompare(b.key));
 }
 function groups() {
   const out = new Map();
+  if (settings.phase !== 'starred') for (const g of visibleGames()) if (starred.has(g.key)) { if (!out.has('starred')) out.set('starred', { key: 'starred', starred: true, start: null, games: [] }); out.get('starred').games.push(g); }
   for (const g of visibleGames()) {
+    if (settings.phase !== 'starred' && starred.has(g.key)) continue;
     const k = phaseOf(g) === 'live' ? 'live' : g.start;
     if (!out.has(k)) out.set(k, { key: k, live: k === 'live', start: k === 'live' ? null : new Date(g.start), games: [] });
     out.get(k).games.push(g);
@@ -166,13 +186,42 @@ function freshness(book, now = serverNow()) {
 }
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
-  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds,
+  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds, cents, impliedProb, holds, tightest,
+  isStarred: (gk) => starred.has(gk),
+  toggleStar(gk) { starred.has(gk) ? starred.delete(gk) : starred.add(gk); keep.set('starred', JSON.stringify([...starred])); theme.render(); },
   pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },
   toggleExtras, extrasView, extrasOpen: (gk) => state.extras.has(gk), extrasCount: (gk) => state.extrasSummary[gk] || null,
   setExtras(gk, patch) { const x = state.extras.get(gk); if (!x) return; Object.assign(x, patch); theme.renderExtras(gk); },
-  set(key, value) { settings[key] = value; if (key === 'format') keep.set('format', value); if (key === 'view') { const u = new URL(location.href); value === 'best' ? u.searchParams.delete('view') : u.searchParams.set('view', value); history.replaceState(null, '', u); } theme.render(); },
+  set(key, value) { settings[key] = value; if (['format', 'density', 'scheme'].includes(key)) keep.set(key, value); if (key === 'density' || key === 'scheme') applyLook(); if (key === 'view') { const u = new URL(location.href); value === 'best' ? u.searchParams.delete('view') : u.searchParams.set('view', value); history.replaceState(null, '', u); } theme.render(); },
   setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; keep.set('theme', id); settings.theme = id; mountTheme(t); },
 };
+
+// ---------- look: density + light/dark (attributes on <html>; themes style them) ----------
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+function applyLook() {
+  const html = document.documentElement;
+  html.dataset.density = settings.density;
+  html.dataset.scheme = settings.scheme === 'auto' ? (darkQuery.matches ? 'dark' : 'light') : settings.scheme;
+}
+darkQuery.addEventListener?.('change', () => { if (settings.scheme === 'auto') applyLook(); });
+applyLook();
+
+// ---------- keyboard: / search · 1 2 3 views · c compact · d dark · s star · ? help ----------
+document.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
+  if (e.key === 'Escape') { if (typing) e.target.blur(); theme.closeHelp?.(); return; }
+  if (typing) return;
+  const act = {
+    '/': () => theme.focusSearch?.(),
+    1: () => api.set('view', 'best'), 2: () => api.set('view', 'draftkings'), 3: () => api.set('view', 'fanduel'),
+    c: () => api.set('density', settings.density === 'compact' ? 'comfortable' : 'compact'),
+    d: () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'),
+    s: () => { const gk = document.activeElement?.closest?.('[data-game]')?.dataset.game; if (gk) api.toggleStar(gk); },
+    '?': () => theme.toggleHelp?.(),
+  }[e.key];
+  if (act) { e.preventDefault(); act(); }
+});
 
 // ---------- theme mounting ----------
 let theme = null;

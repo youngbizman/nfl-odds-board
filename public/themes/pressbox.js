@@ -26,21 +26,31 @@ function mount(r, a) {
   <div class="app">
     <header class="mast">
       <span class="wordmark">PRESSBOX / ODDS</span>
-      <div class="mast-links"><a href="${REPO}#readme">How it works</a><span class="demo-label">Ontario prices · DraftKings + FanDuel · live</span>${picker}</div>
+      <div class="mast-links"><span class="demo-label">Ontario · DraftKings + FanDuel · live</span><a href="${REPO}#readme">How it works</a>${picker}
+        <button type="button" class="icon-btn" id="scheme-btn" title="Light / dark (d)" aria-label="Switch light or dark"></button>
+        <button type="button" class="icon-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button></div>
     </header>
+    <div class="help" id="help" hidden role="dialog" aria-label="Keyboard shortcuts">
+      <strong>Keyboard</strong>
+      <dl><dt>/</dt><dd>find a team</dd><dt>1 2 3</dt><dd>best price · DraftKings · FanDuel</dd><dt>c</dt><dd>compact / comfortable</dd>
+      <dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the game you are on</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl>
+    </div>
     <section class="heading">
-      <div><h1>NFL / <span>odds.</span></h1><p class="subtitle">Live and pregame · All kickoff times ET.</p></div>
+      <div><h1>NFL / <span>odds.</span></h1><p class="subtitle">Best price across DraftKings and FanDuel, live. Kickoffs in ET.</p></div>
       <div class="view" role="group" aria-label="Sportsbook view">
         <button type="button" data-view="best">Best price</button><button type="button" data-view="draftkings">DraftKings only</button><button type="button" data-view="fanduel">FanDuel only</button>
       </div>
     </section>
     <div class="toolbar" aria-label="Board controls">
-      <div class="field phase-field"><span id="phase-label">Game status</span><div class="segment" role="group" aria-labelledby="phase-label">
-        <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button></div></div>
-      <label class="field search">Find a team<input id="search" type="search" autocomplete="off" placeholder="Team or abbreviation"></label>
-      <label class="field">Odds format<select id="odds-format"><option value="american">American</option><option value="decimal">Decimal</option></select></label>
+      <div class="field phase-field"><span id="phase-label">Show</span><div class="segment" role="group" aria-labelledby="phase-label">
+        <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
+      <div class="field density-field"><span id="density-label">Density</span><div class="segment" role="group" aria-labelledby="density-label">
+        <button type="button" data-density="comfortable">Comfortable</button><button type="button" data-density="compact">Compact</button></div></div>
+      <label class="field search"><span>Find a team <kbd>/</kbd></span><input id="search" type="search" autocomplete="off" placeholder="Team or abbreviation"></label>
+      <label class="field">Odds<select id="odds-format"><option value="american">American</option><option value="decimal">Decimal</option></select></label>
     </div>
-    <p class="source-note">Ontario prices from DraftKings and FanDuel. Every number updates on its own; nothing here is simulated.</p>
+    <section class="holds" id="holds" aria-label="Tightest markets right now"></section>
+    <div class="sentinel" aria-hidden="true"></div>
     <div class="sticky">
       <div id="connection-banner" class="banner loading"><strong>Connecting to sportsbooks…</strong> Waiting for the first complete snapshot.</div>
       <div class="feeds" id="feeds"></div>
@@ -50,26 +60,48 @@ function mount(r, a) {
     <main id="board" class="games"></main>
     <section class="wire" aria-label="Recent price moves"><h2>The wire.</h2><div id="wire"></div></section>
     <footer class="footer">
-      <p>The higher odds win only when both books offer the same line and both prices are live and open. Equal prices are a tie; different lines are never ranked.</p>
+      <p>Ontario prices from DraftKings and FanDuel; every number updates on its own, nothing is simulated. The higher odds win only when both books offer the same line and both prices are live and open. Equal prices are a tie; different lines are never ranked. Hold = the books' combined margin at the best price on each side; below 0% both sides together guarantee a profit (an arbitrage).</p>
       <a href="${REPO}#readme">How it works ↗</a>
     </footer>
   </div>`;
-  el = { board: root.querySelector('#board'), feeds: root.querySelector('#feeds'), banner: root.querySelector('#connection-banner'), results: root.querySelector('#results'), wire: root.querySelector('#wire') };
+  el = { board: root.querySelector('#board'), feeds: root.querySelector('#feeds'), banner: root.querySelector('#connection-banner'), results: root.querySelector('#results'), wire: root.querySelector('#wire'),
+    holds: root.querySelector('#holds'), help: root.querySelector('#help'), sticky: root.querySelector('.sticky') };
+  root.querySelectorAll('[data-density]').forEach((b) => b.addEventListener('click', () => api.set('density', b.dataset.density)));
+  root.querySelector('#scheme-btn').addEventListener('click', () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'));
+  root.querySelector('#help-btn').addEventListener('click', () => toggleHelp());
+  // the status bar condenses once it sticks to the top; on a phone it stays one line until tapped
+  observer = new IntersectionObserver(([e]) => el.sticky.classList.toggle('is-stuck', !e.isIntersecting), { threshold: 0 });
+  observer.observe(root.querySelector('.sentinel'));
+  el.feeds.addEventListener('click', () => el.feeds.classList.toggle('is-open'));
+  el.holds.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-goto]'); if (!t) return;
+    const node = el.board.querySelector(`[data-game="${CSS.escape(t.dataset.goto)}"]`);
+    if (!node) { api.set('phase', 'all'); api.set('search', ''); root.querySelector('#search').value = ''; }
+    if (t.dataset.alt && !api.extrasOpen(t.dataset.goto)) api.toggleExtras(t.dataset.goto);
+    if (t.dataset.market) api.pickChart(t.dataset.goto, t.dataset.market, t.dataset.side);
+    if (t.dataset.alt) setTimeout(() => api.setExtras(t.dataset.goto, { kind: t.dataset.alt }), 400);
+    requestAnimationFrame(() => { const n = el.board.querySelector(`[data-game="${CSS.escape(t.dataset.goto)}"]`); n?.scrollIntoView({ behavior: 'smooth', block: 'center' }); n?.classList.add('is-flagged'); setTimeout(() => n?.classList.remove('is-flagged'), 1600); });
+  });
   root.querySelectorAll('.view button').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
-  root.querySelectorAll('.segment button').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
+  root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
   root.querySelector('#search').addEventListener('input', (e) => api.set('search', e.target.value));
   const fmt = root.querySelector('#odds-format'); fmt.value = api.settings.format; fmt.addEventListener('change', (e) => api.set('format', e.target.value));
   root.querySelector('#theme-picker')?.addEventListener('change', (e) => api.setTheme(e.target.value));
   const pickFrom = (t) => { const c = t.closest('.price[data-market]'); const gEl = c?.closest('[data-game]'); if (c && gEl) { api.pickChart(gEl.dataset.game, c.dataset.market, c.dataset.side); gEl.querySelector(`.price[data-market="${c.dataset.market}"][data-side="${c.dataset.side}"]`)?.focus({ preventScroll: true }); } };
   el.board.addEventListener('click', (e) => {
     const t = e.target.closest('[data-extras-toggle]'); if (t) return api.toggleExtras(t.dataset.extrasToggle);
+    const st = e.target.closest('[data-star]'); if (st) return api.toggleStar(st.dataset.star);
     const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind });
     pickFrom(e.target);
   });
   el.board.addEventListener('change', (e) => { if (e.target.matches('[data-x-both]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { bothOnly: e.target.checked }); });
   el.board.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.price[data-market]')) { e.preventDefault(); pickFrom(e.target); } });
 }
-function unmount() { root.innerHTML = ''; }
+let observer = null;
+function unmount() { observer?.disconnect(); root.innerHTML = ''; }
+function focusSearch() { const i = root.querySelector('#search'); i.focus(); i.select(); }
+function toggleHelp(force) { const open = force ?? el.help.hidden; el.help.hidden = !open; root.querySelector('#help-btn').setAttribute('aria-expanded', String(open)); }
+function closeHelp() { if (el.help && !el.help.hidden) toggleHelp(false); }
 
 // ---------- price cells ----------
 function changeHtml(q, ch) {
@@ -122,8 +154,9 @@ function priceCell(g, market, side, idx) {
         <div class="compare"><span class="book dk">DraftKings</span> + <span class="book fd">FanDuel</span></div>${lineNotice(q, ch)}</div>`;
     }
     const other = cmp.offers.find((o) => o.book !== q.book);
-    return `${head(`is-best ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong>${changeHtml(q, ch)}</div>
-      <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span><span class="separator">·</span><span class="other"><span class="book ${B[other.book].cls}">${B[other.book].short}</span> ${esc(api.fmtOdds(other.odds))}</span></div>${lineNotice(q, ch)}</div>`;
+    const edge = api.cents(q.odds, other.odds);
+    return `${head(`is-best win-${B[q.book].cls} ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong>${changeHtml(q, ch)}</div>
+      <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span> <span class="edge" title="${edge}¢ better than ${B[other.book].label}">+${edge}¢</span><span class="separator">·</span><span class="other"><span class="book ${B[other.book].cls}">${B[other.book].short}</span> ${esc(api.fmtOdds(other.odds))}</span></div>${lineNotice(q, ch)}</div>`;
   }
   if (cmp.kind === 'different') {
     const offer = (q) => { const ch = api.change(q); return `<div class="offer"${tag(q)}><div class="offer-value"><span class="line">${esc(api.fmtLine(market, side, q.line))}</span><span class="offer-odds">${esc(api.fmtOdds(q.odds))}</span>${changeHtml(q, ch)}</div><span class="book ${B[q.book].cls}">${B[q.book].label}</span></div>`; };
@@ -151,8 +184,40 @@ function teamHtml(t, side) {
 function gameInner(g) {
   const meta = g.status === 'live' ? `<span class="live-tag">● Live</span> · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}` : `${esc(etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} ET · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
   const cells = (idx) => api.MARKETS.map(([m, sides]) => priceCell(g, m, sides[idx], idx)).join('');
-  return `<div class="game-meta"><span>${meta}</span>${extrasToggle(g)}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${chartHtml(g)}</div>
+  const star = api.isStarred(g.key);
+  return `<div class="game-meta"><span class="meta-left"><button type="button" class="star${star ? ' is-on' : ''}" data-star="${esc(g.key)}" aria-pressed="${star}" title="${star ? 'Unstar' : 'Star'} this game (s)">${star ? '★' : '☆'}</button>${meta}</span>${holdsLine(g)}${extrasToggle(g)}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${chartHtml(g)}</div>
     ${api.extrasOpen(g.key) ? `<section class="extras" data-extras="${esc(g.key)}" aria-label="More lines for ${esc(`${g.away.abbr} @ ${g.home.abbr}`)}">${extrasInner(g.key)}</section>` : ''}`;
+}
+
+// ---------- hold: the books' combined margin at the best price on each side ----------
+const pctTxt = (h) => `${(h * 100).toFixed(1)}%`;
+function holdsLine(g) {
+  const h = api.holds(g); const parts = [['spread', 'Spread'], ['total', 'Total'], ['moneyline', 'ML']].filter(([m]) => h[m]);
+  if (!parts.length) return '';
+  return `<span class="hold-line" title="Hold at the best price on each side (either book). Lower is better for you; below 0% is an arbitrage.">Hold ${parts.map(([m, n]) => `<span class="hold${h[m].hold < 0 ? ' is-arb' : h[m].hold < 0.02 ? ' is-low' : ''}">${n} ${pctTxt(h[m].hold)}</span>`).join(' ')}</span>`;
+}
+function legTxt(g, market, o) {
+  const B = api.BOOK[o.book];
+  const who = market === 'total' ? (o.side === 'over' ? 'O' : 'U') : g[o.side]?.abbr ?? '';
+  const line = market === 'moneyline' ? '' : ` ${market === 'total' ? o.line : api.fmtLine('spread', o.side, o.line)}`;
+  return `<span class="leg">${esc(who)}${esc(line)} <b>${esc(api.fmtOdds(o.odds))}</b> <span class="book ${B.cls}">${B.short}</span></span>`;
+}
+function renderHolds() {
+  if (!el.holds) return;
+  const main = api.tightest(6).map((t) => ({ ...t, alt: null }));
+  const alt = (api.state.extrasHolds || []).slice(0, 3).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: t.a, b: t.b, alt: t.kind })).filter((t) => t.game);
+  const items = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 8);
+  if (!items.length) { el.holds.innerHTML = ''; renderHolds.last = ''; return; }
+  const arbs = items.filter((t) => t.hold < 0).length;
+  const html = `<div class="holds-head"><h2>Tightest markets.</h2><span>${arbs ? `<b class="arb-flag">${arbs} arbitrage${arbs > 1 ? 's' : ''} right now</b>` : 'Best price on each side, either book · lower hold = better for you'}</span></div>
+    <ul class="holds-list">${items.map((t) => {
+      const g = t.game; const name = t.alt ? (t.alt === 'alt-spread' ? 'Alt spread' : 'Alt total') : { spread: 'Spread', total: 'Total', moneyline: 'Moneyline' }[t.market];
+      const side = (o, fallback) => ({ ...o, side: o.subject || o.side || fallback });
+      return `<li><button type="button" class="hold-card${t.hold < 0 ? ' is-arb' : ''}" data-goto="${esc(g.key)}" ${t.alt ? `data-alt="${t.alt}"` : `data-market="${t.market}" data-side="${t.market === 'total' ? 'over' : 'home'}"`}>
+        <span class="hc-top"><span>${esc(g.away.abbr)} @ ${esc(g.home.abbr)} · ${name}</span><span class="hc-hold">${t.hold < 0 ? 'ARB ' : ''}${pctTxt(t.hold)}</span></span>
+        <span class="hc-legs">${legTxt(g, t.market, side(t.a, t.market === 'total' ? 'over' : 'away'))}${legTxt(g, t.market, side(t.b, t.market === 'total' ? 'under' : 'home'))}</span></button></li>`;
+    }).join('')}</ul>`;
+  if (html !== renderHolds.last) { renderHolds.last = html; el.holds.innerHTML = html; } // no flicker while nothing changed
 }
 
 // ---------- "More lines": alt spreads/totals and player props, both books, same number only ----------
@@ -237,15 +302,18 @@ function chartHtml(g) {
 // ---------- sections ----------
 function render() {
   root.querySelectorAll('.view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === api.settings.view)));
-  root.querySelectorAll('.segment button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
+  root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
+  root.querySelectorAll('[data-density]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.density === api.settings.density)));
+  const dark = document.documentElement.dataset.scheme === 'dark';
+  const sb = root.querySelector('#scheme-btn'); sb.textContent = dark ? '☀' : '☾'; sb.setAttribute('aria-label', dark ? 'Switch to light' : 'Switch to dark');
   const groups = api.groups();
   const total = groups.reduce((n, g) => n + g.games.length, 0), live = groups.find((g) => g.live)?.games.length || 0;
   el.results.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
   if (!api.state.everConnected) el.board.innerHTML = '';
   else if (!total) el.board.innerHTML = `<div class="empty"><strong>No games match.</strong>${api.settings.search || api.settings.phase !== 'all' ? 'Clear the search or choose All to see every game.' : 'Neither book has NFL game lines up right now; the board fills itself as soon as one does.'}</div>`;
-  else el.board.innerHTML = groups.map((grp) => `<section class="kickoff-group"><h2 class="kickoff">${grp.live ? '<span class="live-tag">● Live</span> In progress' : esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
+  else el.board.innerHTML = groups.map((grp) => `<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
       ${grp.games.map((g) => `<article class="game" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g)}</article>`).join('')}</section>`).join('');
-  renderFeeds(); renderBanner(); renderWire();
+  renderFeeds(); renderBanner(); renderWire(); renderHolds();
 }
 function renderGame(key) {
   const g = api.state.games.get(key); const node = el.board.querySelector(`[data-game="${CSS.escape(key)}"]`);
@@ -293,7 +361,14 @@ function renderWire() {
     return `<li class="move">${esc(m.game)} · ${esc(m.sideName)} ${esc(m.market === 'moneyline' ? 'Moneyline' : m.market === 'spread' ? 'Spread' : 'Total')}<span class="move-value"><s>${esc(from)}</s> ${arrow} ${esc(to)}</span><span class="move-source">${api.BOOK[m.book].label} · <time data-age-local="${m.at}">${esc(api.ago(m.at, Date.now()))}</time></span></li>`;
   }).join('')}</ul>`;
 }
+function countdown(t) {
+  const s = (t - api.serverNow()) / 1000; if (s <= 0) return 'kicking off';
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return `in ${d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`}`;
+}
 function tick() {
+  for (const n of root.querySelectorAll('[data-countdown]')) n.textContent = countdown(Number(n.dataset.countdown));
+  if ((tick.n = (tick.n || 0) + 1) % 8 === 0) renderHolds(); // every 2 s
   for (const n of root.querySelectorAll('[data-age-ts]')) { const ts = Number(n.dataset.ageTs); n.textContent = `${n.dataset.agePrefix || ''}${api.ago(ts || null)}`; }
   for (const n of root.querySelectorAll('[data-age-local]')) n.textContent = api.ago(Number(n.dataset.ageLocal), Date.now());
   for (const n of root.querySelectorAll('[data-fresh]')) { const fr = api.freshness(n.dataset.fresh); n.style.width = `${(fr.fill * 100).toFixed(1)}%`; n.parentElement.setAttribute('aria-valuenow', String(Math.round(fr.fill * 100))); }
@@ -304,4 +379,4 @@ function tick() {
 
 export default { id: 'pressbox', name: 'Pressbox (light)', css: '/themes/pressbox.css',
   fonts: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap',
-  mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, tick };
+  mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, renderHolds, focusSearch, toggleHelp, closeHelp, tick };
