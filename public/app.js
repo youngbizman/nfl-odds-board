@@ -19,7 +19,8 @@ const settings = {
   theme: qs.get('theme') || keep.get('theme', THEMES[0].id),
 };
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
-  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map() };
+  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], changedAt: new Map(),
+  history: new Map(), histFrom: null, chartPick: new Map() }; // movement charts: quote id -> [[t, odds, line]]
 const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, recent: { draftkings: [], fanduel: [], e2e: [] } };
 
 // ---------- helpers given to themes ----------
@@ -61,6 +62,24 @@ function cell(g, market, side) {
   return { view: 'best', dk, fd, cmp: compare([dk, fd]) };
 }
 
+/** Movement chart data for one side of one market of a game: each book's [t, odds, line] points in the window. */
+function series(g, market, side) {
+  const now = serverNow(); const live = phaseOf(g) === 'live';
+  let from = state.histFrom ?? now - 3600_000;
+  if (live && g.start) from = Math.max(from, new Date(g.start).getTime() - 15 * 60_000); // a live game: chart the game itself
+  const books = {};
+  for (const b of Object.keys(BOOK)) {
+    const id = `${g.key}|${market}|${side}|${b}`; const q = state.quotes.get(id);
+    let pts = (state.history.get(id) || []).filter((p) => p[0] >= from);
+    const before = (state.history.get(id) || []).filter((p) => p[0] < from).pop();
+    if (before) pts = [[from, before[1], before[2]], ...pts];
+    if (!pts.length && q?.odds != null) pts = [[from, q.odds, q.line ?? null]];
+    books[b] = pts;
+  }
+  return { from, to: now, live, books };
+}
+const chartPick = (gk) => state.chartPick.get(gk) || { market: 'moneyline', side: 'home' };
+
 function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
 function visibleGames() {
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
@@ -96,7 +115,8 @@ function freshness(book, now = serverNow()) {
 }
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
-  feedState, latency, freshness, bookDown,
+  feedState, latency, freshness, bookDown, series, chartPick, decimalOdds,
+  pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },
   set(key, value) { settings[key] = value; if (key === 'format') keep.set('format', value); if (key === 'view') { const u = new URL(location.href); value === 'best' ? u.searchParams.delete('view') : u.searchParams.set('view', value); history.replaceState(null, '', u); } theme.render(); },
   setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; keep.set('theme', id); settings.theme = id; mountTheme(t); },
 };
@@ -131,10 +151,25 @@ function connect() {
     state.sources = s.sources; if (s.config) state.config = s.config;
     state.connected = true; state.everConnected = true;
     theme.render();
+    loadHistory();
   });
   es.addEventListener('batch', (e) => applyBatch(JSON.parse(e.data)));
   es.addEventListener('beat', (e) => { for (const [b, [d, c]] of Object.entries(JSON.parse(e.data))) { const s = state.sources[b]; if (s) { s.lastDataAt = d; s.lastChangeAt = c; } } theme.renderFeeds(); });
   es.onerror = () => { state.connected = false; theme.renderBanner(); theme.renderFeeds(); }; // EventSource reconnects by itself; a fresh snapshot follows
+}
+async function loadHistory() { // the last 48 h of every price, for the movement charts
+  try {
+    const h = await (await fetch('/api/history?hours=48&points=90', { cache: 'no-store' })).json();
+    const live = state.history; state.histFrom = h.from;
+    state.history = new Map(Object.entries(h.series).map(([id, pts]) => [id, pts.map(([sec, o, l]) => [h.from + sec * 1000, o, l])]));
+    for (const [id, pts] of live) { const h2 = state.history.get(id) || []; const lastT = h2.length ? h2[h2.length - 1][0] : 0; for (const p of pts) if (p[0] > lastT) h2.push(p); state.history.set(id, h2); }
+    theme.render();
+  } catch {}
+}
+function pushHistory(q) {
+  if (q.odds == null) return;
+  const h = state.history.get(q.id) || []; const last = h[h.length - 1];
+  if (!last || last[1] !== q.odds || last[2] !== (q.line ?? null)) { h.push([q.updatedAt, q.odds, q.line ?? null]); if (h.length > 2000) h.shift(); state.history.set(q.id, h); }
 }
 function applyBatch(b) {
   const now = serverNow(), local = Date.now(); const touched = new Set(); let structural = false;
@@ -143,7 +178,7 @@ function applyBatch(b) {
     touched.add(q.gameKey);
     if (q.removed) { state.quotes.delete(q.id); structural = true; continue; }
     if (!state.quotes.has(q.id)) structural = true;
-    state.quotes.set(q.id, q);
+    state.quotes.set(q.id, q); pushHistory(q);
     const moved = (q.prevOdds != null && q.prevOdds !== q.odds) || (q.prevLine != null && q.prevLine !== q.line);
     if (moved) { state.changedAt.set(q.id, local); recordMove(q, local); }
     const pl = now - q.updatedAt; if (pl > -5000 && pl < 120000) { lat.pushLag[q.book]?.push(pl); lat.recent[q.book]?.push(pl); }

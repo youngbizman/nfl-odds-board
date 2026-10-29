@@ -13,6 +13,8 @@ export class MemoryCheckpoint { // same interface, used in tests
   async save(state) { this.state = JSON.parse(JSON.stringify(state)); }
   async append(seq, frame, ts) { this.frames.push({ seq, frame, ts }); if (this.frames.length > 5000) this.frames.shift(); }
   async load() { return { state: this.state, frames: this.frames.slice() }; }
+  async saveBlob(key, value) { (this.blobs ||= new Map()).set(key, value); }
+  async loadBlob(key) { return this.blobs?.get(key) ?? null; }
   async close() {}
 }
 
@@ -35,6 +37,8 @@ export class RedisCheckpoint {
     const frames = (await this.client.xRange('dk:frames', '-', '+')).map((e) => ({ seq: Number(e.message.s), ts: Number(e.message.t), frame: e.message.f }));
     return { state: raw ? JSON.parse(raw) : null, frames };
   }
+  async saveBlob(key, value) { if (this.ok) await this.client.set(key, value); }
+  async loadBlob(key) { return this.ok ? this.client.get(key) : null; }
   async close() { try { await this.client?.quit(); } catch {} }
 }
 

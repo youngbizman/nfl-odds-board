@@ -212,3 +212,37 @@ h2 { font:500 21px/1.2 var(--font-price); letter-spacing:-.035em; }
 .price.is-best .odds { color:var(--text); }
 .price.is-partial .compare > .book:first-child::after { content:''; }
 @media(max-width:700px) { .mast-links .theme-field { display:flex; } .mast-links .theme-field select { min-height:36px; font-size:13px; } }
+
+/* ---- tighter market columns + movement chart in the freed space ---- */
+:root { --market-column:236px; }
+.columns,.match { grid-template-columns:var(--team-column) repeat(var(--markets,3),var(--market-column)) minmax(240px,1fr); }
+.columns .col-chart { padding-left:20px; }
+.columns .col-chart em { font-style:normal; letter-spacing:0; text-transform:none; }
+.price[data-market] { cursor:pointer; border-radius:2px; }
+.price[data-market]:hover { background:var(--accent-soft); }
+.price.is-charted { border-left-color:var(--border-control); }
+.chart { grid-column:5; grid-row:1 / span 2; align-self:stretch; min-width:0; padding-left:20px; border-left:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; }
+.chart-head { display:flex; justify-content:space-between; flex-wrap:wrap; gap:2px 10px; font-size:var(--text-xs); color:var(--text-muted); }
+.chart-now { display:flex; gap:10px; font:500 var(--text-xs) var(--font-meta); }
+.plot { position:relative; height:76px; margin:8px 38px 0 0; }
+.plot svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.plot path { fill:none; stroke-width:1.75; vector-effect:non-scaling-stroke; stroke-linejoin:round; }
+.plot .s-dk { stroke:var(--book-dk); } .plot .s-fd { stroke:var(--book-fd); }
+.plot .grid { stroke:var(--border); stroke-dasharray:2 4; vector-effect:non-scaling-stroke; }
+.plot .y { position:absolute; right:-38px; font:400 10px var(--font-meta); color:var(--text-muted); }
+.plot .y-hi { top:-6px; } .plot .y-lo { bottom:-6px; }
+.plot .dot { position:absolute; width:7px; height:7px; margin:-3.5px 0 0 -3.5px; border-radius:50%; background:var(--surface); border:2px solid var(--accent); }
+.plot .dot.dk { border-color:var(--book-dk); } .plot .dot.fd { border-color:var(--book-fd); }
+.chart-foot { display:flex; justify-content:space-between; gap:8px; margin:6px 38px 0 0; font:400 10px var(--font-meta); color:var(--text-muted); }
+.chart-empty { font-size:var(--text-xs); color:var(--text-muted); margin-top:8px; }
+@media(min-width:1600px) { :root { --market-column:250px; } }
+@media(max-width:1250px) {
+  .columns,.match { grid-template-columns:var(--team-column) repeat(var(--markets,3),minmax(0,1fr)); }
+  .columns .col-chart { display:none; }
+  .chart { grid-column:2 / -1; grid-row:auto; border-left:0; border-top:1px dashed var(--border); padding:10px 0 0 10px; }
+}
+@media(max-width:700px) {
+  .match { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .chart { grid-column:1 / -1; grid-row:5; padding-left:0; }
+  .plot { height:64px; }
+}

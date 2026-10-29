@@ -44,3 +44,22 @@ test('a book goes stale after its threshold and recovers when data arrives', () 
   s.setSource('draftkings', { state: 'down' }); s.refreshStaleness(t, 11_700);
   assert.equal(s.sources.draftkings.stale, true, 'a book that is down is stale even if its last data was recent');
 });
+
+test('price history: one point per real change, kept across restarts, and charted from the price in force at the window start', () => {
+  const s = new BoardStore(); const H = 3600_000, t0 = 1_800_000_000_000;
+  const q = (odds, line) => ({ gameKey: 'G', market: 'spread', side: 'home', book: 'draftkings', odds, line });
+  s.upsertQuote(q(-110, -3), t0);
+  s.upsertQuote(q(-110, -3), t0 + 1000);           // same price: no point
+  s.upsertQuote(q(-115, -3), t0 + 50 * H);         // a move inside the 48 h window
+  s.upsertQuote(q(+100, -3.5), t0 + 51 * H);       // a line move
+  const id = 'G|spread|home|draftkings';
+  assert.equal(s.history.get(id).length, 3);
+  const v = s.historyView({ hours: 48, points: 48, now: t0 + 52 * H });
+  assert.equal(v.from, t0 + 4 * H);
+  assert.deepEqual(v.series[id][0], [0, -110, -3], 'starts with the price in force at the window start');
+  assert.deepEqual(v.series[id].slice(1).map((p) => [p[1], p[2]]), [[-115, -3], [100, -3.5]]);
+  // a new process restores the history; re-applying the current price adds nothing
+  const s2 = new BoardStore(); s2.importHistory(JSON.parse(JSON.stringify(s.exportHistory(t0 + 52 * H))));
+  s2.upsertQuote(q(+100, -3.5), t0 + 53 * H);
+  assert.equal(s2.history.get(id).length, 3);
+});

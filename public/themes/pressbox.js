@@ -44,7 +44,7 @@ function mount(r, a) {
     <div class="sticky">
       <div id="connection-banner" class="banner loading"><strong>Connecting to sportsbooks…</strong> Waiting for the first complete snapshot.</div>
       <div class="feeds" id="feeds"></div>
-      <div class="columns" style="--markets:3"><span>GAME</span><span>SPREAD</span><span>TOTAL</span><span>MONEYLINE</span></div>
+      <div class="columns" style="--markets:3"><span>GAME</span><span>SPREAD</span><span>TOTAL</span><span>MONEYLINE</span><span class="col-chart">MOVEMENT <em>· click any price to chart it</em></span></div>
     </div>
     <div class="results" id="results"></div>
     <main id="board" class="games"></main>
@@ -60,6 +60,9 @@ function mount(r, a) {
   root.querySelector('#search').addEventListener('input', (e) => api.set('search', e.target.value));
   const fmt = root.querySelector('#odds-format'); fmt.value = api.settings.format; fmt.addEventListener('change', (e) => api.set('format', e.target.value));
   root.querySelector('#theme-picker')?.addEventListener('change', (e) => api.setTheme(e.target.value));
+  const pickFrom = (t) => { const c = t.closest('.price[data-market]'); const gEl = c?.closest('[data-game]'); if (c && gEl) { api.pickChart(gEl.dataset.game, c.dataset.market, c.dataset.side); gEl.querySelector(`.price[data-market="${c.dataset.market}"][data-side="${c.dataset.side}"]`)?.focus({ preventScroll: true }); } };
+  el.board.addEventListener('click', (e) => pickFrom(e.target));
+  el.board.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.price[data-market]')) { e.preventDefault(); pickFrom(e.target); } });
 }
 function unmount() { root.innerHTML = ''; }
 
@@ -90,7 +93,8 @@ function priceCell(g, market, side, idx) {
   const sideName = market === 'total' ? (side === 'over' ? 'Over' : 'Under') : (side === 'home' ? g.home.abbr : g.away.abbr);
   const label = `${MARKET_NAME[market]} · ${sideName}`;
   const pos = `--mobile-row:${ROW[market]};--mobile-column:${idx + 1}`;
-  const head = (extra, q) => `<div class="${cls} ${extra}" role="group" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr} · ${label}`)}"${tag(q)} style="${pos}"><span class="market-label">${esc(label)}</span>`;
+  const pick = api.chartPick(g.key); const charted = pick.market === market && pick.side === side ? ' is-charted' : '';
+  const head = (extra, q) => `<div class="${cls} ${extra}${charted}" role="group" tabindex="0" data-market="${market}" data-side="${side}" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr} · ${label}`)}. Press Enter to chart it."${tag(q)} style="${pos}"><span class="market-label">${esc(label)}</span>`;
   const c = api.cell(g, market, side);
   const B = api.BOOK;
 
@@ -142,7 +146,41 @@ function teamHtml(t, side) {
 function gameInner(g) {
   const meta = g.status === 'live' ? `<span class="live-tag">● Live</span> · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}` : `${esc(etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' }))} ET · ${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
   const cells = (idx) => api.MARKETS.map(([m, sides]) => priceCell(g, m, sides[idx], idx)).join('');
-  return `<div class="game-meta">${meta}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}</div>`;
+  return `<div class="game-meta">${meta}</div><div class="match" style="--markets:3">${teamHtml(g.away, 'away')}${cells(0)}${teamHtml(g.home, 'home')}${cells(1)}${chartHtml(g)}</div>`;
+}
+
+// ---------- movement chart: implied chance of the picked side, one line per book ----------
+const chance = (odds) => { const d = api.decimalOdds(odds); return d ? 100 / d : null; };
+function chartHtml(g) {
+  const pick = api.chartPick(g.key); const S = api.series(g, pick.market, pick.side);
+  const books = api.settings.view === 'best' ? ['draftkings', 'fanduel'] : [api.settings.view];
+  const sideName = pick.market === 'total' ? (pick.side === 'over' ? 'Over' : 'Under') : g[pick.side].abbr;
+  const what = pick.market === 'moneyline' ? `${sideName} to win` : pick.market === 'spread' ? `${sideName} spread` : `Total · ${sideName}`;
+  let lo = Infinity, hi = -Infinity, moves = 0;
+  for (const b of books) { const pts = S.books[b]; moves += Math.max(0, pts.length - 1); for (const p of pts) { const v = chance(p[1]); lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+  const head = `<div class="chart-head" title="Implied chance = 1 ÷ decimal odds. It includes the book's margin, so the two sides add up to a bit over 100%."><span>${esc(what)} · implied chance</span>`;
+  if (!Number.isFinite(lo)) return `<div class="chart">${head}</div><p class="chart-empty">No price yet.</p></div>`;
+  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 1.5); lo = mid - half; hi = mid + half;
+  const span = Math.max(1, S.to - S.from);
+  const X = (t) => ((Math.min(Math.max(t, S.from), S.to) - S.from) / span) * 1000, Y = (v) => (1 - (v - lo) / (hi - lo)) * 100;
+  let paths = '', dots = '', now = '';
+  for (const b of books) {
+    const pts = S.books[b]; if (!pts.length) continue; const B = api.BOOK[b];
+    let d = `M${X(pts[0][0]).toFixed(1)},${Y(chance(pts[0][1])).toFixed(2)}`;
+    for (let i = 1; i < pts.length; i++) {
+      d += `H${X(pts[i][0]).toFixed(1)}V${Y(chance(pts[i][1])).toFixed(2)}`;
+      if (pts[i][2] !== pts[i - 1][2] && pick.market !== 'moneyline') dots += `<i class="dot ${B.cls}" style="left:${(X(pts[i][0]) / 10).toFixed(2)}%;top:${Y(chance(pts[i][1])).toFixed(2)}%" title="${B.label}: line ${esc(api.fmtLine(pick.market, pick.side, pts[i - 1][2]))} → ${esc(api.fmtLine(pick.market, pick.side, pts[i][2]))}"></i>`;
+    }
+    paths += `<path class="s-${B.cls}" d="${d}H1000"/>`;
+    const last = pts[pts.length - 1];
+    now += `<span class="book ${B.cls}">${B.short} ${chance(last[1]).toFixed(1)}%</span>`;
+  }
+  const t0 = new Date(S.from).toLocaleString('en-US', { timeZone: 'America/Toronto', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  const label = `${what}, implied chance: ${books.map((b) => { const p = S.books[b]; return p.length ? `${api.BOOK[b].label} ${chance(p[p.length - 1][1]).toFixed(1)}%` : ''; }).filter(Boolean).join(', ')}; ${moves} ${moves === 1 ? 'move' : 'moves'} since ${t0}.`;
+  return `<div class="chart" role="img" aria-label="${esc(label)}">${head}<span class="chart-now">${now}</span></div>
+    <div class="plot"><svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" x2="1000" y1="50" y2="50"/>${paths}</svg>
+      <span class="y y-hi">${hi.toFixed(1)}%</span><span class="y y-lo">${lo.toFixed(1)}%</span>${dots}</div>
+    <div class="chart-foot"><span>${S.live ? 'kickoff' : esc(t0)}</span><span>${moves ? `${moves} ${moves === 1 ? 'move' : 'moves'}` : 'no moves yet'}</span><span>now</span></div></div>`;
 }
 
 // ---------- sections ----------

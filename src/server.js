@@ -40,6 +40,11 @@ const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics,
 const fd = SOURCES.includes('fanduel') ? new FanDuelSource(store, metrics, log, { onMidBeat: askEdgeToPollFanDuel }) : null;
 if (dk) sources.push(dk);
 if (fd) sources.push(fd);
+// Price history for the movement charts survives restarts in the same Redis (one JSON value, saved every minute).
+const HISTORY_KEY = 'board:history';
+if (checkpoint) try { const h = await checkpoint.loadBlob(HISTORY_KEY); if (h) { store.importHistory(JSON.parse(h)); log('history', `restored ${store.history.size} series`); } } catch (e) { log('history', `restore failed: ${e.message}`); }
+const saveHistory = () => checkpoint?.saveBlob(HISTORY_KEY, JSON.stringify(store.exportHistory())).catch((e) => log('history', `save failed: ${e.message}`));
+setInterval(saveHistory, 60_000);
 
 // ---------- SSE fan-out ----------
 const clients = new Set();
@@ -101,6 +106,14 @@ function snapshotSse() {
 }
 app.get('/api/board', (req, res) => res.json(snapshot()));
 app.get('/api/time', (req, res) => res.json({ serverTs: Date.now() }));
+// Movement charts: every quote's recent history, downsampled (built at most once per 5 s, shared by all viewers)
+let histCache = { at: 0, key: '', body: '' };
+app.get('/api/history', (req, res) => {
+  const hours = Math.min(72, Math.max(1, Number(req.query.hours) || 48)), points = Math.min(240, Math.max(10, Number(req.query.points) || 90));
+  const key = `${hours}|${points}`;
+  if (histCache.key !== key || Date.now() - histCache.at > 5000) histCache = { at: Date.now(), key, body: JSON.stringify(store.historyView({ hours, points })) };
+  res.type('application/json').send(histCache.body);
+});
 app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS }));
 // Liveness for the host (never fails because a BOOK is down — restarting us would not fix DraftKings).
 app.get('/healthz', (req, res) => res.json({ ok: true, version: VERSION, games: store.games.size, quotes: store.quotes.size, clients: clients.size }));
@@ -201,5 +214,5 @@ relay.on('connection', (ws, req) => {
 });
 
 for (const s of sources) s.start().catch((e) => log('src', 'start failed', e));
-const shutdown = async () => { for (const s of sources) s.stop(); await dk?.saveCheckpoint(); await checkpoint?.close(); server.close(); process.exit(0); };
+const shutdown = async () => { for (const s of sources) s.stop(); await dk?.saveCheckpoint(); await saveHistory(); await checkpoint?.close(); server.close(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

@@ -3,12 +3,16 @@
 import { EventEmitter } from 'node:events';
 import { BOOKS } from './model.js';
 
+const HISTORY_KEEP_MS = 72 * 3600_000; // price history kept per quote (for the movement charts)
+const HISTORY_MAX = 3000;              // and at most this many points per quote
+
 export class BoardStore extends EventEmitter {
   constructor() {
     super();
     this.setMaxListeners(0);
     this.games = new Map();   // gameKey -> Game
     this.quotes = new Map();  // `${gameKey}|${market}|${side}|${book}` -> Quote
+    this.history = new Map(); // quote id -> [[t, odds, line], ...]: one point per real change (movement charts)
     this.sources = Object.fromEntries(BOOKS.map((b) => [b, {
       book: b, mode: null, state: 'starting', lastDataAt: null, lastSnapshotAt: null, lastChangeAt: null,
       lastError: null, reconnects: 0, updates: 0, polls: 0, stale: true, detail: '',
@@ -42,6 +46,7 @@ export class BoardStore extends EventEmitter {
       prevOdds: prev ? prev.odds : null, prevLine: prev ? prev.line : null,
     };
     this.quotes.set(id, next);
+    this.record(id, now, next.odds, next.line);
     const src = this.sources[q.book]; if (src) { src.lastChangeAt = now; }
     this.emit('quote', next);
     return true;
@@ -71,6 +76,52 @@ export class BoardStore extends EventEmitter {
       const stale = s.state === 'down' || !s.lastDataAt || now - s.lastDataAt > thresholds[b];
       if (stale !== s.stale) { s.stale = stale; this.emit('source', { ...s }); }
     }
+  }
+
+  /** Append one history point, only if the price or line differs from the last one recorded. */
+  record(id, t, odds, line) {
+    if (odds == null) return;
+    let h = this.history.get(id); if (!h) this.history.set(id, (h = []));
+    const last = h[h.length - 1];
+    if (last && last[1] === odds && last[2] === (line ?? null)) return;
+    h.push([t, odds, line ?? null]);
+    if (h.length > HISTORY_MAX) h.splice(0, h.length - HISTORY_MAX);
+  }
+
+  /** History to persist (trimmed to the keep window). */
+  exportHistory(now = Date.now()) {
+    const out = {};
+    for (const [id, h] of this.history) {
+      // keep the last point before the window too: it is the price at the window's start
+      let i = h.findIndex((p) => p[0] >= now - HISTORY_KEEP_MS); if (i === -1) i = h.length - 1; else if (i > 0) i--;
+      out[id] = h.slice(i);
+    }
+    return out;
+  }
+  importHistory(obj) { for (const [id, h] of Object.entries(obj || {})) if (Array.isArray(h) && h.length) this.history.set(id, h); }
+
+  /**
+   * Chart-ready history for the quotes on the board, window [from, to]. Older points are downsampled to at most
+   * `points` (last value per time bucket); the last `recentHours` stay at full resolution (capped) so a live game's
+   * chart is exact. Each series starts with the price in force at `from`. Times are seconds after `from`.
+   */
+  historyView({ hours = 48, points = 90, recentHours = 4, recentMax = 300, now = Date.now() } = {}) {
+    let earliest = now;
+    for (const id of this.quotes.keys()) { const h = this.history.get(id); if (h?.length) earliest = Math.min(earliest, h[0][0]); }
+    const from = Math.max(now - hours * 3600_000, earliest), bucket = Math.max(1, now - from) / points, recentFrom = now - recentHours * 3600_000;
+    const series = {};
+    for (const id of this.quotes.keys()) {
+      const h = this.history.get(id); if (!h?.length) continue;
+      let start = null; const byBucket = new Map(), recent = [];
+      for (const p of h) {
+        if (p[0] <= from) start = p;
+        else if (p[0] >= recentFrom) recent.push(p);
+        else byBucket.set(Math.floor((p[0] - from) / bucket), p);
+      }
+      const pts = [...(start ? [[from, start[1], start[2]]] : []), ...byBucket.values(), ...recent.slice(-recentMax)];
+      series[id] = pts.map((p) => [Math.round((p[0] - from) / 1000), p[1], p[2]]);
+    }
+    return { from, to: now, series };
   }
 
   snapshot() {
