@@ -203,6 +203,9 @@ one page per league and puts every market on the push. `LEAGUES=nfl,ncaaf,cfl` (
 * **Polling budget.** The NFL is polled every beat as before; the other leagues' ~360 markets take turns, one batch of
   ≤ 50 per beat (each refreshed every ~8 s), because the push already delivers their changes as they happen. That keeps
   FanDuel at about 3 requests a second in total.
+* **Checked live** (`tools/check-leagues.mjs`, Thu Oct 29): every college and CFL price on the board against what each
+  book's own API served at that moment, matched by the book's own event id: college **DraftKings 390/390, FanDuel
+  713/713** identical; CFL **12/12** and **12/12**; 0 different, 0 missing. 126 college games and 2 CFL games on the board.
 * **Small schools.** FanDuel also lists ~50 FCS games DraftKings does not; with nothing to compare they are hidden by
   default in college, and one click shows them ("only available offer"). Alt lines and player props stay NFL-only.
 
@@ -402,6 +405,10 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
   age `beat` reaches the page within one poll; the page, its price rules and every theme file are served as modules.
 * I checked the tests can fail: breaking the different-lines rule, the change-only emit, or the back-off each turns
   exactly the right test red.
+
+`tools/site-check.mjs <url>` opens the live page the way viewers do — every league × both designs × desktop and phone,
+plus dark mode and the in-page league switch — and fails on any script or console error, failed request, empty board or
+sideways scrolling on a phone. Thu Oct 29 on the deployment: **15/15 clean**, first prices on screen in 0.3–0.7 s.
 
 Running system: `/healthz` (liveness, used by Render) never fails because a *book* is down — restarting would not fix
 DraftKings. `/api/health` (readiness) returns 503 unless both books are fresh with prices. `tools/smoke.mjs <url>` checks
