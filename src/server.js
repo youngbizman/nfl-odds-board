@@ -158,6 +158,7 @@ app.get('/api/history', (req, res) => {
   res.type('application/json').send(histCache.body);
 });
 app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS,
+  keepalive: { url: SELF_URL || null, ...keepalive },
   transport: { draftkings: dkHttp.stats, fanduelPush: fd?.push ? { state: fd.push.state, ...fd.push.counts, subscribed: fd.push.subscribedCount() } : null }, edgeConnected: edges.size > 0, edgeIgnored,
   extras: { rows: extras.rows.size, status: extras.status, draftkings: dkx?.counts, fanduel: fdx?.counts, watched: [...watchedGames()] } }));
 // Liveness for the host (never fails because a BOOK is down — restarting us would not fix DraftKings).
@@ -235,6 +236,15 @@ app.get('/api/diag/draftkings', async (req, res) => {
   try { const r = await fetch('https://sportsbook.draftkings.com/leagues/football/nfl', { headers: { 'user-agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }); out.page = { status: r.status, bytes: (await r.text()).length }; } catch (e) { out.page = String(e); }
   res.json(out);
 });
+
+// Render's free plan stops an instance after 15 minutes without inbound requests, and a stopped instance takes ~1 min
+// to wake for the next viewer. Open viewer streams and the edge's relay socket used to keep it awake; with neither, the
+// server calls its own public address every 4 minutes. That request goes out through Render's front door, so it counts.
+const SELF_URL = (process.env.KEEPALIVE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+const keepalive = { ok: 0, failed: 0, lastAt: null };
+if (SELF_URL && process.env.KEEPALIVE !== '0') setInterval(() => {
+  fetch(`${SELF_URL}/healthz`, { signal: AbortSignal.timeout(15_000) }).then((r) => { keepalive.ok++; keepalive.lastAt = Date.now(); r.body?.cancel(); }).catch(() => keepalive.failed++);
+}, 4 * 60_000);
 
 const server = app.listen(PORT, () => log('http', `listening on :${PORT} · sources=${SOURCES.join('+') || 'none'} · batch=${BATCH_MS || 'immediate'} · stale dk=${STALE_MS.draftkings} fd=${STALE_MS.fanduel} · v${VERSION}`));
 

@@ -377,9 +377,11 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 Running system: `/healthz` (liveness, used by Render) never fails because a *book* is down — restarting would not fix
 DraftKings. `/api/health` (readiness) returns 503 unless both books are fresh with prices. `tools/smoke.mjs <url>` checks
-it plus the live stream; GitHub Actions runs it against the deployment every 30 minutes (`live-health.yml`) and
-pings it every 10 minutes so the free instance never sleeps (`keepalive.yml`). The DK edge
-runs under a restart-on-exit supervisor.
+it plus the live stream; GitHub Actions runs it against the deployment every 30 minutes (`live-health.yml`).
+Render's free plan stops an instance after 15 minutes without inbound requests (then ~1 min to wake). GitHub's
+scheduled pings turned out too irregular to prevent that (runs were often delayed past 15 minutes), so the server
+calls its own public address every 4 minutes (`keepalive` in `/api/metrics`). (The optional edge, when used, runs
+under a restart-on-exit supervisor.)
 
 ## 10. Keeping working when a book breaks
 * Each worker is isolated; an exception in one never touches the other (seen live: FD forced to a bogus region →
