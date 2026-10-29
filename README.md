@@ -30,7 +30,10 @@ What is on the page, beyond the board itself:
 * **Per-book feed cards** — how the book is read (push vs poll), a freshness bar that drains as data ages, last
   data / last move, and the latency *this browser* measured (DraftKings book→screen; FanDuel worst-case age).
 * **Stale handling** — a book that stops answering turns red, its prices grey out, a banner says so; the other book
-  keeps moving. Lost server connection → "reconnecting" banner, then a fresh snapshot.
+  keeps moving. Lost server connection → "reconnecting" banner, then a fresh snapshot. A stream that dies *silently*
+  (the connection stays open but nothing arrives — seen on a home network where HTTP/3 kept timing out) is caught too:
+  the server speaks at least every 5 s, so after 12 s of silence the page greys every price, says "reconnecting" and
+  opens a fresh stream (`tools/stall-check.mjs` pauses the server: noticed in 12.0 s, recovered 1 s after it resumed).
 * Games grouped by kickoff slot, live games first; the single-book views show "updated N s ago" on every number.
 * Team search, Live/Pregame filter, American or decimal odds (decimal to 3 places so −340 vs −350 stays visible).
 * **Swappable design.** Every design is a theme that only draws; the rules (which price wins, what is stale) live in

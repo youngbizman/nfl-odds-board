@@ -91,7 +91,7 @@ async function loadExtrasSummary() {
 }
 function toggleExtras(gk) {
   const cur = state.extras.get(gk);
-  if (cur) { cur.es.close(); state.extras.delete(gk); theme.renderGame(gk); return; }
+  if (cur) { cur.es.close(); clearInterval(cur.watch); state.extras.delete(gk); theme.renderGame(gk); return; }
   const x = { rows: new Map(), kind: null, bothOnly: true, status: {}, loaded: false, es: new EventSource(`/api/extras/stream?game=${encodeURIComponent(gk)}`) };
   state.extras.set(gk, x);
   x.es.addEventListener('snapshot', (e) => {
@@ -99,6 +99,9 @@ function toggleExtras(gk) {
     if (!x.kind) x.kind = KIND_ORDER.find((k) => [...x.rows.values()].some((r) => r.kind === k && r.offers.draftkings && r.offers.fanduel)) || KIND_ORDER.find((k) => [...x.rows.values()].some((r) => r.kind === k)) || 'alt-spread';
     theme.renderExtras(gk);
   });
+  x.lastAt = Date.now();
+  for (const ev of ['snapshot', 'rows', 'status']) x.es.addEventListener(ev, () => { x.lastAt = Date.now(); });
+  x.watch = setInterval(() => { if (state.extras.get(gk) !== x) return clearInterval(x.watch); if (Date.now() - x.lastAt > 10_000) { clearInterval(x.watch); x.es.close(); state.extras.delete(gk); toggleExtras(gk); } }, 2000);
   x.es.addEventListener('status', (e) => { x.status = JSON.parse(e.data); for (const b of Object.keys(BOOK)) document.querySelectorAll(`[data-x-age="${b}"]`).forEach((n) => { n.dataset.ageTs = x.status[b]?.lastDataAt || ''; }); });
   x.es.addEventListener('rows', (e) => {
     const local = Date.now();
@@ -240,13 +243,32 @@ function mountTheme(t) {
 async function syncClock() {
   let best = null;
   for (let i = 0; i < 3; i++) {
-    const t0 = Date.now(); const { serverTs } = await (await fetch('/api/time', { cache: 'no-store' })).json(); const t1 = Date.now();
+    const t0 = Date.now(); let serverTs;
+    try { ({ serverTs } = await (await fetch('/api/time', { cache: 'no-store', signal: AbortSignal.timeout(4000) })).json()); } catch { continue; } // flaky network: keep the last offset
+    const t1 = Date.now();
     if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, off: serverTs - (t0 + t1) / 2 };
   }
-  state.offset = best.off; state.rtt = best.rtt;
+  if (best) { state.offset = best.off; state.rtt = best.rtt; }
 }
+// The stream can die silently: a flaky network (seen live: HTTP/3 'QUIC idle timeout' on a home connection) can leave
+// EventSource "open" while nothing arrives, so the page would look live with frozen prices. The server speaks at least
+// every 5 s (heartbeat), so 12 s of silence = dead stream: show "reconnecting", grey out prices, open a fresh stream.
+const STALL_MS = 12_000;
+let stream = null, lastMsgAt = 0, reconnectTimer = null, retryMs = 1000;
+function heard() { lastMsgAt = Date.now(); retryMs = 1000; }
+function reconnect(why) {
+  stream?.close(); stream = null;
+  if (state.connected) { state.connected = false; theme.render(); }
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(connect, retryMs);
+  retryMs = Math.min(retryMs * 2, 15_000);
+  console.info(`[board] stream ${why} → reconnecting`);
+}
+setInterval(() => { if (stream && lastMsgAt && Date.now() - lastMsgAt > STALL_MS) reconnect('silent for 12 s'); }, 2000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && stream && Date.now() - lastMsgAt > STALL_MS) reconnect('stale after the tab was hidden'); });
 function connect() {
-  const es = new EventSource('/api/stream');
+  const es = new EventSource('/api/stream'); stream = es; lastMsgAt = Date.now();
+  for (const ev of ['snapshot', 'batch', 'beat']) es.addEventListener(ev, heard);
   es.addEventListener('snapshot', (e) => {
     const s = JSON.parse(e.data);
     state.games = new Map(s.games.map((g) => [g.key, g])); state.quotes = new Map(s.quotes.map((q) => [q.id, q]));
@@ -257,7 +279,11 @@ function connect() {
   });
   es.addEventListener('batch', (e) => applyBatch(JSON.parse(e.data)));
   es.addEventListener('beat', (e) => { for (const [b, [d, c]] of Object.entries(JSON.parse(e.data))) { const s = state.sources[b]; if (s) { s.lastDataAt = d; s.lastChangeAt = c; } } theme.renderFeeds(); });
-  es.onerror = () => { state.connected = false; theme.renderBanner(); theme.renderFeeds(); }; // EventSource reconnects by itself; a fresh snapshot follows
+  es.onerror = () => {
+    if (es !== stream) return;
+    if (es.readyState === EventSource.CLOSED) return reconnect('closed'); // the browser gave up (HTTP error): we retry with backoff
+    state.connected = false; theme.renderBanner(); theme.renderFeeds();   // otherwise EventSource retries by itself; a fresh snapshot follows
+  };
 }
 async function loadHistory() { // the last 48 h of every price, for the movement charts
   try {
