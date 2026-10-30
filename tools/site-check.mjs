@@ -59,8 +59,13 @@ for (const lg of LEAGUES) {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('.chart[data-open-game]', { timeout: 30_000 });
   await page.locator('.chart[data-open-game]').first().click(); await page.waitForSelector('.bc', { timeout: 10_000 }).catch(() => mine.push('no big chart after clicking a chart'));
   if (!page.url().includes('game=')) mine.push('the game page has no link of its own');
-  await page.click('[data-range="1w"]').catch(() => mine.push('no 1 week button')); await page.waitForTimeout(500);
-  if (await page.locator('[data-range="1w"][aria-pressed="true"]').count() !== 1) mine.push('1 week window did not select');
+  // windows longer than the board's history are greyed out; All and any open window must select
+  for (const r of ['all', '10m']) {
+    const b = page.locator(`[data-range="${r}"]:not([disabled])`); if (!(await b.count())) { if (r === 'all') mine.push('no All button'); continue; }
+    await b.click(); await page.waitForTimeout(400);
+    if (await page.locator(`[data-range="${r}"][aria-pressed="true"]`).count() !== 1) mine.push(`the ${r} window did not select`);
+  }
+  { const plot = page.locator('.bc-plot'); const bb = await plot.boundingBox(); if (bb) { await page.mouse.move(bb.x + bb.width * 0.5, bb.y + bb.height * 0.5); await page.waitForTimeout(200); if (!(await page.locator('.bh-box').count())) mine.push('no price read-out when pointing at the chart'); } }
   await page.keyboard.press('Escape'); await page.waitForTimeout(800);
   if (page.url().includes('game=') || !(await page.locator('.game').count())) mine.push('Esc did not return to all games');
   for (const p of mine) problems.push(`game page: ${p}`);
