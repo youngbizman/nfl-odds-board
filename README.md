@@ -456,7 +456,10 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 `tools/site-check.mjs <url>` opens the live page the way viewers do — every league × both designs × desktop and phone,
 plus dark mode and the in-page league switch — and fails on any script or console error, failed request, empty board or
-sideways scrolling on a phone. Thu Oct 29 on the deployment: **15/15 clean**, first prices on screen in 0.3–0.7 s.
+sideways scrolling on a phone, plus every league's game page, opening a game from its chart, and inner scroll boxes.
+Fri Oct 30 on the deployment, from a GitHub machine: **32/32 clean**, first prices on screen median 0.37 s (0.3–1.0 s;
+the run's very first page 1.7 s). The same morning every game-line price on the board matched both books' own APIs,
+open/suspended state included: NFL 156 + 168, college 378 + 695, CFL 12 + 12 (DraftKings + FanDuel), 0 different.
 
 **Game night without a laptop:** `tools/live-watch.mjs` (run by `.github/workflows/live-test.yml` on a GitHub machine)
 watches the deployed board through a live window like three viewers (one per league) and every 10 minutes records
