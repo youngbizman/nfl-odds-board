@@ -1,20 +1,20 @@
-# Live watch — 2026-10-29, 16:26:24–21:31:46 ET
+# Live watch — 2026-10-29, 16:26:24–21:41:48 ET
 
-Board: https://nfl-odds-board-hgim.onrender.com · version 0686b06 · server restarts during the window: **0** · samples: 15
+Board: https://nfl-odds-board-hgim.onrender.com · version 0686b06 · server restarts during the window: **0** · samples: 16
 
 ## Price changes seen by a viewer (whole window)
 
 | League | DraftKings | FanDuel | per minute (DK / FD) |
 | --- | --- | --- | --- |
-| nfl | 1221 | 1617 | 4.0 / 5.3 |
-| ncaaf | 4396 | 6289 | 14.4 / 20.6 |
+| nfl | 1349 | 1828 | 4.3 / 5.8 |
+| ncaaf | 4448 | 6550 | 14.1 / 20.8 |
 | cfl | 0 | 0 | 0.0 / 0.0 |
 
 ## Speed (server figures at the end of the window)
 
-* DraftKings publish → our server, live games: p50 39 ms · p90 109 ms · n=1000; pregame: p50 48 ms · p90 140 ms · n=243 (DK clock offset -8 ms, removed)
-* FanDuel updatedAt → our server (push): p50 624 ms · p90 1022 ms · n=1000
-* FanDuel: which channel delivered each price change first: ncaaf push 3027 / poll 3231 · nfl push 659 / poll 847
+* DraftKings publish → our server, live games: p50 41 ms · p90 117 ms · n=1000; pregame: p50 48 ms · p90 140 ms · n=243 (DK clock offset -8 ms, removed)
+* FanDuel updatedAt → our server (push): p50 600 ms · p90 1013 ms · n=1000
+* FanDuel: which channel delivered each price change first: ncaaf push 3129 / poll 3343 · nfl push 732 / poll 935
 * FanDuel poll request: p50 90 ms · p90 131 ms · n=1000 · markets left out of answers: 0
 
 ## Per 10 minutes
@@ -36,6 +36,7 @@ Board: https://nfl-odds-board-hgim.onrender.com · version 0686b06 · server res
 | 21:11:41 | CAR @ GB, Florida Atlantic @ North Texas, Troy @ James Madison, South Carolina State @ Morgan State | 143/144 | 414/615 | 0/0 | 26.5–29.5 ms | 47.5 / 49.5 ms | 563/563 · 887/887 | yes |
 | 21:21:43 | CAR @ GB, Florida Atlantic @ North Texas, Troy @ James Madison, South Carolina State @ Morgan State | 185/192 | 313/519 | 0/0 | 17–20 ms | 58 / 60 ms | 563/563 · 887/887 | yes |
 | 21:31:46 | CAR @ GB, Florida Atlantic @ North Texas, Troy @ James Madison, South Carolina State @ Morgan State | 176/225 | 82/301 | 0/0 | 28.5–30.5 ms | 73.5 / 74.5 ms | 563/563 · 887/887 | yes |
+| 21:41:48 | CAR @ GB, Florida Atlantic @ North Texas, Troy @ James Madison, South Carolina State @ Morgan State | 128/211 | 52/261 | 0/0 | 28–30 ms | 65 / 82 ms | 564/564 · 886/886 | yes |
 
 During live play a price can change between the two reads of a comparison, so a few differences on live games are expected; pregame prices must match exactly.
 
