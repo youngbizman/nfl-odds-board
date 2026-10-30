@@ -125,10 +125,11 @@ export function bigChart(api, g, { pick, range }) {
   const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => `<span class="bc-x" style="left:${f * 100}%">${f === 1 ? 'now' : esc(etFmt(S.from + span * f, tf))}</span>`).join('');
   const winName = W.id === 'all' ? `all ${dur(ms)} recorded` : `the last ${RANGES.find((r) => r[0] === W.id)[1]}`;
   const label = `${pickName(g, pick)}, implied chance over ${winName}: ${moves} ${moves === 1 ? 'move' : 'moves'}. Point at the chart for the prices at any moment.`;
+  const strip = lineStrip(api, pick, books, S, X, x0);
   return `<section class="bc" aria-label="Price movement">${head}
     <div class="bc-plot${dense ? ' is-dense' : ''}" data-hover="${esc(g.key)}" role="img" aria-label="${esc(label)}">${gapHtml}<svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><g class="bc-grid">${grid}</g>${paths}</svg>${dots}${yTicks}<div class="bc-hover" aria-hidden="true">${hov}</div></div>
-    <div class="bc-axis">${xTicks}</div>${lineStrip(api, pick, books, S, X, x0)}
-    <p class="bc-note">${moves ? `${moves} price ${moves === 1 ? 'change' : 'changes'} in ${winName}` : `No price change in ${winName}`} · point at the chart for each book's price at that moment${pick.market === 'moneyline' ? '' : ' · the strip shows which line each book had up'} · windows longer than the board's history are greyed out.</p></section>`;
+    <div class="bc-axis">${xTicks}</div>${strip}
+    <p class="bc-note">${moves ? `${moves} price ${moves === 1 ? 'change' : 'changes'} in ${winName}` : `No price change in ${winName}`} · point at the chart for each book's price at that moment${strip ? ' · the strip shows which line each book had up' : ''} · windows longer than the board's history are greyed out.</p></section>`;
 }
 
 /**
