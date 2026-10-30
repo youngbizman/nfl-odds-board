@@ -103,7 +103,7 @@ setInterval(() => { // live latency figures for the feed cards (ride the heartbe
   Object.assign(store.sources.fanduel, { pushLagP50Ms: fdPush.p50 ?? null, pushLagCount: fdPush.count, pushLagAt: metrics.fd.lastPushLagAt ?? null });
 }, 5_000);
 setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps proxies from closing idle streams
-  const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources })}\n\n`;
+  const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources, version: VERSION })}\n\n`;
   for (const res of clients.keys()) res.write(payload);
 }, 5_000);
 // Age beat: the moment a book's data timestamp moves (at most every 250 ms) push just the two timestamps per book,
@@ -160,7 +160,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '4mb' }));
-app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0 }));
+app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0, setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
 // the browser uses the exact same comparison rules the tests check
 app.get('/lib/model.js', (req, res) => res.type('application/javascript').sendFile(path.join(__dirname, 'model.js')));
 

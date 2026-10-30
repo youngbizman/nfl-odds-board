@@ -501,6 +501,8 @@ function pushHistory(q) {
   const gh = state.gameHistory; if (gh && q.gameKey === gh.key) { const m = gh.map.get(q.id) || []; const l2 = m[m.length - 1]; if (!l2 || l2[1] !== q.odds || l2[2] !== (q.line ?? null)) { m.push([q.updatedAt, q.odds, q.line ?? null]); gh.map.set(q.id, m); } }
 }
 function applyBatch(b) {
+  // a new deployment: the heartbeat says so even if this page's stream never dropped, so the page reloads itself
+  if (b.version && state.version && b.version !== state.version && b.version !== 'dev') { location.reload(); return; }
   const now = serverNow(), local = Date.now(); const touched = new Set(); let structural = false;
   for (const g of b.games || []) { const prev = state.games.get(g.key); if (!prev || prev.status !== g.status) structural = true; state.games.set(g.key, { ...(prev || {}), ...g }); touched.add(g.key); }
   for (let q of b.quotes || []) {

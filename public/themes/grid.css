@@ -482,3 +482,17 @@ body, button, input, select, table { font-variant-numeric: tabular-nums; }
 .g-feeds-panel:not(.is-open) .g-feedt .xd { display:none; }
 .g-feeds-more { margin-left:10px; font:500 11px var(--font); letter-spacing:0; text-transform:none; }
 .g-holds-more { display:block; margin-top:6px; font-size:11px; text-decoration:none; }
+
+/* feeds box: compact, the same text size as the other panels */
+.g-feeds-panel { padding:8px 12px; }
+.g-feeds-panel h2 { margin-bottom:4px; font-size:10.5px; }
+.g-feedt { font-size:12px; line-height:1.3; }
+.g-feedt th, .g-feedt td { padding-top:4px; padding-bottom:4px; }
+.g-feedt thead th { font-size:10px; }
+.g-feedt tbody th { font-size:12.5px; font-weight:600; }
+.g-feedt td.big { font-size:12.5px; font-weight:600; }
+.g-feedt td.big .lat-n { font-size:10.5px; }
+.g-feedt td.st { font-size:11px; }
+.g-feedt .dot { width:8px; height:8px; }
+.g-feedt .f-live .dot { box-shadow:0 0 0 2px color-mix(in srgb, var(--up) 25%, transparent); }
+.g-feedt .bar { height:6px; }
