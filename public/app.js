@@ -87,6 +87,9 @@ function series(g, market, side) {
   const now = serverNow(); const live = phaseOf(g) === 'live';
   let from = state.histFrom ?? now - 3600_000;
   if (live && g.start) from = Math.max(from, new Date(g.start).getTime() - 15 * 60_000); // a live game: chart the game itself
+  // the chart starts where this price's recorded history starts, so the box is always filled (no empty stretch)
+  let first = Infinity; for (const b of Object.keys(BOOK)) { const h = state.history.get(`${g.key}|${market}|${side}|${b}`); if (h?.length) first = Math.min(first, h[0][0]); }
+  if (Number.isFinite(first)) from = Math.max(from, Math.min(first, now - 60_000));
   const books = {};
   for (const b of Object.keys(BOOK)) {
     const id = `${g.key}|${market}|${side}|${b}`; const q = state.quotes.get(id);

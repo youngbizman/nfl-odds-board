@@ -19,9 +19,11 @@ export function pickName(g, pick) {
  * choice made, a live game opens on the last hour and a game not started on the last day, or on All if that much
  * history does not exist yet.
  */
-export function chartWindow(api, g, range) {
-  const now = api.serverNow(); const rec = api.gameRecordedFrom(g) ?? now; const have = Math.max(0, now - rec);
-  const avail = (id) => id === 'all' || have >= RMS[id] * 0.95;
+export function chartWindow(api, g, range, pick) {
+  // history of the price being charted (so whichever window is shown, the box is filled from edge to edge)
+  const now = api.serverNow(); const rec = pick ? api.seriesRange(g, pick.market, pick.side, 400 * 86400_000).recordedFrom : api.gameRecordedFrom(g) ?? now;
+  const have = Math.max(0, now - (rec ?? now));
+  const avail = (id) => id === 'all' || have >= RMS[id];
   let r = range && RMS[range] !== undefined && avail(range) ? range : null;
   if (!r) { const want = g.status === 'live' ? '1h' : '1d'; r = avail(want) ? want : 'all'; }
   return { id: r, ms: r === 'all' ? Math.max(have, 60_000) : RMS[r], have, avail, auto: !range || r !== range };
@@ -81,12 +83,12 @@ function lineStrip(api, pick, books, S, X, x0) {
  * prices at that moment; for spreads and totals a strip below shows which line was up.
  */
 export function bigChart(api, g, { pick, range }) {
-  const W = chartWindow(api, g, range); const ms = W.ms;
+  const W = chartWindow(api, g, range, pick); const ms = W.ms;
   const S = api.seriesRange(g, pick.market, pick.side, ms);
   const books = api.settings.view === 'best' ? BOOKS : [api.settings.view];
   const ranges = `<div class="bc-ranges" role="group" aria-label="Time window">${RANGES.map(([id, label]) => {
     const ok = W.avail(id);
-    return `<button type="button" data-range="${id}" aria-pressed="${id === W.id}"${ok ? '' : ` disabled aria-disabled="true" title="${esc(`Not enough history yet: this board has ${dur(W.have)} of prices for this game`)}"`}>${label}</button>`;
+    return `<button type="button" data-range="${id}" aria-pressed="${id === W.id}"${ok ? '' : ` disabled aria-disabled="true" title="${esc(`Not enough history yet: this board has ${dur(W.have)} of this price`)}"`}>${label}</button>`;
   }).join('')}</div>`;
   const picks = `<div class="bc-picks" role="group" aria-label="Which price to chart">${api.MARKETS.flatMap(([m, sides]) => sides.map((sd) => {
     const p = { market: m, side: sd }; const on = p.market === pick.market && p.side === pick.side;
@@ -100,7 +102,7 @@ export function bigChart(api, g, { pick, range }) {
   const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.15, 1); lo = mid - half; hi = mid + half;
   const span = Math.max(1, S.to - S.from);
   const X = (t) => ((Math.min(Math.max(t, S.from), S.to) - S.from) / span) * 1000, Y = (v) => (1 - (v - lo) / (hi - lo)) * 300;
-  // a few minutes at the start of a window can predate the recording (windows are offered from 95% coverage)
+  // a window is offered only when the history covers all of it, so this shading is a safety net (clock skew)
   const gap = S.recordedFrom > S.from + span * 0.01 ? S.recordedFrom : null; const x0 = gap ? X(gap) : 0;
   const gapHtml = gap ? `<span class="bc-gap" style="width:${(x0 / 10).toFixed(2)}%"><em>${x0 > 180 ? `not recorded before ${esc(etFmt(gap, { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}` : ''}</em></span>` : '';
   const dense = moves > DENSE;
