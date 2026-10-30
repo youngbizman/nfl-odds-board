@@ -123,13 +123,19 @@ export class DraftKingsSource {
     if (!this.checkpoint) return;
     try {
       const { state, frames } = await this.checkpoint.load();
+      const logEnd = frames.reduce((m, f) => Math.max(m, f.seq || 0), 0);
+      this.seq = Math.max(this.seq, logEnd); // whatever happens below, new frames are numbered after the whole log
       if (!state) return;
+      if (state.site !== ONTARIO) { // refused: neither the board nor any frame logged after it is replayed, now or later
+        this.store.setSource(BOOK, { detail: `checkpoint from ${state.site || 'an unknown site'} refused (Ontario only)` });
+        return this.log('dk', `checkpoint from site ${state.site || 'unknown'} refused: Ontario only; starting from a fresh Ontario snapshot`);
+      }
       this.importState(state);
       const newer = frames.filter((f) => f.seq > state.seq).sort((a, b) => a.seq - b.seq);
       this.replaying = true;
       for (const f of newer) { this.onMessage(Buffer.from(f.frame), f.ts); this.seq = Math.max(this.seq, f.seq); }
       this.replaying = false;
-      this.seq = Math.max(this.seq, ...frames.map((f) => f.seq), 0);
+      this.seq = Math.max(this.seq, logEnd);
       this.store.setSource(BOOK, { lastSnapshotAt: state.savedAt, snapshotVia: 'checkpoint', detail: `restored ${state.quotes?.length ?? 0} prices from checkpoint + ${newer.length} frames` });
       this.log('dk', `restored board from checkpoint (${Math.round((Date.now() - state.savedAt) / 1000)} s old) + ${newer.length} frames`);
     } catch (e) { this.replaying = false; this.log('dk', `checkpoint restore failed: ${e.message}`); }
@@ -269,13 +275,13 @@ export class DraftKingsSource {
     const suspended = this.isSuspended(qid, s.marketId);
     const line = mk.market === 'moneyline' ? null : (s.points ?? lineFromId(s.id));
     let odds = parseAmerican(s.displayOdds?.american);
-    if (odds == null && suspended) odds = this.store.quotes.get(qid)?.odds ?? null; // closed without a price: keep the last one, greyed
+    if (odds == null && suspended) { const cur = this.store.quotes.get(qid); if (cur && (cur.line ?? null) === (line ?? null)) odds = cur.odds; } // closed without a price: keep the last one (same line only), greyed
     const changed = this.store.upsertQuote({ gameKey: ref.gameKey, market: ref.market, side, book: BOOK, line, odds, suspended, sourceTs }, now);
     if (changed && sourceTs) this.recordLag(ref, now - sourceTs);
     return ref;
   }
 
-  recordLag(ref, lag) { if (this.replaying) return; const g = this.store.games.get(ref.gameKey); (g?.status === 'live' ? this.metrics.dk.ingestLagLive : this.metrics.dk.ingestLagPregame).push(lag); this.metrics.dk.lastLagAt = Date.now(); }
+  recordLag(ref, lag) { if (this.replaying) return; const g = this.store.games.get(ref.gameKey); const live = g?.status === 'live'; (live ? this.metrics.dk.ingestLagLive : this.metrics.dk.ingestLagPregame).push(lag); this.metrics.dk[live ? 'lastLagAtLive' : 'lastLagAtPregame'] = Date.now(); }
 
   sideOf(market, sel, game) {
     if (market === 'total') return sel.outcomeType === 'Over' ? 'over' : sel.outcomeType === 'Under' ? 'under' : (/^over/i.test(sel.label) ? 'over' : /^under/i.test(sel.label) ? 'under' : null);

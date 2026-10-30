@@ -102,7 +102,8 @@ export class ExtrasStore extends EventEmitter {
     if (!row.name && r.name) row.name = r.name;
     const prev = row.offers[book]; const suspended = !!r.suspended;
     if (prev && prev.odds === r.odds && prev.suspended === suspended) { prev.seenAt = now; return false; }
-    row.offers[book] = { odds: r.odds, suspended, updatedAt: now, seenAt: now, prevOdds: prev ? prev.odds : null };
+    // prevOdds describes the last PRICE move: an open/suspended-only change keeps it
+    row.offers[book] = { odds: r.odds, suspended, updatedAt: now, seenAt: now, prevOdds: prev ? (prev.odds !== r.odds ? prev.odds : prev.prevOdds ?? null) : null };
     this.status[book].lastDataAt = now;
     this.emit('row', row);
     return true;

@@ -82,8 +82,14 @@ export class DraftKingsExtras {
 
   /** One FULL selection (snapshot or `add`): no flag = open. */
   applySel(ref, s, now) {
-    const r = dkExtraRow(ref.kind, ref.market, s); if (!r) return false;
-    const marketId = s.marketId ?? ref.market?.id; const closed = closedFlag(s) ?? false;
+    const closed = closedFlag(s) ?? false;
+    let r = dkExtraRow(ref.kind, ref.market, s);
+    if (!r && (ref.suspended || closed) && s.displayOdds?.american == null) { // closed without a price: keep the last one, greyed
+      const info = this.selIndex.get(s.id); const last = info && this.extras.rows.get(ExtrasStore.rowKey(info.gameKey, info.r))?.offers[BOOK]?.odds;
+      if (last != null) r = dkExtraRow(ref.kind, ref.market, { ...s, displayOdds: { american: String(last) } });
+    }
+    if (!r) return false;
+    const marketId = s.marketId ?? ref.market?.id;
     this.selIndex.set(s.id, { gameKey: ref.gameKey, marketId, closed, r: { kind: r.kind, subject: r.subject, name: r.name, line: r.line } });
     if (marketId != null) { if (!this.marketSels.has(marketId)) this.marketSels.set(marketId, new Set()); this.marketSels.get(marketId).add(s.id); }
     return this.extras.upsert(BOOK, ref.gameKey, { ...r, suspended: !!(ref.suspended || closed) }, now);
@@ -134,7 +140,12 @@ export class DraftKingsExtras {
       const id = typeof s === 'string' ? s : s?.id; const info = this.selIndex.get(id);
       if (info) { this.extras.drop(BOOK, ExtrasStore.rowKey(info.gameKey, info.r)); this.selIndex.delete(id); this.marketSels.get(info.marketId)?.delete(id); }
     }
-    for (const m of list(d.remove?.markets)) { const id = typeof m === 'string' ? m : m?.id; this.marketIndex.delete(id); }
+    // a market taken down: its offers go with it (like the main board), not left open until the next snapshot
+    for (const m of list(d.remove?.markets)) {
+      const id = typeof m === 'string' ? m : m?.id; this.marketIndex.delete(id);
+      for (const sid of this.marketSels.get(id) || []) { const info = this.selIndex.get(sid); if (info) { this.extras.drop(BOOK, ExtrasStore.rowKey(info.gameKey, info.r)); this.selIndex.delete(sid); } }
+      this.marketSels.delete(id);
+    }
     const ev = d.add?.markets?.length ? this.eventMap() : null;
     for (const m of list(d.add?.markets)) {
       const kind = DK_SUBCATS[m.subcategoryId ?? m.clientMetadata?.subCategoryId]; const gk = ev.get(String(m.eventId));

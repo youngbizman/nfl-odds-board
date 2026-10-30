@@ -151,3 +151,25 @@ test('more lines go stale with their book: quiet too long, or the main feed down
   assert.equal(x.status.fanduel.stale, true);
   assert.ok(x.holds(50).every((h) => h.a.book !== 'fanduel' && h.b.book !== 'fanduel'));
 });
+
+test('DraftKings more lines: a removed market takes its offers with it; a suspended selection with no price keeps its last price, greyed; a suspend keeps the last price move', () => {
+  const { x, dk, row } = setup();
+  const td = DK['12438'];
+  const sel = td.selections.find((s) => s.label === 'Derrick Henry' && td.markets.find((m) => m.id === s.marketId).marketType.name === 'Anytime Touchdown Scorer');
+  const henry = () => row('td', 'derrick-henry', null)?.offers.draftkings;
+  const frame = (d) => Buffer.from(JSON.stringify({ event: 'update', data: { data: d } }));
+  // a price move, then a suspend-only change: the offer still says it moved up from −230
+  dk.onMessage(frame({ change: { selections: [{ id: sel.id, displayOdds: { american: '−200' } }] } }), 1500);
+  dk.onMessage(frame({ change: { markets: [{ id: sel.marketId, isSuspended: true }] } }), 1600);
+  assert.equal(henry().prevOdds, -230, 'prevOdds still describes the price move');
+  dk.onMessage(frame({ change: { markets: [{ id: sel.marketId, isSuspended: false }] } }), 1700);
+  // suspended and re-sent without a price (snapshot): kept at its last price, greyed
+  const noPrice = { ...td, markets: td.markets.map((m) => (m.id === sel.marketId ? { ...m, isSuspended: true } : m)), selections: td.selections.map((s) => (s.id === sel.id ? { ...s, displayOdds: {} } : s)) };
+  dk.applySnapshot('12438', noPrice, 2000);
+  assert.equal(henry().odds, -200); assert.equal(henry().suspended, true);
+  // the market is taken down: DraftKings' offer goes, FanDuel's stays
+  dk.applySnapshot('12438', td, 3000);
+  dk.onMessage(frame({ remove: { markets: [sel.marketId] } }), 4000);
+  assert.equal(henry(), undefined);
+  assert.ok(row('td', 'derrick-henry', null).offers.fanduel);
+});

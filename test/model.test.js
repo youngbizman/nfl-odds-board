@@ -138,3 +138,9 @@ test('game day is the Toronto calendar day, daylight saving included', async () 
   const t = { key: 'A' }, u = { key: 'B' };
   assert.equal(leagueGameKey('ncaaf', t, u, '2026-10-02T04:30:00Z'), 'ncaaf:A@B:2026-10-02');
 });
+
+test('impossible American odds (0, between −100 and +100) are rejected, not ranked', async () => {
+  const { parseAmerican } = await import('../src/model.js');
+  for (const v of [0, '0', 50, '-99', '+99', 99.4]) assert.equal(parseAmerican(v), null, String(v));
+  assert.equal(parseAmerican(-100), -100); assert.equal(parseAmerican('−110'), -110); assert.equal(parseAmerican(150), 150);
+});

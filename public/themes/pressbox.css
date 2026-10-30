@@ -337,7 +337,7 @@ kbd { font:500 10px var(--font-meta); border:1px solid var(--border-control); bo
 
 /* the status bar condenses once it sticks; tap/click it for details */
 .feeds { cursor:pointer; }
-.sticky.is-stuck .feeds:not(.is-open) .feed p { display:none; }
+.sticky.is-stuck .feeds:not(.is-open) .feed p, .sticky.is-stuck .feeds:not(.is-open) .feed .latency { display:none; }
 .sticky.is-stuck .feeds:not(.is-open) { padding:6px 0 8px; }
 .sticky.is-stuck .feeds:not(.is-open) .freshness { margin-top:4px; }
 
@@ -363,7 +363,7 @@ html[data-density=compact] .kickoff-group { margin-top:6px; }
 @media(max-width:700px) {
   .density-field, .search kbd { display:none; }
   .help { left:16px; right:16px; top:56px; }
-  .feeds:not(.is-open) .feed p { display:none; }
+  .feeds:not(.is-open) .feed p, .feeds:not(.is-open) .feed .latency { display:none; }
   .feeds:not(.is-open) { padding:4px 0 8px; }
   .feed-head { display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline; }
   .status { display:inline; margin:0; }

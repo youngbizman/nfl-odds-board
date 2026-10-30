@@ -54,11 +54,11 @@ export function gameKey(away, home, startIso) {
 /** "+160" | "−192" (unicode minus) | -110 -> integer american odds */
 export function parseAmerican(v) {
   if (v == null || v === '') return null;
-  if (typeof v === 'number') return Math.round(v);
+  if (typeof v === 'number') { const n = Math.round(v); return Number.isFinite(n) && Math.abs(n) >= 100 ? n : null; }
   const s = String(v).replace('−', '-').replace('+', '').trim();
   if (/^ev(en)?$/i.test(s)) return 100; // "EVEN" = +100
-  const n = Number(s);
-  return Number.isFinite(n) ? Math.round(n) : null;
+  const n = Math.round(Number(s));
+  return Number.isFinite(n) && Math.abs(n) >= 100 ? n : null; // American odds are never between −100 and +100
 }
 
 export function americanToDecimal(a) {

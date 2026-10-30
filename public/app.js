@@ -313,7 +313,7 @@ function latency(book) {
 /** The same figures as words, for the feed panels of both designs. */
 function latencyText(book) {
   const L = latency(book); const B = book === 'draftkings' ? 'DraftKings' : 'FanDuel';
-  const pm = (x) => (x.pm != null ? `, clocks ±${x.pm} ms` : book === 'fanduel' && x === L.server ? ", FanDuel's clock (not synced)" : '');
+  const pm = (x) => (x.pm != null ? `, clocks ±${x.pm} ms` : book === 'fanduel' && x === L.server ? ", FanDuel's clock (not synced)" : ', clocks not synced yet');
   const fig = (x) => `${secs(x.p50)} (median of ${x.n}${pm(x)}${x.at ? `, last ${ago(x.at)}` : ''})`;
   const lines = [];
   if (L.server) lines.push(`${B} → our server ${fig(L.server)}`);
@@ -489,15 +489,18 @@ function pushHistory(q) {
 function applyBatch(b) {
   const now = serverNow(), local = Date.now(); const touched = new Set(); let structural = false;
   for (const g of b.games || []) { const prev = state.games.get(g.key); if (!prev || prev.status !== g.status) structural = true; state.games.set(g.key, { ...(prev || {}), ...g }); touched.add(g.key); }
-  for (const q of b.quotes || []) {
+  for (let q of b.quotes || []) {
     touched.add(q.gameKey);
     if (q.removed) { state.quotes.delete(q.id); structural = true; continue; }
-    if (!state.quotes.has(q.id)) structural = true;
+    const old = state.quotes.get(q.id); if (!old) structural = true;
+    // only open/suspended changed: keep the last price move (arrow, struck-through old price), and it is not a move
+    const availOnly = old && old.odds === q.odds && (old.line ?? null) === (q.line ?? null);
+    if (availOnly) q = { ...q, prevOdds: old.prevOdds, prevLine: old.prevLine };
     state.quotes.set(q.id, q); pushHistory(q);
-    const moved = (q.prevOdds != null && q.prevOdds !== q.odds) || (q.prevLine != null && q.prevLine !== q.line);
+    const moved = !availOnly && ((q.prevOdds != null && q.prevOdds !== q.odds) || (q.prevLine != null && q.prevLine !== q.line));
     if (moved) { state.changedAt.set(q.id, local); recordMove(q, local); }
     const pl = now - q.updatedAt; if (pl > -5000 && pl < 120000) { lat.pushLag[q.book]?.push(pl); lat.recent[q.book]?.push(pl); lat.at[q.book] = now; }
-    if (q.book === 'draftkings' && q.sourceTs && moved) { const e2e = now - q.sourceTs; if (e2e > -5000 && e2e < 600000) { const ph = state.games.get(q.gameKey)?.status === 'live' ? 'live' : 'pregame'; lat.endToEnd.draftkings[ph].push(e2e); lat.recent.e2e.push(e2e); lat.at.e2e = now; drawnTs.push(q.sourceTs); } }
+    if (q.book === 'draftkings' && q.sourceTs && moved) { const e2e = now - q.sourceTs; if (e2e > -5000 && e2e < 600000) { const ph = state.games.get(q.gameKey)?.status === 'live' ? 'live' : 'pregame'; lat.endToEnd.draftkings[ph].push(e2e); lat.recent.e2e.push(e2e); lat.at.e2e = now; if (!document.hidden) drawnTs.push(q.sourceTs); } }
   }
   for (const [book, s] of Object.entries(b.sources || {})) state.sources[book] = s;
   if (structural) theme.render();
@@ -505,12 +508,14 @@ function applyBatch(b) {
   // drop the previous-price history 8 s later
   for (const k of touched) setTimeout(() => theme.renderGame(k), 8100);
   // drawn: the frame after this render is on screen (rAF runs before that paint; the task after it, once it is done).
-  // A hidden tab paints nothing, so it records nothing.
-  if (drawnTs.length) { const ts = drawnTs.splice(0); requestAnimationFrame(() => setTimeout(() => {
+  // A hidden tab queues frames until it is shown again, so anything that crossed a hide/show is thrown away.
+  if (drawnTs.length) { const ts = drawnTs.splice(0); const v = visSeq; requestAnimationFrame(() => setTimeout(() => {
+    if (v !== visSeq || document.hidden) return;
     const t = serverNow(); for (const x of ts) { const d = t - x; if (d > -5000 && d < 600000) { lat.drawn.push(d); lat.recent.drawn.push(d); } } lat.at.drawn = t;
   }, 0)); }
 }
-const drawnTs = [];
+const drawnTs = []; let visSeq = 0;
+document.addEventListener('visibilitychange', () => { visSeq++; drawnTs.length = 0; });
 function recordMove(q, at) {
   const g = state.games.get(q.gameKey); if (!g) return;
   state.moves.unshift({ at, book: q.book, gameKey: q.gameKey, game: `${g.away.abbr} @ ${g.home.abbr}`, market: q.market, side: q.side,

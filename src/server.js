@@ -94,9 +94,10 @@ store.on('source', (s) => queue('sources', s, s.book));
 setInterval(() => store.refreshStaleness(STALE_MS), 1000);
 setInterval(() => { // live latency figures for the feed cards (ride the heartbeat below)
   // median, sample count, and when the latest sample was taken (live samples when there are any, else pregame)
-  const liveLag = metrics.dk.ingestLagLive.stats().count > 0;
+  // live figures while live games moved in the last 30 min, otherwise pregame; the age is that buffer's own latest sample
+  const liveLag = metrics.dk.ingestLagLive.stats().count > 0 && Date.now() - (metrics.dk.lastLagAtLive || 0) < 30 * 60_000;
   const dkLag = liveLag ? metrics.dk.ingestLagLive.stats() : metrics.dk.ingestLagPregame.stats();
-  Object.assign(store.sources.draftkings, { lagP50Ms: dkLag.p50 ?? null, lagCount: dkLag.count, lagPhase: dkLag.count ? (liveLag ? 'live' : 'pregame') : null, lagAt: metrics.dk.lastLagAt ?? null });
+  Object.assign(store.sources.draftkings, { lagP50Ms: dkLag.p50 ?? null, lagCount: dkLag.count, lagPhase: dkLag.count ? (liveLag ? 'live' : 'pregame') : null, lagAt: (liveLag ? metrics.dk.lastLagAtLive : metrics.dk.lastLagAtPregame) ?? null });
   store.sources.fanduel.freshP50Ms = metrics.fd.freshInterval.stats().p50 ?? null;
   const fdPush = metrics.fd.pushLag.stats();
   Object.assign(store.sources.fanduel, { pushLagP50Ms: fdPush.p50 ?? null, pushLagCount: fdPush.count, pushLagAt: metrics.fd.lastPushLagAt ?? null });

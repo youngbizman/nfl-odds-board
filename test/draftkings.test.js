@@ -361,3 +361,42 @@ test('durability: suspension survives a restart (checkpoint + replayed market-on
   assert.equal(jax(b.store, 'total', 'over').suspended, false);
   b.dk.stop();
 });
+
+test('a refused (non-Ontario) checkpoint never has its frames replayed, now or on a later restart', async () => {
+  const { MemoryCheckpoint } = await import('../src/checkpoint.js');
+  const cp = new MemoryCheckpoint();
+  // run 0: an old deployment on another site wrote a checkpoint and 3 frames (JAX moneyline +999)
+  const a = source({ checkpoint: cp });
+  a.dk.applySnapshot(SNAP, 1000); await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 3; i++) a.dk.onMessage(frame({ change: { selections: [{ id: '0ML84695689_1', displayOdds: { american: '+999' } }] } }), 2000 + i);
+  await new Promise((r) => setImmediate(r)); a.dk.stop();
+  const st = (await cp.load()).state; st.site = 'US-NJ-SB'; await cp.save(st);
+  // run 1: refused; fresh Ontario snapshot; one Ontario move; checkpoint saved
+  const b = source({ checkpoint: cp });
+  await b.dk.restore();
+  assert.equal(quotesOf(b.store, 'draftkings').length, 0, 'nothing from the refused checkpoint');
+  assert.ok(b.dk.seq >= 3, 'new frames are numbered after the whole old log');
+  b.dk.applySnapshot(SNAP, 5000); await new Promise((r) => setImmediate(r));
+  b.dk.onMessage(frame({ change: { selections: [{ id: '0ML84695689_1', displayOdds: { american: '−520' } }] } }), 6000);
+  await new Promise((r) => setImmediate(r)); b.dk.stop();
+  // run 2: the Ontario checkpoint + only the Ontario frame
+  const c = source({ checkpoint: cp });
+  await c.dk.restore();
+  assert.equal(jax(c.store, 'moneyline', 'home').odds, -520, 'the old site\'s +999 frames are not replayed');
+  c.dk.stop();
+});
+
+test('a suspended selection sent without a price keeps its last price only on the same line', () => {
+  const { store, dk } = source();
+  dk.applySnapshot(SNAP, 1000);
+  const snap = structuredClone(SNAP);
+  const m = snap.markets.find((x) => x.id === '2_84695689'); m.isSuspended = true;
+  const s = snap.selections.find((x) => x.id === '0HC84695689N1000_1');
+  delete s.displayOdds;                                   // same line, no price: last price kept, greyed
+  dk.applySnapshot(snap, 2000);
+  assert.equal(jax(store, 'spread', 'home').odds, -105); assert.equal(jax(store, 'spread', 'home').suspended, true);
+  s.id = '0HC84695689N1100_1'; s.points = -11;            // new line, no price: no made-up price at the new line
+  dk.applySnapshot(snap, 3000);
+  assert.equal(jax(store, 'spread', 'home').line, -11); assert.equal(jax(store, 'spread', 'home').odds, null);
+  dk.stop();
+});
