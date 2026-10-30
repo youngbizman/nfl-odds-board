@@ -20,9 +20,10 @@
   --unavailable: #616b76;
   --unavailable-bg: #edf0f2;
   --focus: #2555cb;
-  --font-ui: 'DM Sans', Arial, sans-serif;
-  --font-price: 'Space Grotesk', Arial, sans-serif;
-  --font-meta: 'IBM Plex Mono', monospace;
+  /* one calm family for everything (prices, labels, meta); digits line up through tabular numbers */
+  --font-ui: 'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-price: var(--font-ui);
+  --font-meta: var(--font-ui);
   --text-xs: 0.6875rem;
   --text-sm: 0.75rem;
   --text-base: 0.875rem;
@@ -645,3 +646,14 @@ html[data-scheme=dark] { --chart-fd:#3fd3c8; }
 .bc-ranges button:disabled { text-decoration:none; }
 /* search and the control beside it line up on a phone */
 @media(max-width:700px) { .toolbar { align-items:end; } .segment button { padding-left:6px; padding-right:6px; } }
+
+/* one font, numbers in columns */
+body, button, input, select, table { font-variant-numeric: tabular-nums; }
+
+/* feeds: state, last heard and the freshness bar at first sight; Details opens the rest */
+.feeds:not(.is-open) .feed p, .feeds:not(.is-open) .feed .latency { display:none; }
+.feed-more { border:0; background:none; padding:0; margin-left:4px; font:500 var(--text-xs) var(--font-ui); color:var(--accent); cursor:pointer; white-space:nowrap; }
+.feed-more:hover { text-decoration:underline; }
+.feeds:not(.is-open) .freshness { margin-top:6px; }
+.holds-head .holds-more { margin-left:auto; font-size:var(--text-sm); }
+.feed-right { display:inline-flex; gap:10px; align-items:baseline; margin-left:auto; }

@@ -38,7 +38,7 @@ function mount(r, a) {
     </header>
     <div class="help" id="help" hidden role="dialog" aria-label="Keyboard shortcuts">
       <strong>Keyboard</strong>
-      <dl><dt>/</dt><dd>find a team</dd><dt>1 2 3</dt><dd>best price · DraftKings · FanDuel</dd><dt>c</dt><dd>compact / comfortable</dd>
+      <dl><dt>/</dt><dd>find a team</dd><dt>1 2 3</dt><dd>best price · DraftKings · FanDuel</dd>
       <dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the game you are on</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl>
     </div>
     <section class="heading">
@@ -51,8 +51,6 @@ function mount(r, a) {
       <div class="field league-field"><span id="league-label">League</span><div class="segment" role="group" aria-labelledby="league-label" id="leagues"></div></div>
       <div class="field phase-field"><span id="phase-label">Show</span><div class="segment" role="group" aria-labelledby="phase-label">
         <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
-      <div class="field density-field"><span id="density-label">Density</span><div class="segment" role="group" aria-labelledby="density-label">
-        <button type="button" data-density="comfortable">Comfortable</button><button type="button" data-density="compact">Compact</button></div></div>
       <label class="field search"><span>Find a team <kbd>/</kbd></span><input id="search" type="search" autocomplete="off" placeholder="Search teams"></label>
       <div class="field format-field"><span id="format-label">Odds</span><div class="segment" role="group" aria-labelledby="format-label"><button type="button" data-format="american">American</button><button type="button" data-format="decimal">Decimal</button></div></div>
     </div>
@@ -73,14 +71,14 @@ function mount(r, a) {
   </div>`;
   el = { board: root.querySelector('#board'), feeds: root.querySelector('#feeds'), banner: root.querySelector('#connection-banner'), results: root.querySelector('#results'), wire: root.querySelector('#wire'),
     holds: root.querySelector('#holds'), help: root.querySelector('#help'), sticky: root.querySelector('.sticky') };
-  root.querySelectorAll('[data-density]').forEach((b) => b.addEventListener('click', () => api.set('density', b.dataset.density)));
   root.querySelector('#scheme-btn').addEventListener('click', () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'));
   root.querySelector('#help-btn').addEventListener('click', () => toggleHelp());
   // the status bar condenses once it sticks to the top; on a phone it stays one line until tapped
   observer = new IntersectionObserver(([e]) => el.sticky.classList.toggle('is-stuck', !e.isIntersecting), { threshold: 0 });
   observer.observe(root.querySelector('.sentinel'));
-  el.feeds.addEventListener('click', () => el.feeds.classList.toggle('is-open'));
+  el.feeds.addEventListener('click', () => { el.feeds.classList.toggle('is-open'); renderFeeds(); });
   el.holds.addEventListener('click', (e) => {
+    if (e.target.closest('[data-holds-more]')) { api.state.holdsMore = !api.state.holdsMore; return renderHolds(); }
     const t = e.target.closest('[data-goto]'); if (!t) return;
     const node = el.board.querySelector(`[data-game="${CSS.escape(t.dataset.goto)}"]`);
     if (!node) { api.set('phase', 'all'); api.set('search', ''); root.querySelector('#search').value = ''; }
@@ -250,14 +248,18 @@ function legTxt(g, market, o) {
   const line = market === 'moneyline' ? '' : market === 'total' ? api.fmtLine('total', o.side, o.line) : ` ${api.fmtLine('spread', o.side, o.line)}`;
   return `<span class="leg">${esc(who)}${esc(line)} <b>${esc(api.fmtOdds(o.odds))}</b> <span class="book ${B.cls}">${B.short}</span></span>`;
 }
+const HOLDS_MIN = 3, HOLDS_MAX = 9;
 function renderHolds() {
   if (!el.holds) return;
-  const main = api.tightest(6).map((t) => ({ ...t, alt: null }));
-  const alt = (api.state.extrasHolds || []).slice(0, 3).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: t.a, b: t.b, alt: t.kind })).filter((t) => t.game);
-  const items = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 6); // two rows of three: the strip keeps its own space
+  const main = api.tightest(HOLDS_MAX).map((t) => ({ ...t, alt: null }));
+  const alt = (api.state.extrasHolds || []).slice(0, HOLDS_MAX).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: t.a, b: t.b, alt: t.kind })).filter((t) => t.game);
+  // three by default (one row); "Show more" opens up to nine, "Show fewer" goes back to three
+  const all = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, HOLDS_MAX);
+  const more = !!api.state.holdsMore; const items = all.slice(0, more ? HOLDS_MAX : HOLDS_MIN);
+  const toggle = all.length > HOLDS_MIN ? `<button type="button" class="link-btn holds-more" data-holds-more aria-expanded="${more}">${more ? 'Show fewer' : `Show ${all.length - HOLDS_MIN} more`}</button>` : '';
   if (!items.length) { el.holds.innerHTML = ''; renderHolds.last = ''; return; }
   const arbs = items.filter((t) => t.hold < 0).length;
-  const html = `<div class="holds-head"><h2>Tightest markets.</h2><span>${arbs ? `<b class="arb-flag">${arbs} arbitrage${arbs > 1 ? 's' : ''} right now</b>` : 'Best price on each side, either book · lower hold = better for you'}</span></div>
+  const html = `<div class="holds-head"><h2>Tightest markets.</h2><span>${arbs ? `<b class="arb-flag">${arbs} arbitrage${arbs > 1 ? 's' : ''} right now</b>` : 'Best price on each side, either book · lower hold = better for you'}</span>${toggle}</div>
     <ul class="holds-list">${items.map((t) => {
       const g = t.game; const name = t.alt ? (t.alt === 'alt-spread' ? 'Alt spread' : 'Alt total') : { spread: 'Spread', total: 'Total', moneyline: 'Moneyline' }[t.market];
       const side = (o, fallback) => ({ ...o, side: o.subject || o.side || fallback });
@@ -356,7 +358,6 @@ function render() {
   root.querySelectorAll('.view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === api.settings.view)));
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
   root.querySelector('#leagues').innerHTML = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
-  root.querySelectorAll('[data-density]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.density === api.settings.density)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
   root.querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === api.settings.format)));
   root.querySelector('.app').classList.toggle('on-gamepage', !!api.settings.game);
@@ -383,6 +384,9 @@ function renderGame(key) {
   const sc = node.querySelector('.x-scroll'); if (sc && top) sc.scrollTop = top;
 }
 function renderFeeds() {
+  // at first sight: each book's state, last heard and its freshness bar; "Details" opens the rest (both cards)
+  const open = el.feeds.classList.contains('is-open');
+  const more = `<button type="button" class="feed-more" aria-expanded="${open}">${open ? 'Less ▴' : 'Details ▾'}</button>`;
   el.feeds.innerHTML = ['draftkings', 'fanduel'].map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
     const status = { live: '● Live', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
@@ -390,7 +394,7 @@ function renderFeeds() {
     const how = b === 'draftkings' ? 'push over WebSocket' : L.push ? `push over WebSocket, checked by polling every ${api.secs(L.beatMs)}` : `polled every ${api.secs(L.beatMs)}${L.interleave ? ' from 2 IPs' : ''}`;
     const T = api.latencyText(b);
     const timing = f === 'connecting' ? '<li>waiting for the first data</li>' : f !== 'live' ? '<li>timing unavailable while the feed is down</li>' : T.lines.map((l) => `<li>${esc(l)}</li>`).join('');
-    return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span></div>
+    return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-right"><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span>${more}</span></div>
       <p>${esc(s.region || 'Ontario')} · ${esc(how)}</p>
       <ul class="latency" aria-label="${api.BOOK[b].label} latency, medians of measured samples">${timing}</ul>
       <p class="last-move" data-age-ts="${s.lastChangeAt || ''}" data-age-prefix="Last price move ">Last price move ${esc(api.ago(s.lastChangeAt))}</p>
@@ -439,6 +443,6 @@ function tick() {
   if (sig !== tick.sig) { tick.sig = sig; render(); }
 }
 
-export default { id: 'pressbox', name: 'Pressbox', short: 'Pressbox', css: '/themes/pressbox.css',
-  fonts: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap',
+export default { id: 'pressbox', name: 'Comfortable', short: 'Comfortable', css: '/themes/pressbox.css',
+  fonts: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
   mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, renderHolds, focusSearch, toggleHelp, closeHelp, tick };

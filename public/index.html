@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- the default design's styles load with the page, not after the script runs; ?theme=grid swaps them before they are used -->
 <link id="theme-css" rel="stylesheet" href="/themes/pressbox.css">
-<link id="theme-fonts" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" media="print">
-<script>(() => { const f = document.getElementById('theme-fonts'); if (/[?&]theme=grid\b/.test(location.search)) { document.getElementById('theme-css').href = '/themes/grid.css'; f.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap'; } const on = () => { f.media = 'all'; }; f.addEventListener('load', on); if (f.sheet) on(); setTimeout(on, 3000); })();</script>
+<link id="theme-fonts" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print">
+<script>(() => { const f = document.getElementById('theme-fonts'); if (/[?&]theme=grid\b/.test(location.search)) { document.getElementById('theme-css').href = '/themes/grid.css'; } const on = () => { f.media = 'all'; }; f.addEventListener('load', on); if (f.sheet) on(); setTimeout(on, 3000); })();</script>
 <link rel="modulepreload" href="/app.js">
 <link rel="modulepreload" href="/lib/model.js">
 <link rel="modulepreload" href="/themes/pressbox.js">

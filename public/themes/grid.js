@@ -33,7 +33,7 @@ function mount(r, a) {
     <div class="g-help" id="g-help" hidden role="dialog" aria-label="Keyboard shortcuts"><b>Keyboard</b>
       <dl><dt>/</dt><dd>search</dd><dt>1 2 3</dt><dd>best · DraftKings · FanDuel</dd><dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the focused game</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl></div>
     <div id="g-banner" class="g-banner" hidden></div>
-    <section class="g-feeds-panel" aria-label="Feeds"><h2>Feeds <span class="g-hint">live health of both books and of this page's stream</span></h2><div id="g-feeds"></div></section>
+    <section class="g-feeds-panel" aria-label="Feeds"><h2>Feeds <span class="g-hint">live health of both books and of this page's stream</span><button type="button" class="g-link g-feeds-more" id="g-feeds-more" aria-expanded="false">▾ details</button></h2><div id="g-feeds"></div></section>
     <section class="g-panels" aria-label="Status">
       <div class="g-panel"><h2>Tightest markets <span class="g-hint">hold at the best price per side · below 0 = arbitrage</span></h2><div id="g-holds"></div></div>
       <div class="g-panel"><h2>Wire <span class="g-hint">latest moves</span></h2><div id="g-wire"></div></div>
@@ -69,7 +69,12 @@ function mount(r, a) {
     if (e.target.matches('[data-ladder-select]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { ladder: e.target.value });
   });
   el.table.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('td[data-market], td[data-open-game]')) { e.preventDefault(); onTableClick(e); } });
-  el.holds.addEventListener('click', (e) => { const t = e.target.closest('[data-goto]'); if (t) goTo(t.dataset.goto, t.dataset.alt); });
+  // feeds: state, last heard and freshness at first sight; "details" shows mode, latency, snapshot and counts
+  root.querySelector('#g-feeds-more').addEventListener('click', (e) => {
+    const p = e.currentTarget.closest('.g-feeds-panel'); const open = !p.classList.contains('is-open');
+    p.classList.toggle('is-open', open); e.currentTarget.setAttribute('aria-expanded', String(open)); e.currentTarget.textContent = open ? '▴ less' : '▾ details';
+  });
+  el.holds.addEventListener('click', (e) => { if (e.target.closest('[data-holds-more]')) { api.state.holdsMore = !api.state.holdsMore; return renderHolds(); } const t = e.target.closest('[data-goto]'); if (t) goTo(t.dataset.goto, t.dataset.alt); });
 }
 function unmount() { root.innerHTML = ''; }
 function focusSearch() { const i = root.querySelector('#g-search'); i.focus(); i.select(); }
@@ -307,12 +312,12 @@ function renderFeeds() {
     const lat = f !== 'live' ? '—' : T.short;
     const mode = b === 'draftkings' ? 'ws push' : `${L.push ? 'ws push + ' : ''}poll ${api.secs(L.beatMs)}${L.interleave ? ' · 2 IPs' : ''}`;
     const snap = s.lastSnapshotAt ? `${s.snapshotVia || 'direct'} · <span data-age-ts="${s.lastSnapshotAt}">${esc(api.ago(s.lastSnapshotAt))}</span>` : '—';
-    return `<tr class="f-${f}"><th><span class="g-bk g-${api.BOOK[b].cls}"></span>${api.BOOK[b].label}</th><td class="st"><i class="dot"></i>${esc(f)}</td><td>${esc(mode)}</td>
-      <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td class="big" title="${esc(f === 'live' ? T.title : '')}">${esc(lat)}${f === 'live' ? `<small class="lat-n">${esc(latBits(api, T.L))}</small>` : ''}</td><td>${snap}</td><td class="num">${prices[b]}</td><td class="num">${moves[b] ?? 0}</td><td class="num">${s.reconnects ?? 0}</td>
+    return `<tr class="f-${f}"><th><span class="g-bk g-${api.BOOK[b].cls}"></span>${api.BOOK[b].label}</th><td class="st"><i class="dot"></i>${esc(f)}</td><td class="xd">${esc(mode)}</td>
+      <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td class="big xd" title="${esc(f === 'live' ? T.title : '')}">${esc(lat)}${f === 'live' ? `<small class="lat-n">${esc(latBits(api, T.L))}</small>` : ''}</td><td class="xd">${snap}</td><td class="num xd">${prices[b]}</td><td class="num xd">${moves[b] ?? 0}</td><td class="num xd">${s.reconnects ?? 0}</td>
       <td class="fr"><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
-  el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th>Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th title="Medians of measured samples only: book → our server, and book → this page (DraftKings stamps every change). Point at a cell for sample counts, age and clock error.">Latency</th><th title="Full re-download that double-checks the stream">Snapshot</th><th class="num">Prices</th><th class="num" title="Price moves seen since this page opened">Moves</th><th class="num">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
-    <tr class="f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : api.state.everConnected ? 'reconnecting' : 'connecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
+  el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th class="xd">Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th class="xd" title="Medians of measured samples only: book → our server, and book → this page (DraftKings stamps every change). Point at a cell for sample counts, age and clock error.">Latency</th><th class="xd" title="Full re-download that double-checks the stream">Snapshot</th><th class="num xd">Prices</th><th class="num xd" title="Price moves seen since this page opened">Moves</th><th class="num xd">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
+    <tr class="xd f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : api.state.everConnected ? 'reconnecting' : 'connecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
 }
 function renderBanner() {
   const st = api.state; const b = el.banner;
@@ -334,12 +339,16 @@ function renderWire() {
   }).join('')}</table>` : `<p class="g-note">${api.state.everConnected ? 'No price moves since this page opened. Pregame lines can sit still for minutes; live games move constantly.' : 'Waiting for the first prices…'}</p>`;
 }
 function renderHolds() {
-  const main = api.tightest(6).map((t) => ({ ...t, alt: null }));
-  const alt = (api.state.extrasHolds || []).slice(0, 3).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: { ...t.a, side: t.a.subject }, b: { ...t.b, side: t.b.subject }, alt: t.kind })).filter((t) => t.game);
-  const items = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 6);
+  const main = api.tightest(9).map((t) => ({ ...t, alt: null }));
+  const alt = (api.state.extrasHolds || []).slice(0, 9).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: { ...t.a, side: t.a.subject }, b: { ...t.b, side: t.b.subject }, alt: t.kind })).filter((t) => t.game);
+  // three by default; "more" opens up to nine, "fewer" goes back to three (the same choice as the other design)
+  const all = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 9);
+  const more = !!api.state.holdsMore; const items = all.slice(0, more ? 9 : 3);
+  const toggle = all.length > 3 ? `<button type="button" class="g-link g-holds-more" data-holds-more aria-expanded="${more}">${more ? '▴ fewer' : `▾ ${all.length - 3} more`}</button>` : '';
   const leg = (g, m, o) => `${m === 'total' ? `${o.side === 'over' ? 'o' : 'u'}${o.line}` : `${g[o.side]?.abbr ?? ''}${m === 'spread' ? ` ${api.fmtLine('spread', o.side, o.line)}` : ''}`} <b>${esc(api.fmtOdds(o.odds))}</b> <span class="mut">${api.BOOK[o.book].short}</span>`;
   const html = items.length ? `<table class="g-pt g-holdt">${items.map((t) => `<tr class="${t.hold < 0 ? 'arb' : ''}" data-goto="${esc(t.game.key)}"${t.alt ? ` data-alt="${t.alt}"` : ''} title="Jump to the game"><th>${esc(t.game.away.abbr)}@${esc(t.game.home.abbr)}</th><td>${t.alt ? (t.alt === 'alt-spread' ? 'alt SP' : 'alt TOT') : SHORT[t.market]}</td><td class="mono">${leg(t.game, t.market, t.a)} / ${leg(t.game, t.market, t.b)}</td><td class="h">${t.hold < 0 ? 'ARB ' : ''}${pct(t.hold)}</td></tr>`).join('')}</table>` : '<p class="g-note">Waiting for prices.</p>';
-  if (html !== renderHolds.last) { renderHolds.last = html; el.holds.innerHTML = html; }
+  const out = html + toggle;
+  if (out !== renderHolds.last) { renderHolds.last = out; el.holds.innerHTML = out; }
 }
 function tick() {
   for (const n of root.querySelectorAll('[data-age-ts]')) n.textContent = api.ago(Number(n.dataset.ageTs) || null);
@@ -352,5 +361,5 @@ function tick() {
 }
 
 export default { id: 'grid', name: 'Grid (engineering)', short: 'Engineering', css: '/themes/grid.css',
-  fonts: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap',
+  fonts: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
   mount, unmount, render, renderGame, renderFeeds, renderBanner, renderWire, renderExtras, renderExtrasToggles, renderHolds, focusSearch, toggleHelp, closeHelp, tick };

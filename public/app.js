@@ -25,7 +25,7 @@ const settings = {
   // The page always opens light, in the first design. Another design or dark mode is a choice that lives in the link
   // (?theme=grid, ?scheme=dark), so a reload keeps it but a fresh visit never starts dark or in the engineering view.
   theme: THEMES.some((t) => t.id === qs.get('theme')) ? qs.get('theme') : THEMES[0].id,
-  density: keep.get('density', 'comfortable'),                      // comfortable | compact
+  density: 'comfortable',                                            // one density: the two designs are the choice
   scheme: qs.get('scheme') === 'dark' ? 'dark' : 'light',          // light (default) | dark
 };
 try { localStorage.removeItem('board.theme'); localStorage.removeItem('board.scheme'); } catch {} // older versions remembered these
@@ -376,7 +376,7 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   setExtras(gk, patch) { const x = state.extras.get(gk); if (!x) return; Object.assign(x, patch); theme.renderExtras(gk); },
   set(key, value) {
     settings[key] = value;
-    if (['format', 'density'].includes(key)) keep.set(key, value);
+    if (key === 'format') keep.set(key, value);
     if (key === 'density' || key === 'scheme') applyLook();
     if (key === 'scheme') setParam('scheme', value, 'light');
     if (key === 'view') setParam('view', value, 'best');
@@ -411,7 +411,6 @@ document.addEventListener('keydown', (e) => {
   const act = {
     '/': () => theme.focusSearch?.(),
     1: () => api.set('view', 'best'), 2: () => api.set('view', 'draftkings'), 3: () => api.set('view', 'fanduel'),
-    c: () => api.set('density', settings.density === 'compact' ? 'comfortable' : 'compact'),
     d: () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'),
     s: () => { const gk = document.activeElement?.closest?.('[data-game]')?.dataset.game; if (gk) api.toggleStar(gk); },
     '?': () => theme.toggleHelp?.(),

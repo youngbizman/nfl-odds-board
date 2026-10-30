@@ -20,14 +20,14 @@ What is on the page, beyond the board itself:
 * **Who wins, at a glance** — the winning cell takes the winning book's colour (DraftKings purple, FanDuel teal) and
   shows the edge in cents (`+8¢`: −192 vs −200).
 * **Hold and arbitrage** — every game shows the hold per market at the best price on each side (either book), and a
-  *Tightest markets* strip shows the **6** lowest holds across the board (two rows of three; three on a phone), game
-  lines and alt lines. A negative hold means
+  *Tightest markets* strip shows the **3** lowest holds across the board (*Show more* opens up to 9, *Show fewer* goes
+  back to 3), game lines and alt lines. A negative hold means
   backing both sides at those two prices guarantees a profit; the strip flags it as an arbitrage. Click a card to jump
   to the game. (`bestHold()` in `src/model.js`, tested.)
-* **Star games** to pin them to the top (kept in this browser). **Compact** density roughly doubles the games per
-  screen. **Dark mode** follows the system. The status bar condenses to one line once it sticks (and on phones);
-  click it for details. Kickoff countdowns on every slot.
-* **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `c` compact · `d` dark · `s` star the focused
+* **Star games** to pin them to the top (kept in this browser). **Dark mode** follows the system. The feed status
+  shows each book's state, last message and freshness bar at first sight; *Details* opens the rest (how it is read,
+  measured latency, last price move). Kickoff countdowns on every slot.
+* **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `d` dark · `s` star the focused
   game · `Enter` chart the focused price · `?` help.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price stands out** — a strong green/red flash, then for 8 s a thick green (odds up) or red (odds down) bar,
@@ -54,14 +54,14 @@ What is on the page, beyond the board itself:
 * Games grouped by kickoff slot, live games first; the single-book views show "updated N s ago" on every number.
 * Team search, Live/Pregame filter, American or decimal odds (decimal to 3 places so −340 vs −350 stays visible).
 * **Two designs, one switch.** *Design* in the header (remembered; shareable as `?theme=grid` / `?theme=pressbox`):
-  * **Pressbox** — the readable board described above.
+  * **Comfortable** — the readable board described above.
   * **Grid (engineering)** — everything on one screen, spreadsheet-dense: each game is two rows; *Best available*,
     *DraftKings* and *FanDuel* columns side by side (the best cell in dark, the winning book's cell starred, the edge in
     cents); per row the **no-vig fair win %** (both books de-vigged on the same line and averaged) and the **EV** of the
     best price against it; per game the **hold** per market and a 48 h sparkline; sortable by kickoff, hold or EV; feed
     health (state, mode, data age, latency, freshness), tightest markets and the wire in panels on top; alt lines and
-    props open as a row inside the table. Monospaced numbers, colour only where it means something; light and dark.
-  Every design only draws; the rules (which price wins, what is stale, fair line, hold) live in one tested place, so
+    props open as a row inside the table. Numbers in aligned columns, colour only where it means something; light and dark.
+  Both designs use one calm typeface (Inter) with digits that line up. Every design only draws; the rules (which price wins, what is stale, fair line, hold) live in one tested place, so
   switching design can never change a number.
 
 The scraping is read-only and login-free: the same public odds endpoints the sites' own pages call, at or below

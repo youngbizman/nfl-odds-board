@@ -6,7 +6,7 @@
   --best:#132a4a; --best-text:#ffffff; --best-muted:#a9b8cf; --tie:#3c4a5e;
   --win:#dceafe; --star:#e0a100; --dk:#6b4fa0; --fd:#1f7a8c;
   --up:#0f7b45; --up-bg:#dcf3e6; --down:#b42335; --down-bg:#fbe3e6; --warn:#946200; --warn-bg:#fff4d6; --arb:#0f7b45; --arb-bg:#e3f6ea;
-  --font:'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; --mono:'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --font:'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; --mono:var(--font); /* one family; digits line up via tabular numbers */
 }
 html[data-scheme=dark] {
   color-scheme:dark;
@@ -474,3 +474,11 @@ html[data-scheme=dark] { --chart-fd:#3fd3c8; }
 @media (max-width:1600px) { .g-ed-key { display:none; } }
 @media (hover:none) { .g-search input::placeholder { color:transparent; } .g-esc { display:none; } }
 @media (max-width:700px) { .g-feedt th, .g-feedt td { white-space:normal; } }
+
+/* one font, numbers in columns */
+body, button, input, select, table { font-variant-numeric: tabular-nums; }
+
+/* feeds: state, last heard and freshness at first sight; "details" opens the rest */
+.g-feeds-panel:not(.is-open) .g-feedt .xd { display:none; }
+.g-feeds-more { margin-left:10px; font:500 11px var(--font); letter-spacing:0; text-transform:none; }
+.g-holds-more { display:block; margin-top:6px; font-size:11px; text-decoration:none; }
