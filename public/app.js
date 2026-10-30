@@ -202,8 +202,9 @@ function openGame(key, { push = true } = {}) {
   settings.game = key; state.gameHistory = null;
   if (push) settings.range = null; // each game opens on its own default window
   pendingSlug = null; writeUrl({ push });
-  // its alt lines and props open by themselves on its page (NFL)
-  if (state.extrasSummary[key] && !state.extras.has(key)) toggleExtras(key);
+  // its alt lines and props open by themselves on its page (NFL), unless the viewer closed them on this visit
+  if (push) closedExtras.delete(key);
+  autoOpenExtras(key);
   loadGameHistory(key); theme.render(); window.scrollTo({ top: 0 });
 }
 function closeGame({ push = true } = {}) {
@@ -229,8 +230,13 @@ const chartPick = (gk) => state.chartPick.get(gk) || { market: 'moneyline', side
 const KIND_ORDER = ['alt-spread', 'alt-total', 'td', 'pass-yds', 'rush-yds', 'rec-yds', 'receptions'];
 async function loadExtrasSummary() {
   try { const r = await (await fetch('/api/extras/summary', { cache: 'no-store' })).json(); state.extrasSummary = r.games || {}; state.extrasKinds = r.kinds || {}; state.extrasHolds = r.holds || []; theme.renderExtrasToggles?.(); theme.renderHolds?.(); } catch {}
-  if (settings.game && state.extrasSummary[settings.game] && !state.extras.has(settings.game)) toggleExtras(settings.game); // a game page opened from a link
+  if (settings.game) autoOpenExtras(settings.game); // a game page opened from a link
 }
+/** "More lines" the viewer closed stay closed: the minute refresh and reconnects only reopen what nobody closed. */
+const closedExtras = new Set();
+function autoOpenExtras(gk) { if (state.extrasSummary[gk] && !state.extras.has(gk) && !closedExtras.has(gk)) toggleExtras(gk); }
+/** The viewer's own open / close (the button); remembers a close for this game page. */
+function userToggleExtras(gk) { if (state.extras.has(gk)) closedExtras.add(gk); else closedExtras.delete(gk); toggleExtras(gk); }
 function toggleExtras(gk) {
   const cur = state.extras.get(gk);
   if (cur) { cur.es.close(); clearInterval(cur.watch); state.extras.delete(gk); theme.renderGame(gk); return; }
@@ -452,7 +458,7 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   isStarred: (gk) => starred.has(gk),
   toggleStar(gk) { starred.has(gk) ? starred.delete(gk) : starred.add(gk); keep.set('starred', JSON.stringify([...starred])); theme.render(); },
   pickChart(gk, market, side) { state.chartPick.set(gk, { market, side }); theme.renderGame(gk); },
-  toggleExtras, extrasView, extrasOpen: (gk) => state.extras.has(gk), extrasCount: (gk) => state.extrasSummary[gk] || null,
+  toggleExtras: userToggleExtras, extrasView, extrasOpen: (gk) => state.extras.has(gk), extrasCount: (gk) => state.extrasSummary[gk] || null,
   setExtras(gk, patch) { const x = state.extras.get(gk); if (!x) return; Object.assign(x, patch); theme.renderExtras(gk); },
   set(key, value) {
     settings[key] = value;
@@ -558,7 +564,7 @@ function connect() {
     state.sources = s.sources; if (s.config) state.config = s.config; if (s.leagues?.length) state.leagues = s.leagues;
     state.connected = true; state.everConnected = true; state.lostSince = null; state.switching = false;
     resolveGameLink(); writeUrl();
-    if (settings.game && state.extrasSummary[settings.game] && !state.extras.has(settings.game)) toggleExtras(settings.game);
+    if (settings.game) autoOpenExtras(settings.game);
     theme.render();
     loadHistory();
     if (settings.game && !state.gameHistory) { if (state.games.has(settings.game)) loadGameHistory(settings.game); }

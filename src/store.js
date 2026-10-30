@@ -6,6 +6,8 @@ import { BOOKS } from './model.js';
 const HISTORY_KEEP_MS = 8 * 24 * 3600_000; // price history kept per quote (movement charts go back up to a week)
 const HISTORY_MAX = 5000;                   // and at most this many points per quote
 
+const KICKOFF_ORDER = ['draftkings', 'fanduel'];
+
 export class BoardStore extends EventEmitter {
   constructor() {
     super();
@@ -25,6 +27,11 @@ export class BoardStore extends EventEmitter {
   upsertGame(g) {
     const prev = this.games.get(g.key);
     const next = prev ? { ...prev, ...g, books: { ...prev.books, ...g.books } } : { ...g, books: { ...g.books } };
+    // Kickoff: each book's own time is kept, and one rule picks the shown one, so it never flips between books.
+    // FanDuel lists the market opening a minute after kickoff (1:01 for a 1:00 game, 4:26 for 4:25), so DraftKings'
+    // time wins when both list the game.
+    for (const b of Object.keys(g.books || {})) if (g.start) next.books[b] = { ...next.books[b], start: g.start };
+    next.start = KICKOFF_ORDER.map((b) => next.books[b]?.start).find(Boolean) || g.start || prev?.start;
     // status: live if any book says live, otherwise pregame; never downgrade live -> pregame from a book that lacks the flag
     const anyLive = Object.values(next.books).some((b) => b?.live);
     next.status = anyLive ? 'live' : (next.status || 'pregame');

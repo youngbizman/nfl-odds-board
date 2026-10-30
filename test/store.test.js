@@ -63,3 +63,15 @@ test('price history: one point per real change, kept across restarts, and charte
   s2.upsertQuote(q(+100, -3.5), t0 + 53 * H);
   assert.equal(s2.history.get(id).length, 3);
 });
+
+test('kickoff time does not flip between books: DraftKings\' time wins, FanDuel\'s is used only alone', () => {
+  const s = new BoardStore(); const key = 'ARI@DAL:2026-11-01';
+  s.upsertGame({ key, start: '2026-11-01T18:01:00.000Z', books: { fanduel: { eventId: 'f1', live: false } } });
+  assert.equal(s.games.get(key).start, '2026-11-01T18:01:00.000Z');             // only FanDuel so far
+  s.upsertGame({ key, start: '2026-11-01T18:00:00.000Z', books: { draftkings: { eventId: 'd1', live: false } } });
+  assert.equal(s.games.get(key).start, '2026-11-01T18:00:00.000Z');
+  assert.equal(s.upsertGame({ key, start: '2026-11-01T18:01:00.000Z', books: { fanduel: { eventId: 'f1', live: false } } }), false); // FanDuel re-snapshot: no change
+  assert.equal(s.games.get(key).start, '2026-11-01T18:00:00.000Z');
+  s.upsertGame({ key, books: { fanduel: { eventId: 'f1', live: true } } });      // a live flag without a time keeps it
+  assert.equal(s.games.get(key).start, '2026-11-01T18:00:00.000Z');
+});

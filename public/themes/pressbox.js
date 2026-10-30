@@ -137,7 +137,7 @@ function priceCell(g, market, side, idx) {
     const off = q.suspended || q.stale;
     return `${head(`${stateClass(ch)}${off ? ' is-partial' : ''}`, q)}<div class="quote${q.stale ? ' is-stale' : ''}"><span class="line">${esc(api.fmtLine(market, side, q.line))}</span><strong class="odds">${esc(api.fmtOdds(q.odds))}</strong>${changeHtml(q, ch)}</div>
       <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span>${otherBadge(q)}</div>${lineNotice(q, ch)}
-      <div class="price-age" data-age-ts="${q.updatedAt}" data-age-prefix="updated ">updated ${esc(api.ago(q.updatedAt))}</div></div>`;
+      <div class="price-age" data-age-ts="${q.updatedAt}" data-age-prefix="price last changed ">price last changed ${esc(api.ago(q.updatedAt))}</div></div>`;
   }
 
   const { cmp, dk, fd } = c;
@@ -363,7 +363,7 @@ function renderFeeds() {
     return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-right"><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span>${more}</span></div>
       <p>${esc(s.region || 'Ontario')} · ${esc(how)}</p>
       <ul class="latency" aria-label="${api.BOOK[b].label} latency, medians of measured samples">${timing}</ul>
-      <p class="last-move" data-age-ts="${s.lastChangeAt || ''}" data-age-prefix="Last price move ">Last price move ${esc(api.ago(s.lastChangeAt))}</p>
+      <p class="last-move" data-age-ts="${s.lastChangeAt || ''}" data-age-prefix="Prices last changed ">Prices last changed ${esc(api.ago(s.lastChangeAt))}</p>
       <div class="freshness" role="progressbar" aria-label="${api.BOOK[b].label} data age within its stale limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(fr.fill * 100)}"><span data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(1)}%"></span></div></article>`;
   }).join('');
 }
