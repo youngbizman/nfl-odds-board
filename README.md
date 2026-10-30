@@ -478,7 +478,7 @@ plus dark mode and the in-page league switch — and fails on any script or cons
 sideways scrolling on a phone, plus every league's game page, opening a game from its chart, and inner scroll boxes.
 Every address it lands on must be a plain one (no `#`, no `%`-codes, no `?game=`), every tab title must name the page,
 Back/Forward must move between a game and the list, old links must land on the plain address, and unknown pages must 404.
-Fri Oct 30 on the deployment, from a GitHub machine: **32/32 clean**, first prices on screen median 0.37 s (0.3–1.0 s;
+Fri Oct 30 12:33 pm on the deployment (068b99c, plain addresses and all): **33/33 clean**. Earlier that morning, from a GitHub machine: 32/32 clean, first prices on screen median 0.37 s (0.3–1.0 s;
 the run's very first page 1.7 s). The same morning every game-line price on the board matched both books' own APIs,
 open/suspended state included: NFL 156 + 168, college 378 + 695, CFL 12 + 12 (DraftKings + FanDuel), 0 different.
 
