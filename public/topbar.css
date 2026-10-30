@@ -1,43 +1,67 @@
-/* The top bar, shared by both designs (public/topbar.js). Its own colours, so it looks the same in both. */
+/* The top bar, shared by both designs (public/topbar.js): the original Pressbox header. Its own colours and sizes,
+   so it looks exactly the same in both designs. */
 .tb {
-  --tb-text:#18202b; --tb-muted:#5f6b78; --tb-line:#c9d0d9; --tb-soft:#f1f4f8; --tb-accent:#1f56c8; --tb-on:#ffffff; --tb-bg:#ffffff;
+  --tb-surface:#ffffff; --tb-text:#202a35; --tb-muted:#5b6673; --tb-border:#d5dce1; --tb-control:#778492;
+  --tb-accent:#2555cb; --tb-accent-hover:#1d43a2; --tb-soft:#edf2fc;
   font-family:'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; font-variant-numeric:tabular-nums; color:var(--tb-text);
-  display:flex; flex-direction:column; gap:10px; padding:4px 0 12px; margin-bottom:14px; border-bottom:1px solid var(--tb-line);
+  margin-bottom:6px;
 }
-html[data-scheme=dark] .tb { --tb-text:#e3e9f0; --tb-muted:#9aa6b3; --tb-line:#33404e; --tb-soft:#18212b; --tb-accent:#3f7ff0; --tb-on:#ffffff; --tb-bg:#0f151c; }
-.tb .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
-.tb-row { display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; }
-.tb-brand { display:flex; align-items:baseline; gap:10px; margin-right:auto; white-space:nowrap; min-width:0; }
-.tb-logo { width:14px; height:14px; align-self:center; border-radius:3px; background:linear-gradient(135deg, var(--tb-accent) 0 50%, var(--tb-text) 50%); }
-.tb-brand b { font-size:16px; font-weight:700; letter-spacing:-.01em; }
-.tb-sub { font-size:12px; color:var(--tb-muted); overflow:hidden; text-overflow:ellipsis; }
-.tb-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-.tb-seg { display:inline-flex; border:1px solid var(--tb-line); border-radius:7px; overflow:hidden; background:var(--tb-bg); }
-.tb-seg button { border:0; border-right:1px solid var(--tb-line); background:transparent; height:30px; padding:0 11px; font-family:inherit; font-size:12.5px; font-weight:500; line-height:1; color:var(--tb-muted); white-space:nowrap; cursor:pointer; }
-.tb-seg button:last-child { border-right:0; }
-.tb-seg button:hover { color:var(--tb-text); background:var(--tb-soft); }
-.tb-seg button[aria-pressed=true] { background:var(--tb-accent); color:var(--tb-on); font-weight:600; }
-.tb-seg button small { font-size:11px; font-weight:500; margin-left:3px; opacity:.75; }
-.tb-design button { padding:0 13px; font-weight:600; }
-.tb-search input { width:190px; height:32px; padding:4px 11px; border:1px solid var(--tb-line); border-radius:7px; background:var(--tb-bg); color:var(--tb-text); font-family:inherit; font-size:13px; font-weight:400; }
-.tb-search input::placeholder { color:var(--tb-muted); }
-.tb-more { display:contents; }
-.tb-filters { display:none; }
-.tb-icons { display:inline-flex; gap:6px; }
-.tb-icon { display:inline-grid; place-items:center; width:32px; height:32px; border:1px solid var(--tb-line); border-radius:7px; background:var(--tb-bg); color:var(--tb-text); font-family:inherit; font-size:14px; font-weight:600; line-height:1; text-decoration:none; cursor:pointer; }
-.tb-icon:hover, .tb-seg button:focus-visible, .tb-icon:focus-visible { border-color:var(--tb-accent); color:var(--tb-accent); outline:none; }
-.tb-seg button[aria-pressed=true]:focus-visible { color:var(--tb-on); box-shadow:inset 0 0 0 2px var(--tb-on); }
-@media (max-width:1100px) { .tb-sub { display:none; } }
-/* phone: league and search stay; "Filters" opens which prices, live/pregame/starred and the odds format */
+html[data-scheme=dark] .tb { --tb-surface:#0e1319; --tb-text:#e5eaf0; --tb-muted:#9ba7b4; --tb-border:#25303c; --tb-control:#4b5969; --tb-accent:#7ea4ff; --tb-accent-hover:#a3bdff; --tb-soft:#18233c; }
+.tb button { font-family:inherit; cursor:pointer; }
+.tb h1, .tb p { margin:0; }
+
+/* row 1: name · design · region, how it works, light/dark, help */
+.tb-mast { display:flex; justify-content:space-between; gap:12px; align-items:center; border-bottom:1px solid var(--tb-border); padding-bottom:16px; color:var(--tb-muted); font-size:11px; }
+.tb-mast-left { display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.tb-wordmark { color:var(--tb-accent); font-weight:600; letter-spacing:.08em; white-space:nowrap; }
+.tb-wordmark::before { content:''; display:inline-block; width:18px; height:5px; margin-right:10px; vertical-align:middle; background:var(--tb-accent); }
+.tb-design { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--tb-muted); }
+.tb-links { display:flex; gap:18px; flex-wrap:wrap; align-items:center; }
+.tb-links a { font-size:11px; color:var(--tb-accent); }
+.tb-demo { color:var(--tb-muted); }
+.tb-icon { width:28px; height:28px; border-radius:50%; border:1px solid var(--tb-control); background:var(--tb-surface); color:var(--tb-text); font-size:13px; line-height:1; padding:0; }
+.tb-icon:hover { border-color:var(--tb-accent); color:var(--tb-accent); }
+
+/* the league title, with which prices to show beside it */
+.tb-heading { display:flex; justify-content:space-between; align-items:end; gap:24px; padding:18px 0 14px; flex-wrap:wrap; }
+.tb h1 { font-size:43px; line-height:1; font-weight:600; letter-spacing:-.045em; color:var(--tb-text); }
+.tb h1 span { color:var(--tb-accent); }
+.tb-subtitle { color:var(--tb-muted); font-size:12px; margin-top:6px; }
+.tb-view { display:flex; gap:24px; border-bottom:1px solid var(--tb-border); }
+.tb-view button { background:transparent; border:0; border-bottom:2px solid transparent; padding:10px 0; min-height:40px; font-size:12px; color:var(--tb-muted); white-space:nowrap; }
+.tb-view button[aria-pressed=true] { color:var(--tb-accent); border-bottom-color:var(--tb-accent); font-weight:600; }
+
+/* League · Show · Find a team · Odds */
+.tb-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px 18px; margin-bottom:18px; }
+.tb-field { display:flex; flex-direction:column; gap:5px; font-size:11px; color:var(--tb-muted); }
+.tb-field input { min-height:38px; width:180px; background:var(--tb-surface); color:var(--tb-text); border:1px solid var(--tb-control); border-radius:4px; padding:7px 10px; font-family:inherit; font-size:12px; }
+.tb-searchf { margin-left:auto; }
+.tb kbd { font-family:inherit; font-size:10px; font-weight:500; border:1px solid var(--tb-control); border-radius:3px; padding:0 4px; margin-left:4px; color:var(--tb-muted); }
+.tb-seg { display:flex; border:1px solid var(--tb-control); border-radius:4px; padding:2px; gap:2px; background:var(--tb-surface); }
+.tb-seg button { border:0; border-radius:2px; min-height:32px; padding:5px 12px; background:transparent; color:var(--tb-muted); font-size:12px; white-space:nowrap; }
+.tb-seg button:hover { color:var(--tb-text); }
+.tb-seg button[aria-pressed=true] { background:var(--tb-soft); color:var(--tb-accent); font-weight:600; }
+.tb-seg button small { font-size:11px; font-weight:500; color:var(--tb-muted); margin-left:4px; }
+.tb-seg button[aria-pressed=true] small { color:var(--tb-accent); }
+.tb-solid button { min-height:30px; padding:3px 14px; }
+.tb-solid button[aria-pressed=true] { background:var(--tb-accent); color:var(--tb-surface); }
+.tb-solid button[aria-pressed=true]:hover { background:var(--tb-accent-hover); }
+.tb button:focus-visible, .tb input:focus-visible { outline:2px solid var(--tb-accent); outline-offset:2px; }
+
+/* a game's own page: no Show filter or search (the page is one game) */
+.on-gamepage .tb-phase, .on-gamepage .tb-searchf { display:none; }
+
+@media (max-width:1100px) { .tb-searchf { margin-left:0; } .tb-toolbar { gap:12px; } }
+/* phone */
 @media (max-width:700px) {
-  .tb-row { gap:8px; }
-  .tb-right { width:100%; justify-content:space-between; }
-  .tb-controls > .tb-seg { width:100%; } .tb-controls > .tb-seg button { flex:1; height:36px; padding:0 6px; }
-  .tb-search { flex:1; } .tb-search input { width:100%; height:38px; font-size:16px; }
-  .tb-filters { display:inline-block; height:38px; padding:0 14px; border:1px solid var(--tb-line); border-radius:7px; background:var(--tb-bg); color:var(--tb-text); font-family:inherit; font-size:13px; font-weight:600; }
-  .tb-more { display:none; width:100%; flex-direction:column; gap:8px; }
-  .tb.is-open .tb-more { display:flex; }
-  .tb-more .tb-seg { width:100%; } .tb-more .tb-seg button { flex:1; height:36px; padding:0 6px; }
-  .tb-design { flex:1; } .tb-design button { flex:1; height:34px; }
+  .tb-mast { flex-wrap:wrap; align-items:start; }
+  .tb-mast-left { width:100%; justify-content:space-between; }
+  .tb-links { gap:10px; justify-content:end; } .tb-demo { max-width:150px; text-align:right; } .tb-links a { display:none; }
+  .tb-heading { padding:18px 0; gap:16px; } .tb h1 { font-size:34px; }
+  .tb-view { width:100%; justify-content:space-between; gap:10px; } .tb-view button { min-height:44px; }
+  .tb-toolbar { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:end; }
+  .tb-league, .tb-phase { grid-column:1/-1; }
+  .tb-field input { width:100%; min-width:0; min-height:44px; font-size:16px; }
+  .tb-seg { justify-content:stretch; } .tb-seg button { flex:1; min-height:44px; font-size:13px; padding-left:6px; padding-right:6px; }
+  .tb kbd { display:none; }
 }
-@media (hover:none) { .tb-icon[title]::after { content:none; } }

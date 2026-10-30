@@ -53,9 +53,9 @@ What is on the page, beyond the board itself:
   opens a fresh stream (`tools/stall-check.mjs` pauses the server: noticed in 12.0 s, recovered 1 s after it resumed).
 * Games grouped by kickoff slot, live games first; the single-book views show "updated N s ago" on every number.
 * Team search, Live/Pregame filter, American or decimal odds (decimal to 3 places so −340 vs −350 stays visible).
-* **Two designs, one switch, one top bar.** Both designs share the same top bar (`public/topbar.js`): name, design
-  switch, league, team search, best price / one book, live / pregame / starred, odds format, in the same place and the
-  same words (on a phone the last three sit behind *Filters*). *Design* is shareable as `?theme=grid` / `?theme=pressbox`:
+* **Two designs, one switch, one top bar.** Both designs share the same header (`public/topbar.js`): name, design
+  switch, how it works, light/dark, help; the league title with *Best price / DraftKings only / FanDuel only* beside it;
+  then League · Show (all / live / pregame / starred) · Find a team · Odds, in the same place with the same words. *Design* is shareable as `?theme=grid` / `?theme=pressbox`:
   * **Comfortable** — the readable board described above.
   * **Grid (engineering)** — everything on one screen, spreadsheet-dense: each game is two rows; *Best available*,
     *DraftKings* and *FanDuel* columns side by side (the best cell in dark, the winning book's cell starred, the edge in
