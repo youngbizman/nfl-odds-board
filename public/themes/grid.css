@@ -451,3 +451,6 @@ html[data-scheme=dark] .g-lg td { background:var(--head); color:var(--text); bor
 /* the table may never be wider than the window */
 .g-wrap { max-width:100%; } .g-table { max-width:100%; }
 @media (max-width:920px) { .g-hold, .g-hold-h, .g-win, .g-win-h { display:none; } .g-table td[data-market] { padding:3px 4px; } .g-table .c-best .bk { margin-left:3px; } .bk-only { display:none; } }
+.g-xclose { margin-left:auto; height:26px; padding:0 10px; border:1px solid var(--line-strong); border-radius:6px; background:var(--bg); color:var(--text); font:600 11.5px var(--font); }
+.g-xclose:hover { border-color:var(--down); color:var(--down); }
+.g-more[aria-expanded=true] { color:var(--down); }

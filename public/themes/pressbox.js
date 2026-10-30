@@ -250,7 +250,7 @@ function renderHolds() {
   if (!el.holds) return;
   const main = api.tightest(6).map((t) => ({ ...t, alt: null }));
   const alt = (api.state.extrasHolds || []).slice(0, 3).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: t.a, b: t.b, alt: t.kind })).filter((t) => t.game);
-  const items = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 8);
+  const items = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 6); // two rows of three: the strip keeps its own space
   if (!items.length) { el.holds.innerHTML = ''; renderHolds.last = ''; return; }
   const arbs = items.filter((t) => t.hold < 0).length;
   const html = `<div class="holds-head"><h2>Tightest markets.</h2><span>${arbs ? `<b class="arb-flag">${arbs} arbitrage${arbs > 1 ? 's' : ''} right now</b>` : 'Best price on each side, either book · lower hold = better for you'}</span></div>
@@ -268,7 +268,7 @@ function renderHolds() {
 function extrasToggle(g) {
   const c = api.extrasCount(g.key); const open = api.extrasOpen(g.key);
   if (!c && !open) return '';
-  const label = c ? `More lines · ${c.both} on both books` : 'More lines';
+  const label = open ? 'Hide more lines' : c ? `More lines · ${c.both} on both books` : 'More lines';
   return `<button type="button" class="extras-toggle" data-extras-toggle="${esc(g.key)}" aria-expanded="${open}">${esc(label)} <span aria-hidden="true">${open ? '▴' : '▾'}</span></button>`;
 }
 function oddsCell(o, cmp) {
@@ -290,7 +290,7 @@ function extrasInner(gk) {
   const tabs = v.kinds.map((k) => `<button type="button" data-x-kind="${k.id}" aria-pressed="${k.id === v.kind}">${esc(k.label)} <span class="x-count">${v.bothOnly ? k.both : k.all}</span></button>`).join('');
   const st = v.status || {};
   const head = `<div class="x-bar"><div class="segment x-tabs" role="group" aria-label="Kind of bet">${tabs}</div>
-    <label class="x-both"><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> Only lines both books offer</label></div>`;
+    <label class="x-both"><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> Only lines both books offer</label><button type="button" class="x-close" data-extras-toggle="${esc(gk)}" aria-label="Close more lines">✕ Close</button></div>`;
   const body = v.rows.length ? `<div class="x-body"><div class="x-scroll" tabindex="0" aria-label="${esc(api.state.extrasKinds[v.kind] || v.kind)} table"><table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
     <tbody>${v.rows.slice(0, showN(gk, v)).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table>${moreBtn(gk, v)}</div>${ladderChart(api, gk, v)}</div>`
     : `<p class="x-note">${v.bothOnly ? 'No line here that both books offer at the same number. Untick the box to see each book\'s own lines.' : 'Nothing here right now.'}</p>`;

@@ -618,3 +618,9 @@ html[data-scheme=dark] .ld-bar b { color:#0e1319; }
 .hc-legs { flex-wrap:wrap; white-space:normal; gap:2px 14px; }
 @media(max-width:1050px) { .holds-list { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 @media(max-width:700px) { .holds-list { grid-template-columns:1fr; } }
+/* the status bar condenses once it sticks; without this the browser's scroll anchoring answered the height change by
+   moving the page, which un-stuck the bar, which grew it back… a loop that made scrolling stutter at that point */
+html, body { overflow-anchor:none; }
+.sticky.is-stuck { box-shadow:0 6px 12px -10px rgba(0,0,0,.35); }
+.x-close { margin-left:auto; min-height:32px; padding:4px 12px; border:1px solid var(--border-control); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:var(--text-xs); font-weight:600; }
+.x-close:hover { border-color:var(--price-down); color:var(--price-down); background:var(--price-down-bg); }

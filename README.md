@@ -20,7 +20,8 @@ What is on the page, beyond the board itself:
 * **Who wins, at a glance** — the winning cell takes the winning book's colour (DraftKings purple, FanDuel teal) and
   shows the edge in cents (`+8¢`: −192 vs −200).
 * **Hold and arbitrage** — every game shows the hold per market at the best price on each side (either book), and a
-  *Tightest markets* strip ranks the lowest holds across the board, game lines and alt lines. A negative hold means
+  *Tightest markets* strip shows the **6** lowest holds across the board (two rows of three; three on a phone), game
+  lines and alt lines. A negative hold means
   backing both sides at those two prices guarantees a profit; the strip flags it as an arbitrage. Click a card to jump
   to the game. (`bestHold()` in `src/model.js`, tested.)
 * **Star games** to pin them to the top (kept in this browser). **Compact** density roughly doubles the games per

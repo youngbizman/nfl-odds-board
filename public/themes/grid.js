@@ -198,7 +198,7 @@ function gameRows(g) {
     const cells = (fn) => MK.map(([m]) => fn(m, SIDES[m][idx])).join('');
     const marketCells = V === 'best' ? cells((m, s) => bestCell(g, m, s)) + BOOKS.map((b) => cells((m, s) => bookCell(g, m, s, b))).join('') : cells((m, s) => bookCell(g, m, s, V));
     const lead = idx === 0 ? `<td rowspan="2" class="g-star"><button type="button" data-star="${esc(g.key)}" aria-pressed="${star}" title="${star ? 'Unstar' : 'Star'} (s)">${star ? '★' : '☆'}</button></td>
-      <td rowspan="2" class="g-time">${time}${x || open ? `<button type="button" class="g-more" data-extras-toggle="${esc(g.key)}" aria-expanded="${open}" title="Alt lines and player props from both books">${open ? '▾' : '▸'} ${x ? `${x.both} more` : 'more'}</button>` : ''}</td>` : '';
+      <td rowspan="2" class="g-time">${time}${x || open ? `<button type="button" class="g-more" data-extras-toggle="${esc(g.key)}" aria-expanded="${open}" title="${open ? 'Hide the alt lines and props' : 'Alt lines and player props from both books'}">${open ? '▾ hide lines' : `▸ ${x ? `${x.both} more` : 'more'}`}</button>` : ''}</td>` : '';
     const holdCell = idx === 0 ? `<td rowspan="2" class="g-hold">${hs.map(([m]) => `<span class="${holds[m].hold < 0 ? 'arb' : holds[m].hold < 0.02 ? 'low' : ''}"><em>${SHORT[m]}</em>${pct(holds[m].hold)}</span>`).join('')}</td>` : '';
     const evCell = `<td class="g-ev${e && e.ev > 0 ? ' pos' : ''}" title="Best expected value on this row against the no-vig fair price">${e ? `${sgnPct(e.ev)}<em>${SHORT[e.m]}</em>` : '—'}</td>`;
     const sparkCell = idx === 0 ? `<td rowspan="2" class="g-spark"${api.settings.game ? '' : ` data-open-game="${esc(g.key)}" tabindex="0" title="Click to enlarge: this game's page, 10 min to 1 week"`}>${spark(g)}</td>` : '';
@@ -227,7 +227,7 @@ function extrasInner(gk) {
   const body = v.rows.length
     ? `<div class="g-xbody"><div class="g-xscroll"><table class="g-xt"><thead><tr><th>${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player · threshold'}</th><th>DraftKings</th><th>FanDuel</th></tr></thead><tbody>${rows}</tbody></table>${v.rows.length > 20 ? `<button type="button" class="g-xmore" data-x-all="${x.showAll ? 0 : 1}">${x.showAll ? 'show fewer' : `show all ${Math.min(250, v.rows.length)} lines`}</button>` : ''}</div>${ladderChart(api, gk, v)}</div>`
     : '<p class="g-note">No bet here that both books offer at the same number; untick "both books only" to see each book\'s own lines.</p>';
-  return `<div class="g-x"><div class="g-xbar"><div class="g-xtabs">${tabs}</div><label><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> both books only</label></div>${body}</div>`;
+  return `<div class="g-x"><div class="g-xbar"><div class="g-xtabs">${tabs}</div><label><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> both books only</label><button type="button" class="g-xclose" data-extras-toggle="${esc(gk)}" aria-label="Close more lines">✕ close</button></div>${body}</div>`;
 }
 function renderExtras(gk) {
   const td = el.table.querySelector(`td[data-extras="${CSS.escape(gk)}"]`);
