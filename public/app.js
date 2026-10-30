@@ -68,7 +68,7 @@ function emptyMessage() {
   if (term) return { title: `No team matches “${term}”.`, detail: 'Clear the search to see every game.', clear: true };
   if (settings.phase === 'starred') return { title: 'No starred games yet.', detail: 'Tap ☆ next to a game to keep it at the top of the board.' };
   if (settings.phase === 'live') {
-    const next = listGames(hideSingles()).filter((g) => phaseOf(g) !== 'live' && new Date(g.start) > Date.now()).sort((a, b) => new Date(a.start) - new Date(b.start))[0];
+    const next = listGames(hideSingles(), true).filter((g) => phaseOf(g) !== 'live' && new Date(g.start) > Date.now()).sort((a, b) => new Date(a.start) - new Date(b.start))[0];
     return { title: 'Nothing is live right now.', detail: next ? `Next kickoff: ${new Date(next.start).toLocaleString('en-US', { timeZone: 'America/Toronto', weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET, ${next.away.abbr} @ ${next.home.abbr}.` : 'Live games appear here as soon as they start.' };
   }
   if (settings.phase === 'pregame') return { title: 'No upcoming games.', detail: 'Every game on the board has started.' };
@@ -268,13 +268,13 @@ function visibleGames() {
   if (settings.game) { const g = state.games.get(settings.game); return g ? [g] : []; } // a game's own page
   return listGames(hideSingles());
 }
-function listGames(single) {
+function listGames(single, anyPhase = false) {
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
   const term = settings.search.trim().toLowerCase();
   return [...state.games.values()]
     .filter((g) => withPrices.has(g.key))
     .filter((g) => !single || leagueOfKey(g.key) === 'nfl' || bookCount(g.key) >= 2)
-    .filter((g) => settings.phase === 'all' || (settings.phase === 'starred' ? starred.has(g.key) : phaseOf(g) === settings.phase))
+    .filter((g) => anyPhase || settings.phase === 'all' || (settings.phase === 'starred' ? starred.has(g.key) : phaseOf(g) === settings.phase))
     .filter((g) => !term || [g.away.abbr, g.home.abbr, g.away.name, g.home.name, g.away.nick, g.home.nick].some((x) => String(x || '').toLowerCase().includes(term)))
     .sort((a, b) => (phaseOf(a) === 'live' ? 0 : 1) - (phaseOf(b) === 'live' ? 0 : 1) || new Date(a.start) - new Date(b.start) || a.key.localeCompare(b.key));
 }
