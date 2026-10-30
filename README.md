@@ -427,7 +427,7 @@ One remains in `playwright`, a dev-only tool for the check scripts (its browser 
 server. The browser-compatible DraftKings transport test runs where Python's `curl_cffi` is installed and is skipped
 in CI, which does not install it.
 
-`npm test` (also on every push, GitHub Actions) — 87 tests, ~20 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 88 tests, ~20 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
