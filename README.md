@@ -25,7 +25,7 @@ What is on the page, beyond the board itself:
   backing both sides at those two prices guarantees a profit; the strip flags it as an arbitrage. Click a card to jump
   to the game. (`bestHold()` in `src/model.js`, tested.)
 * **Star games** to pin them to the top (kept in this browser). **Dark mode** follows the system. The feed status
-  shows each book's state, last message and freshness bar at first sight; *Details* opens the rest (how it is read,
+  shows each book's state, last message, last full snapshot and freshness bar at first sight; *Details* opens the rest (how it is read,
   measured latency, last price move). Kickoff countdowns on every slot.
 * **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `d` dark · `s` star the focused
   game · `Enter` chart the focused price · `?` help.
