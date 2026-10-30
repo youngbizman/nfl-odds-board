@@ -1,6 +1,6 @@
 # NFL Odds Board — DraftKings vs FanDuel
 
-**Live:** https://nfl-odds-board-hgim.onrender.com · **Code:** https://github.com/youngbizman/nfl-odds-board
+**Live:** https://nfl-odds-board-hgim.onrender.com · **Code:** https://github.com/youngbizman/nfl-odds-board · **By:** Alireza Moradian ([@ali-reza-moradian](https://github.com/ali-reza-moradian))
 
 A side-by-side NFL board (moneyline, spread, total; pregame and in-game) that pulls from DraftKings and FanDuel,
 normalizes both into one model, shows the best price with the book underneath, and pushes every line move to the
