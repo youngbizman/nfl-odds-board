@@ -13,7 +13,7 @@ the tab title names the league or the game. Display choices are the only query: 
 `?view=fanduel`, `?range=1d` (a game's chart). No `#` fragments; older links (`?league=`, `?game=`) land on the plain
 address; `/nfl` and trailing slashes redirect; anything else is a real 404.
 
-![board](docs/board.png)
+![The board on Fri Oct 30: NFL, Comfortable design](docs/board.png)
 
 What is on the page, beyond the board itself:
 * **Three leagues** — NFL, college football (NCAAF) and CFL, same rules and same live updates; each viewer's stream
@@ -86,10 +86,13 @@ git clone https://github.com/youngbizman/nfl-odds-board && cd nfl-odds-board
 npm ci
 npm start            # http://localhost:3000
 ```
-Node ≥ 20, no database, no keys. Settings are environment variables (see `.env.example`); defaults work from a
-residential IP in Ontario (DraftKings Ontario site) and anywhere for FanDuel. On a cloud server DraftKings' snapshot
-host refuses Node's HTTPS client; `INSTALL_CURL_TRANSPORT=1 npm ci` (automatic on Render) adds a small Python venv with
-`curl_cffi`, which the server switches to by itself after the first 403 (§6).
+Node ≥ 20, no database, no keys. Both books are always read in their **Ontario** versions. Settings are environment
+variables, listed with their defaults in `.env.example`; the app does not read a `.env` file, so set them in the shell
+(`PORT=4000 npm start`). From some networks (cloud servers in our tests) DraftKings' snapshot host refuses Node's
+HTTPS client; `INSTALL_CURL_TRANSPORT=1 npm ci` (automatic on Render; needs Python 3 with `venv`/`pip`) adds a small
+Python venv with `curl_cffi`, which the server switches to by itself after the first 403 (§6).
+**Redis is optional:** without `REDIS_URL` the board runs fully in memory; with it, the DraftKings board checkpoint
+and price history survive restarts (on Render it is a separate Key Value instance, not created by `render.yaml`).
 
 Useful endpoints: `/api/board` (full JSON snapshot) · `/api/stream` (SSE) · `/api/metrics` (latency counters) ·
 `/api/diag/draftkings` (what DK says to *this* server's IP) · `/healthz`.
@@ -143,8 +146,9 @@ flowchart LR
 * `tools/` — the research tooling: `capture-network.mjs` (records what each book's page really does),
   `probe-*.mjs`, `measure-latency.mjs`. Findings in [`research/findings.md`](research/findings.md).
 
-A third book = one more file in `src/sources/` that writes `Game`/`Quote` objects into the store. Nothing else changes
-(the UI reads books from the data). See §11.
+A third book = one more file in `src/sources/` that writes `Game`/`Quote` objects into the store; the store, matching,
+best price and the SSE stream are already book-agnostic. The book list, the page's columns and the latency panels
+still name the two books, so those need the new one added too. See §11.
 
 ## 3. How I get data from each book, and why
 
@@ -380,7 +384,7 @@ samples and summaries are in `research/live/2026-10-29/` and `research/live/2026
 | Our server → viewer | median **30 ms** (range 17–50 ms) |
 | FanDuel `updatedAt` → our server (push) | p50 **≈ 0.6 s**, p90 **≈ 1.0 s** (FanDuel's own stamp, so it includes FanDuel's internal delay before it publishes) |
 | FanDuel: which channel brought each change first | push 6,869 · poll 7,331 — both matter; the push connection held all night (1 connect, 0 reconnects, 0 errors) |
-| Every price on the board vs both books' APIs | 29 checks, **41,939 comparisons identical, 0 missing**; 39 differences, all on live games where the price moved between the two reads; **0 differences on games not in play** |
+| Every price on the board vs both books' APIs | 29 checks, **41,939 comparisons identical, 0 missing**; 39 differences, all on live games (most likely the price moving between the two reads; not verified one by one); **0 differences on games not in play** |
 | Restarts / stale books | **0** server restarts; both books fresh in every check |
 | Page check (every league, both designs, phone + desktop) | no errors at 6:08 pm, 8:51 pm and 10:22 pm |
 
@@ -451,8 +455,9 @@ in CI, which does not install it.
   dropped connection reconnects and re-subscribes while polling carries on.
 * **Browser-compatible client:** Node first, switch on the first 403 and stay switched, never on a 200; HTTP errors keep
   their status (and `Retry-After`); a missing interpreter fails one request, not the server; and, where curl_cffi is
-  installed, the real worker against a local server that only accepts a Chrome handshake: warm requests, 8 in
-  parallel, a killed worker restarted on the next request.
+  installed, the real worker against a local server that only answers a Chrome client (checked by its User-Agent,
+  over plain local HTTP, so this tests the worker, not the TLS fingerprint): warm requests, 8 in parallel, a killed
+  worker restarted on the next request.
 * **More lines, on real recorded payloads from both books** (`test/fixtures/extras-*.json`, recorded with
   `tools/record-extras-fixtures.mjs`): the same bet from both books lands on one row (BAL −3.5, Derrick Henry anytime
   TD, Josh Allen 250+), DK 260+ / FD 275+ stay single-book, the 1st-TD market is not mixed in, player names match
@@ -506,8 +511,9 @@ under a restart-on-exit supervisor.)
 * Browser `EventSource` reconnects on its own and receives a fresh snapshot.
 
 ## 11. A third book, or ten — and where AI helps
-* Add `src/sources/<book>.js` with `start/stop` that writes `Game`/`Quote` into the store; add the book to `BOOKS`.
-  Nothing else changes: matching, best price, SSE and the UI are book-agnostic.
+* Add `src/sources/<book>.js` with `start/stop` that writes `Game`/`Quote` into the store. Matching, best price, the
+  store and SSE need no change; the book list (`BOOKS`), the page's per-book columns and the latency/metrics panels
+  name the books explicitly and need the new one added.
 * At ten books the in-memory store becomes a Redis Stream / pub-sub (the DraftKings frame log already is one) so
   ingestion workers scale independently of the web tier, and each worker runs where its book allows (some will need residential egress, as DK does).
 * AI tooling helped most in the *discovery* loop here: recording a site's traffic and asking a model to explain

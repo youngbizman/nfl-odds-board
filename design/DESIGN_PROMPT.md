@@ -1,3 +1,5 @@
+> Historical: the design brief used on Oct 28 to start the Comfortable design. The shipped page has moved on since; see the README.
+
 You are a senior product designer for trading and sports-betting tools. Design the UI for a live NFL odds comparison board, and hand it back as one working HTML file that an engineer will copy styles and markup from. I will implement your design exactly, so be precise and complete.
 
 ## What the product is

@@ -1,5 +1,7 @@
 # How each book gets odds to the browser (what we found, Oct 28 2026, from Richmond Hill, Ontario)
 
+> Historical research notes (Oct 28). Where they differ from the README, the README describes the current app.
+
 Method: `tools/capture-network.mjs` drives a real Chrome (Playwright, `channel: 'chrome'`) to the public NFL page of each book,
 records every HTTP request/response and every WebSocket frame for 75–240 s, and writes them to `research/captures/<book>/`.
 (Bodies, HTML and raw frames are git-ignored; `summary.txt` is kept.)
