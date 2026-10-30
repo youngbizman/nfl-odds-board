@@ -19,7 +19,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const etTime = (d, opts) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
 
 import { bigChart, ladderChart, chartHover } from '/charts.js';
-import { topbarHtml, wireTopbar, renderTopbar } from '/topbar.js';
+import { topbarHtml, wireTopbar, renderTopbar, footerHtml } from '/topbar.js';
 
 let api, root, el = {};
 
@@ -44,10 +44,7 @@ function mount(r, a) {
     <div class="results" id="results"></div>
     <main id="board" class="games"></main>
     <section class="wire" aria-label="Recent price moves"><h2>The wire.</h2><div id="wire"></div></section>
-    <footer class="footer">
-      <p>Ontario prices from DraftKings and FanDuel; every number updates on its own, nothing is simulated. The higher odds win only when both books offer the same line and both prices are live and open. Equal prices are a tie; different lines are never ranked. Hold = the books' combined margin at the best price on each side; below 0% both sides together guarantee a profit (an arbitrage).</p>
-      <a href="${REPO}#readme">How it works ↗</a>
-    </footer>
+    ${footerHtml(REPO)}
   </div>`;
   el = { board: root.querySelector('#board'), feeds: root.querySelector('#feeds'), banner: root.querySelector('#connection-banner'), results: root.querySelector('#results'), wire: root.querySelector('#wire'),
     holds: root.querySelector('#holds'), help: root.querySelector('#help'), sticky: root.querySelector('.sticky') };
@@ -188,7 +185,7 @@ function teamHtml(t, side) {
   const [shirt, trim] = kit || ['#c9cfd5', '#5b6673'];
   return `<div class="team ${side}${school ? ' is-school' : ''}${kit ? '' : ' no-kit'}"><span class="kit" style="--shirt:${shirt};--trim:${trim}" aria-hidden="true"><i></i></span><div><span class="team-name">${esc(t.abbr)}</span>${school ? '' : `<span class="team-full">${esc(t.name)}</span>`}</div></div>`;
 }
-const gameHref = (g) => { const u = new URL(location.href); u.searchParams.set('game', g.key); return u.pathname + u.search; };
+const gameHref = (g) => api.gameHref(g); // /nfl/cardinals-at-cowboys-2026-11-01
 function gameInner(g, page = false) {
   const when = g.status === 'live' ? '<span class="live-tag">● Live</span>' : esc(`${etTime(new Date(g.start), { weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET`);
   const name = `${esc(g.away.abbr)} @ ${esc(g.home.abbr)}`;
@@ -204,7 +201,7 @@ function gameMoves(g) {
   return `<section class="game-moves" aria-label="Price moves in this game"><h3>Moves in this game</h3>${moves.length ? `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>` : '<p class="x-note">No price has moved since this page opened; the chart above has the history.</p>'}</section>`;
 }
 function gamePage(g) {
-  return `<div class="gamepage-bar"><a class="back-link" href="${esc(location.pathname)}" data-back>‹ All games</a><span class="gamepage-title">${esc(g.away.name)} @ ${esc(g.home.name)}</span><span class="gamepage-hint">Esc to go back</span></div>
+  return `<div class="gamepage-bar"><a class="back-link" href="${esc(api.boardHref())}" data-back>‹ All games</a><span class="gamepage-title">${esc(g.away.name)} @ ${esc(g.home.name)}</span><span class="gamepage-hint">Esc to go back</span></div>
     <article class="game is-page" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g, true)}</article>`;
 }
 
@@ -337,7 +334,7 @@ function render() {
   el.results.innerHTML = !api.state.everConnected ? '<span>Loading games…</span><span></span>' : `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live${singles}</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
   const pg = api.game();
   if (!api.state.everConnected) el.board.innerHTML = '';
-  else if (api.settings.game) el.board.innerHTML = pg ? gamePage(pg) : `<div class="empty"><strong>This game is not on the board any more.</strong><a href="${esc(location.pathname)}" data-back>‹ All games</a></div>`;
+  else if (api.settings.game) el.board.innerHTML = pg ? gamePage(pg) : `<div class="empty"><strong>This game is not on the board any more.</strong><a href="${esc(api.boardHref())}" data-back>‹ All games</a></div>`;
   else if (!total) { const m = api.emptyMessage(); el.board.innerHTML = `<div class="empty"><strong>${esc(m.title)}</strong>${esc(m.detail)}${m.clear ? ' <button type="button" class="link-btn" data-clear-search>Clear search</button>' : ''}</div>`; }
   else el.board.innerHTML = groups.map((grp) => `${grp.leagueHead ? `<h2 class="league-head">${esc(grp.leagueHead.title)} <span>${grp.leagueHead.count} ${grp.leagueHead.count === 1 ? 'game' : 'games'}</span></h2>` : ''}<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
       ${grp.games.map((g) => `<article class="game" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g)}</article>`).join('')}</section>`).join('');

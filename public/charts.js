@@ -135,7 +135,8 @@ export function bigChart(api, g, { pick, range }) {
   return `<section class="bc" aria-label="Price movement">${head}
     <div class="bc-plot${dense ? ' is-dense' : ''}" data-hover="${esc(g.key)}" role="img" aria-label="${esc(label)}">${gapHtml}<svg viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><g class="bc-grid">${grid}</g>${paths}</svg>${dots}${yTicks}<div class="bc-hover" aria-hidden="true">${hov}</div></div>
     <div class="bc-axis">${xTicks}</div>${strip}
-    <p class="bc-note">${moves ? `${moves} price ${moves === 1 ? 'change' : 'changes'} in ${winName}` : `No price change in ${winName}`} · point at the chart for each book's price at that moment${strip ? ' · the strip shows which line each book had up' : ''} · windows longer than the board's history are greyed out.</p></section>`;
+    <p class="bc-note"><b>${moves ? `${moves} price ${moves === 1 ? 'change' : 'changes'}` : 'No price change'}</b> in ${winName}.</p>
+    <ul class="bc-tips"><li>Point at the chart for each book's price at that moment.</li>${strip ? "<li>The strip under it shows which line each book had up.</li>" : ''}<li>Greyed-out windows go back further than the board has recorded.</li></ul></section>`;
 }
 
 /**

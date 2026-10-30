@@ -1,12 +1,14 @@
 /* The top bar, shared by both designs (public/topbar.js): the original Pressbox header. Its own colours and sizes,
    so it looks exactly the same in both designs. */
-.tb {
+.tb, .tb-foot {
   --tb-surface:#ffffff; --tb-text:#202a35; --tb-muted:#5b6673; --tb-border:#d5dce1; --tb-control:#778492;
   --tb-accent:#2555cb; --tb-accent-hover:#1d43a2; --tb-soft:#edf2fc;
+}
+.tb {
   font-family:'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; font-variant-numeric:tabular-nums; color:var(--tb-text);
   margin-bottom:6px;
 }
-html[data-scheme=dark] .tb { --tb-surface:#0e1319; --tb-text:#e5eaf0; --tb-muted:#9ba7b4; --tb-border:#25303c; --tb-control:#4b5969; --tb-accent:#7ea4ff; --tb-accent-hover:#a3bdff; --tb-soft:#18233c; }
+html[data-scheme=dark] .tb, html[data-scheme=dark] .tb-foot { --tb-surface:#0e1319; --tb-text:#e5eaf0; --tb-muted:#9ba7b4; --tb-border:#25303c; --tb-control:#4b5969; --tb-accent:#7ea4ff; --tb-accent-hover:#a3bdff; --tb-soft:#18233c; }
 .tb button { font-family:inherit; cursor:pointer; }
 .tb h1, .tb p { margin:0; }
 
@@ -48,10 +50,19 @@ html[data-scheme=dark] .tb { --tb-surface:#0e1319; --tb-text:#e5eaf0; --tb-muted
 .tb-solid button[aria-pressed=true]:hover { background:var(--tb-accent-hover); }
 .tb button:focus-visible, .tb input:focus-visible { outline:2px solid var(--tb-accent); outline-offset:2px; }
 
+/* the footer: what the words mean */
+.tb-foot { font-family:'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; margin-top:28px; padding-top:16px; border-top:1px solid var(--tb-border); color:var(--tb-muted); font-size:12px; line-height:1.5; }
+.tb-foot-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; }
+.tb-foot h2 { margin:0; font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--tb-muted); }
+.tb-foot a { color:var(--tb-accent); font-size:12px; white-space:nowrap; }
+.tb-foot-list { display:grid; grid-template-columns:repeat(var(--n), minmax(0, 1fr)); gap:10px 28px; margin:0; }
+.tb-foot-list dt { color:var(--tb-text); font-weight:600; font-size:12px; margin-bottom:2px; }
+.tb-foot-list dd { margin:0; }
+
 /* a game's own page: no Show filter or search (the page is one game) */
 .on-gamepage .tb-phase, .on-gamepage .tb-searchf { display:none; }
 
-@media (max-width:1100px) { .tb-searchf { margin-left:0; } .tb-toolbar { gap:12px; } }
+@media (max-width:1100px) { .tb-searchf { margin-left:0; } .tb-toolbar { gap:12px; } .tb-foot-list { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 /* phone */
 @media (max-width:700px) {
   .tb-mast { flex-wrap:wrap; align-items:start; }
@@ -64,4 +75,5 @@ html[data-scheme=dark] .tb { --tb-surface:#0e1319; --tb-text:#e5eaf0; --tb-muted
   .tb-field input { width:100%; min-width:0; min-height:44px; font-size:16px; }
   .tb-seg { justify-content:stretch; } .tb-seg button { flex:1; min-height:44px; font-size:13px; padding-left:6px; padding-right:6px; }
   .tb kbd { display:none; }
+  .tb-foot-list { grid-template-columns:1fr; }
 }

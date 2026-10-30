@@ -4,8 +4,14 @@
 
 A side-by-side NFL board (moneyline, spread, total; pregame and in-game) that pulls from DraftKings and FanDuel,
 normalizes both into one model, shows the best price with the book underneath, and pushes every line move to the
-browser without a refresh. Toggle at the top: **Best price / DraftKings only / FanDuel only** (shareable as `?view=`).
-Also **college football and the CFL** from the same two books: *League* switch on the page (`?league=ncaaf`, `?league=cfl`).
+browser without a refresh. Toggle at the top: **Best price / DraftKings only / FanDuel only**.
+Also **college football and the CFL** from the same two books: *League* switch on the page.
+
+**Plain addresses**, like any well-made site: `/` (NFL), `/college-football`, `/cfl`, `/all`, and each game at its own
+page, e.g. `/nfl/cardinals-at-cowboys-2026-11-01` (league, the two teams, the day in Toronto). Back and Forward work;
+the tab title names the league or the game. Display choices are the only query: `?design=engineering`, `?theme=dark`,
+`?view=fanduel`, `?range=1d` (a game's chart). No `#` fragments; older links (`?league=`, `?game=`) land on the plain
+address; `/nfl` and trailing slashes redirect; anything else is a real 404.
 
 ![board](docs/board.png)
 
@@ -37,7 +43,7 @@ What is on the page, beyond the board itself:
   history for can be picked; a live game opens on the last hour, a game not started on the last day), any of the six
   prices, **point at the chart to read both books' exact prices at that moment**, a strip showing which spread/total line
   each book had up, its alt lines and props, and the moves in that game. Busy live charts drop the per-change dots so
-  the lines stay readable. It has its own link (`?game=…`), so it can be shared; Esc or Back returns.
+  the lines stay readable. It has its own address (`/nfl/cardinals-at-cowboys-2026-11-01`), so it can be shared; Esc or Back returns.
 * **More lines has a chart beside the table** — each book's chance at every alt spread / total / yardage threshold
   (ringed where that book pays more), or a bar per player for anytime touchdowns.
 * **Per-book feed cards** — how the book is read (push, poll, or both); **latency, measured only** — the book's own
@@ -55,7 +61,7 @@ What is on the page, beyond the board itself:
 * Team search, Live/Pregame filter, American or decimal odds (decimal to 3 places so −340 vs −350 stays visible).
 * **Two designs, one switch, one top bar.** Both designs share the same header (`public/topbar.js`): name, design
   switch, how it works, light/dark, help; the league title with *Best price / DraftKings only / FanDuel only* beside it;
-  then League · Show (all / live / pregame / starred) · Find a team · Odds, in the same place with the same words. *Design* is shareable as `?theme=grid` / `?theme=pressbox`:
+  then League · Show (all / live / pregame / starred) · Find a team · Odds, in the same place with the same words. *Design* is shareable as `?design=engineering` (Comfortable is the default):
   * **Comfortable** — the readable board described above.
   * **Grid (engineering)** — everything on one screen, spreadsheet-dense: each game is two rows; *Best available*,
     *DraftKings* and *FanDuel* columns side by side (the best cell in dark, the winning book's cell starred, the edge in
@@ -459,6 +465,8 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 `tools/site-check.mjs <url>` opens the live page the way viewers do — every league × both designs × desktop and phone,
 plus dark mode and the in-page league switch — and fails on any script or console error, failed request, empty board or
 sideways scrolling on a phone, plus every league's game page, opening a game from its chart, and inner scroll boxes.
+Every address it lands on must be a plain one (no `#`, no `%`-codes, no `?game=`), every tab title must name the page,
+Back/Forward must move between a game and the list, old links must land on the plain address, and unknown pages must 404.
 Fri Oct 30 on the deployment, from a GitHub machine: **32/32 clean**, first prices on screen median 0.37 s (0.3–1.0 s;
 the run's very first page 1.7 s). The same morning every game-line price on the board matched both books' own APIs,
 open/suspended state included: NFL 156 + 168, college 378 + 695, CFL 12 + 12 (DraftKings + FanDuel), 0 different.

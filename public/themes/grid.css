@@ -496,3 +496,8 @@ body, button, input, select, table { font-variant-numeric: tabular-nums; }
 .g-feedt .dot { width:8px; height:8px; }
 .g-feedt .f-live .dot { box-shadow:0 0 0 2px color-mix(in srgb, var(--up) 25%, transparent); }
 .g-feedt .bar { height:6px; }
+
+/* chart caption: the count first, then the tips on their own line */
+.bc-note b { color:var(--text); font-weight:600; }
+.bc-tips { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:2px 10px; font-size:11px; color:var(--muted); }
+.bc-tips li:not(:first-child)::before { content:"·"; margin-right:10px; }

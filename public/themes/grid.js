@@ -7,7 +7,7 @@ const BOOKS = ['draftkings', 'fanduel'];
 const SIDES = { spread: ['away', 'home'], total: ['over', 'under'], moneyline: ['away', 'home'] };
 const SHORT = { moneyline: 'ML', spread: 'SP', total: 'TOT' };
 import { bigChart, ladderChart, chartHover } from '/charts.js';
-import { topbarHtml, wireTopbar, renderTopbar } from '/topbar.js';
+import { topbarHtml, wireTopbar, renderTopbar, footerHtml } from '/topbar.js';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const et = (d, o) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...o });
 const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
@@ -32,9 +32,7 @@ function mount(r, a) {
     <div class="g-meta" id="g-meta"></div>
     <div class="g-wrap"><table class="g-table" id="g-table"><thead></thead></table></div>
     <div class="g-big" id="g-big"></div>
-    <footer class="g-foot">Best = higher odds on the same line, open and fresh; equal = tie; different lines are never ranked. Win% and EV use the no-vig
-      fair price from both books on the same line. Hold = the books' combined margin at the best price on each side; below 0 = arbitrage. Ontario prices; nothing simulated.
-      <a href="${REPO}#readme">How it works ↗</a></footer>
+    ${footerHtml(REPO, { winEv: true })}
   </div>`;
   el = { table: root.querySelector('#g-table'), feeds: root.querySelector('#g-feeds'), holds: root.querySelector('#g-holds'), wire: root.querySelector('#g-wire'),
     banner: root.querySelector('#g-banner'), meta: root.querySelector('#g-meta'), help: root.querySelector('#g-help'), page: root.querySelector('#g-page'), big: root.querySelector('#g-big') };
@@ -169,7 +167,7 @@ function rowEV(g, side) {
   }
   return best;
 }
-const gameHref = (g) => { const u = new URL(location.href); u.searchParams.set('game', g.key); return u.pathname + u.search; };
+const gameHref = (g) => api.gameHref(g); // /nfl/cardinals-at-cowboys-2026-11-01
 function countdown(t) {
   const s = (t - api.serverNow()) / 1000; if (s <= 0) return 'now';
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
@@ -239,7 +237,7 @@ function render() {
   renderTopbar(root, api);
   const pg = api.game(); root.querySelector('.g-app').classList.toggle('on-gamepage', !!api.settings.game);
   el.page.hidden = !api.settings.game;
-  el.page.innerHTML = api.settings.game ? `<a class="g-back" href="${esc(location.pathname)}" data-back>‹ All games</a><b>${pg ? `${esc(pg.away.name)} @ ${esc(pg.home.name)}` : 'This game is not on the board any more'}</b>${pg ? `<span class="mut">${pg.status === 'live' ? '● live' : esc(et(new Date(pg.start), { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET')}<span class="g-esc"> · Esc to go back</span></span>` : ''}` : '';
+  el.page.innerHTML = api.settings.game ? `<a class="g-back" href="${esc(api.boardHref())}" data-back>‹ All games</a><b>${pg ? `${esc(pg.away.name)} @ ${esc(pg.home.name)}` : 'This game is not on the board any more'}</b>${pg ? `<span class="mut">${pg.status === 'live' ? '● live' : esc(et(new Date(pg.start), { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET')}<span class="g-esc"> · Esc to go back</span></span>` : ''}` : '';
   el.big.innerHTML = pg ? bigChart(api, pg, { pick: api.chartPick(pg.key), range: api.settings.range }) : '';
   el.table.dataset.view = view();
   const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);

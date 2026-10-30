@@ -12,24 +12,80 @@ const MARKETS = [['spread', ['away', 'home']], ['total', ['over', 'under']], ['m
 const keep = { get(k, d) { try { return localStorage.getItem(`board.${k}`) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(`board.${k}`, v); } catch {} } };
 const qs = new URLSearchParams(location.search);
 
+// ---------- links: plain paths, like any well-made site ----------
+//   /                                   NFL (/nfl redirects here)
+//   /college-football · /cfl · /all     the other boards
+//   /nfl/cardinals-at-cowboys-2026-11-01  a game's own page (its league, the two teams, the day in Toronto)
+// Display choices are the only query: ?design=engineering · ?theme=dark · ?view=draftkings · ?range=1d (a game's chart).
+// Older links (?league=ncaaf&game=KEY, ?theme=grid, ?scheme=dark) still open the right page and are tidied on arrival.
 const LEAGUE_IDS = ['nfl', 'ncaaf', 'cfl'];
+const LEAGUE_PATH = { nfl: 'nfl', ncaaf: 'college-football', cfl: 'cfl', all: 'all' };
+const PATH_LEAGUE = Object.fromEntries(Object.entries(LEAGUE_PATH).map(([id, p]) => [p, id]));
+const LEAGUE_NAME = { nfl: 'NFL', ncaaf: 'College Football', cfl: 'CFL', all: 'All Leagues' };
+const slugify = (s) => String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/['’.]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const teamWord = (t) => t?.nick || t?.name || t?.abbr || '';
+const gameLeague = (g) => g.league || leagueOfKey(g.key);
+const gameSlug = (g) => `${slugify(teamWord(g.away))}-at-${slugify(teamWord(g.home))}-${/(\d{4}-\d{2}-\d{2})$/.exec(g.key)?.[1] || ''}`;
+const DESIGN_WORD = (t) => slugify(t.short || t.name);           // pressbox → comfortable, grid → engineering
+const route = (() => {
+  const [first, second] = location.pathname.split('/').filter(Boolean);
+  return { league: first ? PATH_LEAGUE[first] || null : null, slug: second && /^[a-z0-9-]+$/.test(second) ? second : null };
+})();
+const RANGES = ['10m', '1h', '6h', '1d', '1w', 'all'];
+const legacyLeague = [...LEAGUE_IDS, 'all'].includes(qs.get('league')) ? qs.get('league') : null;
+const qsDesign = THEMES.find((t) => DESIGN_WORD(t) === qs.get('design') || t.id === qs.get('theme')) || null;
 const settings = {
-  league: [...LEAGUE_IDS, 'all'].includes(qs.get('league')) ? qs.get('league') : 'nfl', // nfl | ncaaf | cfl | all (?league= is shareable)
+  league: route.league || legacyLeague || 'nfl',                    // nfl | ncaaf | cfl | all (from the path)
   singleBook: false,                                                // college: also show games only one book prices
-  game: qs.get('game') || null,                                     // a game's own page (?game=KEY)
-  range: ['10m', '1h', '6h', '1d', '1w', 'all'].includes(qs.get('range')) ? qs.get('range') : null, // its chart window (null = automatic)
-  view: qs.get('view') || 'best',                                   // best | draftkings | fanduel (?view= is shareable)
+  game: route.slug || qs.get('game') || null,                       // a game's own page: its key once the board has arrived
+  range: RANGES.includes(qs.get('range')) ? qs.get('range') : null, // its chart window (null = automatic)
+  view: ['draftkings', 'fanduel'].includes(qs.get('view')) ? qs.get('view') : 'best', // best | draftkings | fanduel
   phase: 'all',                                                     // all | live | pregame
   search: '',
   format: keep.get('format', 'american'),                           // american | decimal
   // The page always opens light, in the first design. Another design or dark mode is a choice that lives in the link
   // (?theme=grid, ?scheme=dark), so a reload keeps it but a fresh visit never starts dark or in the engineering view.
-  theme: THEMES.some((t) => t.id === qs.get('theme')) ? qs.get('theme') : THEMES[0].id,
+  theme: (qsDesign || THEMES[0]).id,
   density: 'comfortable',                                            // one density: the two designs are the choice
-  scheme: qs.get('scheme') === 'dark' ? 'dark' : 'light',          // light (default) | dark
+  scheme: qs.get('theme') === 'dark' || qs.get('scheme') === 'dark' ? 'dark' : 'light', // light (default) | dark
 };
+let pendingSlug = route.slug;                                       // a game link waits for the board to find its key
 try { localStorage.removeItem('board.theme'); localStorage.removeItem('board.scheme'); } catch {} // older versions remembered these
-const setParam = (k, v, dflt) => { const u = new URL(location.href); v === dflt ? u.searchParams.delete(k) : u.searchParams.set(k, v); history.replaceState(null, '', u); };
+/** The query that goes with every link: only the choices that differ from the defaults. */
+function queryString({ range = !!settings.game } = {}) {
+  const q = new URLSearchParams(); const t = THEMES.find((x) => x.id === settings.theme);
+  if (t && t !== THEMES[0]) q.set('design', DESIGN_WORD(t));
+  if (settings.scheme === 'dark') q.set('theme', 'dark');
+  if (settings.view !== 'best') q.set('view', settings.view);
+  if (range && settings.range) q.set('range', settings.range);
+  const s = q.toString(); return s ? `?${s}` : '';
+}
+const boardPath = (league = settings.league) => (league === 'nfl' ? '/' : `/${LEAGUE_PATH[league]}`);
+const gamePath = (g) => `/${LEAGUE_PATH[gameLeague(g)]}/${gameSlug(g)}`;
+function currentPath() {
+  if (!settings.game) return boardPath();
+  const g = state.games.get(settings.game);
+  return g ? gamePath(g) : location.pathname; // not found (yet): keep the link the visitor came with
+}
+/** Write the address bar from the settings (push = a new history entry: opening or leaving a game). */
+function writeUrl({ push = false } = {}) {
+  const url = currentPath() + queryString();
+  if (url !== location.pathname + location.search || location.hash) history[push ? 'pushState' : 'replaceState']({ game: settings.game }, '', url);
+  writeTitle();
+}
+function writeTitle() {
+  const g = settings.game ? state.games.get(settings.game) : null;
+  const site = `${LEAGUE_NAME[g ? gameLeague(g) : settings.league]} Odds Board`;
+  document.title = g ? `${teamWord(g.away)} @ ${teamWord(g.home)} · ${site}` : settings.game && state.everConnected ? `Game not found · ${site}` : site;
+}
+/** A game link (/league/slug) or an old ?game=KEY link: find its key once the board is here. */
+function resolveGameLink() {
+  if (!pendingSlug && !(settings.game && !state.games.has(settings.game))) return false;
+  const want = pendingSlug; let g = null;
+  if (want) for (const x of state.games.values()) if (gameSlug(x) === want) { g = x; break; }
+  if (g) { settings.game = g.key; pendingSlug = null; return true; }
+  return false;
+}
 const starred = new Set((() => { try { return JSON.parse(keep.get('starred', '[]')); } catch { return []; } })());
 const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
   offset: 0, rtt: null, connected: false, everConnected: false, moves: [], moveCount: { draftkings: 0, fanduel: 0 }, changedAt: new Map(),
@@ -144,8 +200,8 @@ async function loadGameHistory(key) {
 function openGame(key, { push = true } = {}) {
   if (!key) return closeGame({ push });
   settings.game = key; state.gameHistory = null;
-  if (push) { settings.range = null; setParam('range', null, null); } // each game opens on its own default window
-  if (push) { const u = new URL(location.href); u.searchParams.set('game', key); history.pushState({ game: key }, '', u); }
+  if (push) settings.range = null; // each game opens on its own default window
+  pendingSlug = null; writeUrl({ push });
   // its alt lines and props open by themselves on its page (NFL)
   if (state.extrasSummary[key] && !state.extras.has(key)) toggleExtras(key);
   loadGameHistory(key); theme.render(); window.scrollTo({ top: 0 });
@@ -153,10 +209,20 @@ function openGame(key, { push = true } = {}) {
 function closeGame({ push = true } = {}) {
   if (!settings.game) return;
   const was = settings.game; settings.game = null; state.gameHistory = null;
-  if (push) { const u = new URL(location.href); u.searchParams.delete('game'); history.pushState({}, '', u); }
+  pendingSlug = null; settings.range = null; writeUrl({ push });
   theme.render(); requestAnimationFrame(() => document.querySelector(`[data-game="${CSS.escape(was)}"]`)?.scrollIntoView({ block: 'center' }));
 }
-window.addEventListener('popstate', () => { const k = new URLSearchParams(location.search).get('game'); if (k !== settings.game) (k ? openGame(k, { push: false }) : closeGame({ push: false })); });
+// Back / forward: the address decides the page (a game opened from All keeps the All board behind it).
+window.addEventListener('popstate', () => {
+  const [first, second] = location.pathname.split('/').filter(Boolean); const slug = second || null;
+  const league = (first && PATH_LEAGUE[first]) || 'nfl';
+  if (league !== settings.league && !(slug && settings.league === 'all')) return api.setLeague(league, { slug });
+  if (!slug) { if (settings.game) closeGame({ push: false }); else writeUrl(); return; }
+  let key = null; for (const g of state.games.values()) if (gameSlug(g) === slug) { key = g.key; break; }
+  const r = new URLSearchParams(location.search).get('range'); settings.range = RANGES.includes(r) ? r : null;
+  if (key) { if (key !== settings.game) openGame(key, { push: false }); else { writeUrl(); theme.renderGame(key); } return; }
+  pendingSlug = slug; settings.game = slug; state.gameHistory = null; theme.render(); writeTitle();
+});
 const chartPick = (gk) => state.chartPick.get(gk) || { market: 'moneyline', side: 'home' };
 
 // ---------- "more lines" drop-down: one stream per open game ----------
@@ -349,8 +415,9 @@ function freshness(book, now = serverNow()) {
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf, latencyText,
   connectionLost, feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
+  gameHref: (g) => gamePath(g) + queryString({ range: false }), boardHref: () => boardPath() + queryString({ range: false }),
   openGame, closeGame, game: () => (settings.game ? state.games.get(settings.game) || null : null),
-  setRange(r) { settings.range = r; setParam('range', r, null); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
+  setRange(r) { settings.range = r; writeUrl(); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
   /** When the board's price history for this game begins (its first recorded price, any market, either book). */
   gameRecordedFrom(g) {
     const src = state.gameHistory?.key === g.key ? state.gameHistory.map : state.history; let first = null;
@@ -362,9 +429,9 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   leagueOptions: () => [{ id: 'all', label: 'All', title: 'Every league', games: state.leagues.some((l) => l.games != null) ? state.leagues.reduce((n, l) => n + (l.games || 0), 0) : null }, ...state.leagues],
   emptyMessage,
   leagueOfKey,
-  setLeague(id) {
+  setLeague(id, { slug = null } = {}) { // slug: back/forward to a game page of another league
     if (![...LEAGUE_IDS, 'all'].includes(id) || id === settings.league) return;
-    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = null; state.gameHistory = null; setParam('game', null, null); setParam('league', id, 'nfl');
+    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = slug; pendingSlug = slug; state.gameHistory = null; writeUrl();
     for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
     state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = { draftkings: 0, fanduel: 0 }; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
     state.switching = true; mountTheme(theme); reconnect('league changed', 0);
@@ -378,11 +445,10 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
     settings[key] = value;
     if (key === 'format') keep.set(key, value);
     if (key === 'density' || key === 'scheme') applyLook();
-    if (key === 'scheme') setParam('scheme', value, 'light');
-    if (key === 'view') setParam('view', value, 'best');
+    if (key === 'scheme' || key === 'view') writeUrl();
     theme.render();
   },
-  setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; settings.theme = id; setParam('theme', id, THEMES[0].id); mountTheme(t); },
+  setTheme(id) { const t = THEMES.find((x) => x.id === id); if (!t || t === theme) return; settings.theme = id; writeUrl(); mountTheme(t); },
   /** How much better price a is than b, in the unit bettors use: cents near even money, % more profit for big favourites/longshots. */
   edge(a, b) {
     if (a == null || b == null) return null;
@@ -401,6 +467,13 @@ function applyLook() {
   html.dataset.scheme = settings.scheme;
 }
 applyLook();
+
+// "Skip to prices" moves focus to the board without putting a #fragment in the address
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a.skip'); if (!a) return;
+  const t = document.querySelector(a.getAttribute('href')); if (!t) return;
+  e.preventDefault(); if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); t.scrollIntoView({ block: 'start' });
+});
 
 // ---------- keyboard: / search · 1 2 3 views · c compact · d dark · s star · ? help ----------
 document.addEventListener('keydown', (e) => {
@@ -470,6 +543,8 @@ function connect() {
     state.games = new Map(s.games.map((g) => [g.key, g])); state.quotes = new Map(s.quotes.map((q) => [q.id, q]));
     state.sources = s.sources; if (s.config) state.config = s.config; if (s.leagues?.length) state.leagues = s.leagues;
     state.connected = true; state.everConnected = true; state.lostSince = null; state.switching = false;
+    resolveGameLink(); writeUrl();
+    if (settings.game && state.extrasSummary[settings.game] && !state.extras.has(settings.game)) toggleExtras(settings.game);
     theme.render();
     loadHistory();
     if (settings.game && !state.gameHistory) { if (state.games.has(settings.game)) loadGameHistory(settings.game); }
@@ -550,6 +625,7 @@ setInterval(async () => { // measured samples go to the server so /api/metrics h
 }, 30000);
 
 mountTheme(THEMES.find((t) => t.id === settings.theme) || THEMES[0]);
+writeUrl();                      // older links (?league=, ?theme=grid, ?scheme=dark) become plain ones straight away
 connect();                       // the stream first: prices on screen as early as possible
 syncClock().catch(() => {});     // the clock offset only refines the "x s ago" labels, so it runs alongside
 loadExtrasSummary(); setInterval(loadExtrasSummary, 60_000);

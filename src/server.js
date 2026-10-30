@@ -164,6 +164,15 @@ app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAg
 // the browser uses the exact same comparison rules the tests check
 app.get('/lib/model.js', (req, res) => res.type('application/javascript').sendFile(path.join(__dirname, 'model.js')));
 
+// Pages have plain addresses: / (NFL), /college-football, /cfl, /all, and a game at /nfl/cardinals-at-cowboys-2026-11-01.
+// They are all the same page, which reads its address; display choices stay in the query (?design=engineering).
+const queryOf = (req) => { const i = req.originalUrl.indexOf('?'); return i < 0 ? '' : req.originalUrl.slice(i); };
+const sendPage = (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(INDEX_HTML);
+app.get('/nfl', (req, res) => res.redirect(301, `/${queryOf(req)}`));
+app.get(/^\/(?:college-football|cfl|all)$/, sendPage);
+app.get(/^\/(?:nfl|college-football|cfl)\/[a-z0-9]+(?:-[a-z0-9]+)*$/, sendPage);
+app.get(/^\/[^/].*\/$/, (req, res) => res.redirect(301, `/${req.path.replace(/^\/+|\/+$/g, '')}${queryOf(req)}`)); // a trailing slash
+
 /** The board for one league (or every league with league=all), plus which leagues exist and how many games each has. */
 function snapshot(league = 'nfl') {
   const s = store.snapshot(); const pick = (k) => league === 'all' || leagueOf(k) === league;
@@ -309,6 +318,16 @@ const keepalive = { ok: 0, failed: 0, lastAt: null };
 if (SELF_URL && process.env.KEEPALIVE !== '0') setInterval(() => {
   fetch(`${SELF_URL}/healthz`, { signal: AbortSignal.timeout(15_000) }).then((r) => { keepalive.ok++; keepalive.lastAt = Date.now(); r.body?.cancel(); }).catch(() => keepalive.failed++);
 }, 4 * 60_000);
+
+// Anything else: a real 404 (JSON under /api, a short page with a way back otherwise).
+const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Page not found · NFL Odds Board</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"></head>
+<body style="margin:0;font-family:Inter,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#202a35;background:#fff">
+<main style="max-width:560px;margin:18vh auto 0;padding:0 24px"><p style="margin:0 0 10px;color:#2555cb;font-size:11px;font-weight:600;letter-spacing:.08em">PRESSBOX / ODDS</p>
+<h1 style="margin:0 0 8px;font-size:34px;font-weight:600;letter-spacing:-.04em">Page not found.</h1>
+<p style="margin:0 0 20px;color:#5b6673;font-size:14px">There is nothing at this address. The boards are at <a href="/" style="color:#2555cb">NFL</a>, <a href="/college-football" style="color:#2555cb">College Football</a>, <a href="/cfl" style="color:#2555cb">CFL</a> and <a href="/all" style="color:#2555cb">All Leagues</a>.</p>
+<a href="/" style="display:inline-block;background:#2555cb;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:9px 16px;border-radius:4px">Back to the odds board</a></main></body></html>`;
+app.use((req, res) => (req.path.startsWith('/api/') ? res.status(404).json({ error: 'not found' }) : res.status(404).type('html').send(NOT_FOUND)));
 
 const server = app.listen(PORT, () => log('http', `listening on :${PORT} · sources=${SOURCES.join('+') || 'none'} · batch=${BATCH_MS || 'immediate'} · stale dk=${STALE_MS.draftkings} fd=${STALE_MS.fanduel} · v${VERSION}`));
 
