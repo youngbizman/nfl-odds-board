@@ -323,7 +323,7 @@ the restored board is then re-confirmed by the server's own snapshot.
 ### Numbers (live deployment, Wed Oct 28 evening, pregame)
 | Hop | DraftKings | FanDuel |
 | --- | --- | --- |
-| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly; DK's clock is **−4 ms ± 19 ms** from ours (measured on subscribe), so this is real lag, not skew (earlier version via the Ontario relay: p50 88 ms over 26 moves) | **push:** FanDuel `updatedAt` → received (measured live, §8 below) · **poll safety net:** a fresh answer every 1 s (0.5 s with the edge), request **16 ms** p50 |
+| Book → our server | **44 ms** DK publishedTime → applied in the cloud, socket held directly; DK's clock is **−4 ms ± 19 ms** from ours (measured on subscribe), so this is real lag, not skew (earlier version via the Ontario relay: p50 88 ms over 26 moves) | **push:** FanDuel `updatedAt` → received, p50 ≈ 0.6 s on Thursday's live games (below) · **poll safety net:** a fresh answer every 1 s (0.5 s with the edge), request **16 ms** p50 |
 | Edge snapshot relay (Ontario → Ohio) | not on the price path any more; 155 KB every 30 s, round trip p50 ~48 ms | — |
 | Our processing per update | **2.5 µs** per DK frame | **~0.25 ms** per 87-market poll (25 µs per 9 markets) |
 | Wait before sending to browsers | p50 0 ms | p50 0 ms |
@@ -339,8 +339,29 @@ the restored board is then re-confirmed by the server's own snapshot.
 | DK line moves (spread −3 → −3.5) | waited for a re-snapshot, ~3 s | **mapped from the selection id**, same speed as a price move |
 | Stale detection | DK 150 s / FD 15 s | DK 75 s (ping/pong every 10 s) / FD 10 s |
 
-Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) is measured automatically; results land in
-`research/latency/` and this table is updated from them.
+### Live games, Thu Oct 29 (measured from outside, no laptop involved)
+Thursday night: CAR @ GB (NFL, 8:15 pm ET) plus four college games live at once (from 7:30 pm). Two GitHub machines
+watched the deployed board like viewers from 7:20 pm to 11:55 pm (`tools/live-watch.mjs`, every 10 minutes); the raw
+samples and summaries are in `research/live/2026-10-29/` and `research/live/2026-10-29-late/`.
+
+| What | Result, 7:20–11:55 pm ET |
+| --- | --- |
+| Price changes a viewer received | **NFL:** DraftKings 2,646 · FanDuel 3,617 · **College:** DraftKings 7,982 · FanDuel 11,721 (≈ 26,000 in total; busiest 10 minutes ≈ 1,000) |
+| DraftKings publish → our server, live games | p50 **23–53 ms**, p90 **131–157 ms** (DK's own `publishedTime`, clock offset removed) |
+| DraftKings publish → viewer (a browser elsewhere) | median of the 10-minute p50s **75 ms** (range 43–153 ms) |
+| Our server → viewer | median **30 ms** (range 17–50 ms) |
+| FanDuel `updatedAt` → our server (push) | p50 **≈ 0.6 s**, p90 **≈ 1.0 s** (FanDuel's own stamp, so it includes FanDuel's internal delay before it publishes) |
+| FanDuel: which channel brought each change first | push 6,869 · poll 7,331 — both matter; the push connection held all night (1 connect, 0 reconnects, 0 errors) |
+| Every price on the board vs both books' APIs | 29 checks, **41,939 comparisons identical, 0 missing**; 39 differences, all on live games where the price moved between the two reads; **0 differences on games not in play** |
+| Restarts / stale books | **0** server restarts; both books fresh in every check |
+| Page check (every league, both designs, phone + desktop) | no errors at 6:08 pm, 8:51 pm and 10:22 pm |
+
+* At kickoff DraftKings replaced each game's market ids with new in-play ones; the board picked them up within
+  seconds (board = DraftKings' API, nothing missing, checked at 7:36 pm).
+* What went wrong, honestly: from 11:22 pm the watcher's clock estimate drifted, so its "DraftKings publish → viewer"
+  came out negative for five 10-minute rows; those rows are left out above (the server's own figure, measured on the
+  server's clock, is unaffected). In live college games FanDuel prices sometimes flip back and forth within ~2 s
+  (A → B → A); I am checking whether that comes from FanDuel's feed itself.
 
 ### Checked against the books' own websites
 `tools/race.mjs` opens DraftKings' and FanDuel's NFL pages and our board side by side in real Chrome on one machine
@@ -357,8 +378,8 @@ Live (in-game) numbers: the Thursday night game (CAR @ GB, Oct 29, 8:15 pm ET) i
   book; the only extra step is Ohio → the viewer's browser. Under the FanDuel push our own polling (1 s) still runs, so
   even a missed push is corrected within a second — faster than FanDuel's own widgets refresh.
 * Wednesday evening was too quiet to time many moves (FanDuel's NFL lines did not move for 20+ minutes; DraftKings
-  moved 26 times in the hour, 0 times during the second run). The race runs again during the live Thursday game and
-  the timings will be added here.
+  moved 26 times in the hour, 0 times during the second run). Thursday's live games gave thousands of moves: see
+  "Live games, Thu Oct 29" above.
 
 ### Would Go or Redis Streams make it faster?
 Not for latency. Our processing is microseconds; the time is network hops and FanDuel's poll beat. Go would cut CPU
@@ -423,7 +444,8 @@ sideways scrolling on a phone. Thu Oct 29 on the deployment: **15/15 clean**, fi
 watches the deployed board through a live window like three viewers (one per league) and every 10 minutes records
 price changes per league and book, DraftKings publish → viewer and server → viewer delays, the server's own figures
 (FanDuel push vs poll per league), every price on the board vs both books' APIs, freshness, restarts, and the page
-check; results go to the `live-results` branch (`research/live/<date>/summary.md`).
+check; results go to the `live-results` branch (`research/live/<date>/summary.md`). A GitHub job stops after 6 hours,
+so a second workflow (`live-test-late.yml`) covers the end of a late game on its own branch (`live-results-late`).
 
 Running system: `/healthz` (liveness, used by Render) never fails because a *book* is down — restarting would not fix
 DraftKings. `/api/health` (readiness) returns 503 unless both books are fresh with prices. `tools/smoke.mjs <url>` checks

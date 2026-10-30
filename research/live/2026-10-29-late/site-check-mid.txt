@@ -1,0 +1,30 @@
+nfl · pressbox · desktop            134 prices · first prices 684 ms · ok
+nfl · pressbox · phone              134 prices · first prices 420 ms · ok
+nfl · grid · desktop                486 prices · first prices 393 ms · ok
+nfl · grid · phone                  486 prices · first prices 606 ms · ok
+ncaaf · pressbox · desktop          254 prices · first prices 695 ms · ok
+ncaaf · pressbox · phone            254 prices · first prices 512 ms · ok
+ncaaf · grid · desktop             1044 prices · first prices 439 ms · ok
+ncaaf · grid · phone               1044 prices · first prices 613 ms · ok
+cfl · pressbox · desktop             10 prices · first prices 505 ms · ok
+cfl · pressbox · phone               10 prices · first prices 380 ms · ok
+cfl · grid · desktop                 36 prices · first prices 575 ms · ok
+cfl · grid · phone                   36 prices · first prices 465 ms · ok
+nfl · pressbox · desktop · dark     136 prices · first prices 498 ms · ok
+nfl · grid · desktop · dark         486 prices · first prices 598 ms · ok
+nfl · game page · pressbox · desktop    6 prices · first prices 379 ms · ok
+nfl · game page · pressbox · phone    6 prices · first prices 387 ms · ok
+nfl · game page · grid · desktop     18 prices · first prices 377 ms · ok
+nfl · game page · grid · phone       18 prices · first prices 482 ms · ok
+ncaaf · game page · pressbox · desktop    6 prices · first prices 625 ms · ok
+ncaaf · game page · pressbox · phone    6 prices · first prices 568 ms · ok
+ncaaf · game page · grid · desktop   18 prices · first prices 501 ms · ok
+ncaaf · game page · grid · phone     18 prices · first prices 475 ms · ok
+cfl · game page · pressbox · desktop    6 prices · first prices 386 ms · ok
+cfl · game page · pressbox · phone    6 prices · first prices 424 ms · ok
+cfl · game page · grid · desktop     18 prices · first prices 377 ms · ok
+cfl · game page · grid · phone       18 prices · first prices 348 ms · ok
+open a game from its chart         ok
+league switch in the page          ok
+
+✔ no errors
