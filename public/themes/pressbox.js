@@ -19,40 +19,20 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const etTime = (d, opts) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
 
 import { bigChart, ladderChart, chartHover } from '/charts.js';
+import { topbarHtml, wireTopbar, renderTopbar } from '/topbar.js';
 
 let api, root, el = {};
 
 function mount(r, a) {
   api = a; root = r;
-  // the design switch sits in plain sight with the other board controls, as two buttons
-  const picker = api.themes.length > 1
-    ? `<div class="field design-field"><span id="design-label">Design</span><div class="segment" role="group" aria-labelledby="design-label">${api.themes.map((t) => `<button type="button" data-theme-switch="${t.id}" aria-pressed="${t.id === api.settings.theme}" title="${esc(t.name)}">${esc(t.short || t.name)}</button>`).join('')}</div></div>` : '';
   root.innerHTML = `
   <a class="skip" href="#board">Skip to prices</a>
   <div class="app">
-    <header class="mast">
-      <div class="mast-left"><span class="wordmark">PRESSBOX / ODDS</span>${picker}</div>
-      <div class="mast-links"><span class="demo-label">Ontario · DraftKings + FanDuel · live</span><a href="${REPO}#readme">How it works</a>
-        <button type="button" class="icon-btn" id="scheme-btn" title="Light / dark (d)" aria-label="Switch light or dark"></button>
-        <button type="button" class="icon-btn" id="help-btn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button></div>
-    </header>
+    ${topbarHtml(api, REPO)}
     <div class="help" id="help" hidden role="dialog" aria-label="Keyboard shortcuts">
       <strong>Keyboard</strong>
       <dl><dt>/</dt><dd>find a team</dd><dt>1 2 3</dt><dd>best price · DraftKings · FanDuel</dd>
       <dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the game you are on</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl>
-    </div>
-    <section class="heading">
-      <div><h1>${esc(api.league().title)} / <span>odds.</span></h1><p class="subtitle">Best price across DraftKings and FanDuel, live. Kickoffs in ET.</p></div>
-      <div class="view" role="group" aria-label="Sportsbook view">
-        <button type="button" data-view="best">Best price</button><button type="button" data-view="draftkings">DraftKings only</button><button type="button" data-view="fanduel">FanDuel only</button>
-      </div>
-    </section>
-    <div class="toolbar" aria-label="Board controls">
-      <div class="field league-field"><span id="league-label">League</span><div class="segment" role="group" aria-labelledby="league-label" id="leagues"></div></div>
-      <div class="field phase-field"><span id="phase-label">Show</span><div class="segment" role="group" aria-labelledby="phase-label">
-        <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
-      <label class="field search"><span>Find a team <kbd>/</kbd></span><input id="search" type="search" autocomplete="off" placeholder="Search teams"></label>
-      <div class="field format-field"><span id="format-label">Odds</span><div class="segment" role="group" aria-labelledby="format-label"><button type="button" data-format="american">American</button><button type="button" data-format="decimal">Decimal</button></div></div>
     </div>
     <section class="holds" id="holds" aria-label="Tightest markets right now"></section>
     <div class="sentinel" aria-hidden="true"></div>
@@ -71,8 +51,7 @@ function mount(r, a) {
   </div>`;
   el = { board: root.querySelector('#board'), feeds: root.querySelector('#feeds'), banner: root.querySelector('#connection-banner'), results: root.querySelector('#results'), wire: root.querySelector('#wire'),
     holds: root.querySelector('#holds'), help: root.querySelector('#help'), sticky: root.querySelector('.sticky') };
-  root.querySelector('#scheme-btn').addEventListener('click', () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'));
-  root.querySelector('#help-btn').addEventListener('click', () => toggleHelp());
+  wireTopbar(root, api, { toggleHelp });
   // the status bar condenses once it sticks to the top; on a phone it stays one line until tapped
   observer = new IntersectionObserver(([e]) => el.sticky.classList.toggle('is-stuck', !e.isIntersecting), { threshold: 0 });
   observer.observe(root.querySelector('.sentinel'));
@@ -81,23 +60,17 @@ function mount(r, a) {
     if (e.target.closest('[data-holds-more]')) { api.state.holdsMore = !api.state.holdsMore; return renderHolds(); }
     const t = e.target.closest('[data-goto]'); if (!t) return;
     const node = el.board.querySelector(`[data-game="${CSS.escape(t.dataset.goto)}"]`);
-    if (!node) { api.set('phase', 'all'); api.set('search', ''); root.querySelector('#search').value = ''; }
+    if (!node) { api.set('phase', 'all'); api.set('search', ''); root.querySelector('#tb-search').value = ''; }
     if (t.dataset.alt && !api.extrasOpen(t.dataset.goto)) api.toggleExtras(t.dataset.goto);
     if (t.dataset.market) api.pickChart(t.dataset.goto, t.dataset.market, t.dataset.side);
     if (t.dataset.alt) setTimeout(() => api.setExtras(t.dataset.goto, { kind: t.dataset.alt }), 400);
     requestAnimationFrame(() => { const n = el.board.querySelector(`[data-game="${CSS.escape(t.dataset.goto)}"]`); n?.scrollIntoView({ behavior: 'smooth', block: 'center' }); n?.classList.add('is-flagged'); setTimeout(() => n?.classList.remove('is-flagged'), 1600); });
   });
-  root.querySelectorAll('.view button').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
-  root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
-  root.querySelector('#leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
   el.results.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
-  el.board.addEventListener('click', (e) => { if (e.target.closest('[data-clear-search]')) { root.querySelector('#search').value = ''; api.set('search', ''); } });
+  el.board.addEventListener('click', (e) => { if (e.target.closest('[data-clear-search]')) { root.querySelector('#tb-search').value = ''; api.set('search', ''); } });
   // the alt-lines table's own header sticks just under the status bar (whose height changes as it condenses)
   const stickyH = () => document.documentElement.style.setProperty('--sticky-h', `${el.sticky.offsetHeight}px`);
   try { new ResizeObserver(stickyH).observe(el.sticky); } catch {} stickyH();
-  root.querySelector('#search').addEventListener('input', (e) => api.set('search', e.target.value));
-  root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
-  root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
   const pickFrom = (t) => { const c = t.closest('.price[data-market]'); const gEl = c?.closest('[data-game]'); if (c && gEl) { api.pickChart(gEl.dataset.game, c.dataset.market, c.dataset.side); gEl.querySelector(`.price[data-market="${c.dataset.market}"][data-side="${c.dataset.side}"]`)?.focus({ preventScroll: true }); } };
   chartHover(el.board, api);
   el.board.addEventListener('click', (e) => {
@@ -123,8 +96,8 @@ function mount(r, a) {
 }
 let observer = null;
 function unmount() { observer?.disconnect(); root.innerHTML = ''; }
-function focusSearch() { const i = root.querySelector('#search'); i.focus(); i.select(); }
-function toggleHelp(force) { const open = force ?? el.help.hidden; el.help.hidden = !open; root.querySelector('#help-btn').setAttribute('aria-expanded', String(open)); }
+function focusSearch() { const i = root.querySelector('#tb-search'); i.focus(); i.select(); }
+function toggleHelp(force) { const open = force ?? el.help.hidden; el.help.hidden = !open; root.querySelector('#tb-help').setAttribute('aria-expanded', String(open)); }
 function closeHelp() { if (el.help && !el.help.hidden) toggleHelp(false); }
 
 // ---------- price cells ----------
@@ -355,14 +328,8 @@ function chartHtml(g) {
 
 // ---------- sections ----------
 function render() {
-  root.querySelectorAll('.view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === api.settings.view)));
-  root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
-  root.querySelector('#leagues').innerHTML = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
-  root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
-  root.querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === api.settings.format)));
+  renderTopbar(root, api);
   root.querySelector('.app').classList.toggle('on-gamepage', !!api.settings.game);
-  const dark = document.documentElement.dataset.scheme === 'dark';
-  const sb = root.querySelector('#scheme-btn'); sb.textContent = dark ? '☀' : '☾'; sb.setAttribute('aria-label', dark ? 'Switch to light' : 'Switch to dark');
   const groups = api.groups();
   const total = groups.reduce((n, g) => n + g.games.length, 0), live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();

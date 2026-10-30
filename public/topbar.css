@@ -1,0 +1,43 @@
+/* The top bar, shared by both designs (public/topbar.js). Its own colours, so it looks the same in both. */
+.tb {
+  --tb-text:#18202b; --tb-muted:#5f6b78; --tb-line:#c9d0d9; --tb-soft:#f1f4f8; --tb-accent:#1f56c8; --tb-on:#ffffff; --tb-bg:#ffffff;
+  font-family:'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; font-variant-numeric:tabular-nums; color:var(--tb-text);
+  display:flex; flex-direction:column; gap:10px; padding:4px 0 12px; margin-bottom:14px; border-bottom:1px solid var(--tb-line);
+}
+html[data-scheme=dark] .tb { --tb-text:#e3e9f0; --tb-muted:#9aa6b3; --tb-line:#33404e; --tb-soft:#18212b; --tb-accent:#3f7ff0; --tb-on:#ffffff; --tb-bg:#0f151c; }
+.tb .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.tb-row { display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; }
+.tb-brand { display:flex; align-items:baseline; gap:10px; margin-right:auto; white-space:nowrap; min-width:0; }
+.tb-logo { width:14px; height:14px; align-self:center; border-radius:3px; background:linear-gradient(135deg, var(--tb-accent) 0 50%, var(--tb-text) 50%); }
+.tb-brand b { font-size:16px; font-weight:700; letter-spacing:-.01em; }
+.tb-sub { font-size:12px; color:var(--tb-muted); overflow:hidden; text-overflow:ellipsis; }
+.tb-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.tb-seg { display:inline-flex; border:1px solid var(--tb-line); border-radius:7px; overflow:hidden; background:var(--tb-bg); }
+.tb-seg button { border:0; border-right:1px solid var(--tb-line); background:transparent; height:30px; padding:0 11px; font-family:inherit; font-size:12.5px; font-weight:500; line-height:1; color:var(--tb-muted); white-space:nowrap; cursor:pointer; }
+.tb-seg button:last-child { border-right:0; }
+.tb-seg button:hover { color:var(--tb-text); background:var(--tb-soft); }
+.tb-seg button[aria-pressed=true] { background:var(--tb-accent); color:var(--tb-on); font-weight:600; }
+.tb-seg button small { font-size:11px; font-weight:500; margin-left:3px; opacity:.75; }
+.tb-design button { padding:0 13px; font-weight:600; }
+.tb-search input { width:190px; height:32px; padding:4px 11px; border:1px solid var(--tb-line); border-radius:7px; background:var(--tb-bg); color:var(--tb-text); font-family:inherit; font-size:13px; font-weight:400; }
+.tb-search input::placeholder { color:var(--tb-muted); }
+.tb-more { display:contents; }
+.tb-filters { display:none; }
+.tb-icons { display:inline-flex; gap:6px; }
+.tb-icon { display:inline-grid; place-items:center; width:32px; height:32px; border:1px solid var(--tb-line); border-radius:7px; background:var(--tb-bg); color:var(--tb-text); font-family:inherit; font-size:14px; font-weight:600; line-height:1; text-decoration:none; cursor:pointer; }
+.tb-icon:hover, .tb-seg button:focus-visible, .tb-icon:focus-visible { border-color:var(--tb-accent); color:var(--tb-accent); outline:none; }
+.tb-seg button[aria-pressed=true]:focus-visible { color:var(--tb-on); box-shadow:inset 0 0 0 2px var(--tb-on); }
+@media (max-width:1100px) { .tb-sub { display:none; } }
+/* phone: league and search stay; "Filters" opens which prices, live/pregame/starred and the odds format */
+@media (max-width:700px) {
+  .tb-row { gap:8px; }
+  .tb-right { width:100%; justify-content:space-between; }
+  .tb-controls > .tb-seg { width:100%; } .tb-controls > .tb-seg button { flex:1; height:36px; padding:0 6px; }
+  .tb-search { flex:1; } .tb-search input { width:100%; height:38px; font-size:16px; }
+  .tb-filters { display:inline-block; height:38px; padding:0 14px; border:1px solid var(--tb-line); border-radius:7px; background:var(--tb-bg); color:var(--tb-text); font-family:inherit; font-size:13px; font-weight:600; }
+  .tb-more { display:none; width:100%; flex-direction:column; gap:8px; }
+  .tb.is-open .tb-more { display:flex; }
+  .tb-more .tb-seg { width:100%; } .tb-more .tb-seg button { flex:1; height:36px; padding:0 6px; }
+  .tb-design { flex:1; } .tb-design button { flex:1; height:34px; }
+}
+@media (hover:none) { .tb-icon[title]::after { content:none; } }

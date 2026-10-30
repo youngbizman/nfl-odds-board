@@ -7,6 +7,7 @@ const BOOKS = ['draftkings', 'fanduel'];
 const SIDES = { spread: ['away', 'home'], total: ['over', 'under'], moneyline: ['away', 'home'] };
 const SHORT = { moneyline: 'ML', spread: 'SP', total: 'TOT' };
 import { bigChart, ladderChart, chartHover } from '/charts.js';
+import { topbarHtml, wireTopbar, renderTopbar } from '/topbar.js';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const et = (d, o) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...o });
 const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
@@ -15,21 +16,10 @@ let api, root, el = {}, sort = 'time';
 
 function mount(r, a) {
   api = a; root = r;
-  // the design switch and the odds format are plain buttons, like every other control here
-  const picker = api.themes.length > 1 ? `<div class="g-ctl g-design"><span class="g-lbl" id="g-design-l">Design</span><div class="g-seg" role="group" aria-labelledby="g-design-l">${api.themes.map((t) => `<button type="button" data-theme-switch="${t.id}" aria-pressed="${t.id === api.settings.theme}">${esc(t.short || t.name)}</button>`).join('')}</div></div>` : '';
   root.innerHTML = `
   <a class="skip" href="#g-table">Skip to prices</a>
   <div class="g-app">
-    <header class="g-top">
-      <div class="g-brand"><span class="g-logo" aria-hidden="true"></span><b>Odds Grid</b><span class="g-sub">${esc(api.league().title)} · Ontario · DraftKings × FanDuel · live</span></div>
-      ${picker}
-      <div class="g-seg" role="group" aria-label="League" id="g-leagues"></div>
-      <label class="g-search"><span class="sr">Find a team</span><input id="g-search" type="search" autocomplete="off" placeholder="Search team   /"></label>
-      <div class="g-seg" role="group" aria-label="View"><button type="button" data-view="best">Best</button><button type="button" data-view="draftkings">DraftKings</button><button type="button" data-view="fanduel">FanDuel</button></div>
-      <div class="g-seg" role="group" aria-label="Show"><button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred" title="Starred games">★</button></div>
-      <div class="g-ctl"><span class="g-lbl" id="g-format-l">Odds</span><div class="g-seg" role="group" aria-labelledby="g-format-l"><button type="button" data-format="american">American</button><button type="button" data-format="decimal">Decimal</button></div></div>
-      <div class="g-icons"><button type="button" class="g-icon" id="g-scheme" title="Light / dark (d)" aria-label="Switch light or dark"></button><button type="button" class="g-icon" id="g-help-btn" title="Keyboard (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button><a class="g-icon" href="${REPO}#readme" title="How it works" aria-label="How it works">i</a></div>
-    </header>
+    ${topbarHtml(api, REPO)}
     <div class="g-help" id="g-help" hidden role="dialog" aria-label="Keyboard shortcuts"><b>Keyboard</b>
       <dl><dt>/</dt><dd>search</dd><dt>1 2 3</dt><dd>best · DraftKings · FanDuel</dd><dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the focused game</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl></div>
     <div id="g-banner" class="g-banner" hidden></div>
@@ -48,21 +38,14 @@ function mount(r, a) {
   </div>`;
   el = { table: root.querySelector('#g-table'), feeds: root.querySelector('#g-feeds'), holds: root.querySelector('#g-holds'), wire: root.querySelector('#g-wire'),
     banner: root.querySelector('#g-banner'), meta: root.querySelector('#g-meta'), help: root.querySelector('#g-help'), page: root.querySelector('#g-page'), big: root.querySelector('#g-big') };
-  root.querySelectorAll('button[data-view]').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
-  root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
-  root.querySelector('#g-leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
+  wireTopbar(root, api, { toggleHelp });
   el.meta.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
-  root.querySelector('#g-search').addEventListener('input', (e) => api.set('search', e.target.value));
-  root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
-  root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
   el.page.addEventListener('click', (e) => { if (e.target.closest('[data-back]') && !(e.metaKey || e.ctrlKey)) { e.preventDefault(); api.closeGame(); } });
   chartHover(el.big, api); chartHover(el.table, api);
   el.big.addEventListener('click', (e) => {
     const rg = e.target.closest('[data-range]'); if (rg) return api.setRange(rg.dataset.range);
     const pk = e.target.closest('[data-pick]'); if (pk && api.settings.game) { const [m, sd] = pk.dataset.pick.split('|'); api.pickChart(api.settings.game, m, sd); }
   });
-  root.querySelector('#g-scheme').addEventListener('click', () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'));
-  root.querySelector('#g-help-btn').addEventListener('click', () => toggleHelp());
   el.table.addEventListener('click', onTableClick);
   el.table.addEventListener('change', (e) => {
     if (e.target.matches('[data-x-both]')) api.setExtras(e.target.closest('[data-extras]').dataset.extras, { bothOnly: e.target.checked });
@@ -77,13 +60,13 @@ function mount(r, a) {
   el.holds.addEventListener('click', (e) => { if (e.target.closest('[data-holds-more]')) { api.state.holdsMore = !api.state.holdsMore; return renderHolds(); } const t = e.target.closest('[data-goto]'); if (t) goTo(t.dataset.goto, t.dataset.alt); });
 }
 function unmount() { root.innerHTML = ''; }
-function focusSearch() { const i = root.querySelector('#g-search'); i.focus(); i.select(); }
-function toggleHelp(force) { const open = force ?? el.help.hidden; el.help.hidden = !open; root.querySelector('#g-help-btn').setAttribute('aria-expanded', String(open)); }
+function focusSearch() { const i = root.querySelector('#tb-search'); i.focus(); i.select(); }
+function toggleHelp(force) { const open = force ?? el.help.hidden; el.help.hidden = !open; root.querySelector('#tb-help').setAttribute('aria-expanded', String(open)); }
 function closeHelp() { if (el.help && !el.help.hidden) toggleHelp(false); }
 
 let theadObs = null;
 function onTableClick(e) {
-  if (e.target.closest('[data-clear-search]')) { root.querySelector('#g-search').value = ''; return api.set('search', ''); }
+  if (e.target.closest('[data-clear-search]')) { root.querySelector('#tb-search').value = ''; return api.set('search', ''); }
   const og = e.target.closest('[data-open-game]'); if (og) { if (og.tagName === 'A' && (e.metaKey || e.ctrlKey || e.shiftKey)) return; e.preventDefault(); return api.openGame(og.dataset.openGame); }
   const ld = e.target.closest('[data-ladder]'); if (ld) return api.setExtras(ld.closest('[data-extras]').dataset.extras, { ladder: ld.dataset.ladder });
   const s = e.target.closest('[data-sort]'); if (s) { sort = sort === s.dataset.sort ? 'time' : s.dataset.sort; return render(); }
@@ -98,7 +81,7 @@ function onTableClick(e) {
   }
 }
 function goTo(gk, alt) {
-  if (!el.table.querySelector(`[data-game="${CSS.escape(gk)}"]`)) { api.set('phase', 'all'); api.set('search', ''); root.querySelector('#g-search').value = ''; }
+  if (!el.table.querySelector(`[data-game="${CSS.escape(gk)}"]`)) { api.set('phase', 'all'); api.set('search', ''); root.querySelector('#tb-search').value = ''; }
   if (alt && !api.extrasOpen(gk)) api.toggleExtras(gk);
   if (alt) setTimeout(() => api.setExtras(gk, { kind: alt }), 400);
   requestAnimationFrame(() => { const n = el.table.querySelector(`[data-game="${CSS.escape(gk)}"]`); n?.scrollIntoView({ behavior: 'smooth', block: 'center' }); n?.classList.add('flag'); setTimeout(() => n?.classList.remove('flag'), 1600); });
@@ -253,12 +236,7 @@ function sortedGames() {
   return games.sort((a, b) => e(b) - e(a));
 }
 function render() {
-  root.querySelectorAll('button[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view())));
-  root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
-  root.querySelector('#g-leagues').innerHTML = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}${l.games != null ? ` · ${l.games} games` : ''}">${esc(l.label)}</button>`).join('');
-  root.querySelector('#g-scheme').textContent = document.documentElement.dataset.scheme === 'dark' ? '☀' : '☾';
-  root.querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === api.settings.format)));
-  root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
+  renderTopbar(root, api);
   const pg = api.game(); root.querySelector('.g-app').classList.toggle('on-gamepage', !!api.settings.game);
   el.page.hidden = !api.settings.game;
   el.page.innerHTML = api.settings.game ? `<a class="g-back" href="${esc(location.pathname)}" data-back>‹ All games</a><b>${pg ? `${esc(pg.away.name)} @ ${esc(pg.home.name)}` : 'This game is not on the board any more'}</b>${pg ? `<span class="mut">${pg.status === 'live' ? '● live' : esc(et(new Date(pg.start), { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET')}<span class="g-esc"> · Esc to go back</span></span>` : ''}` : '';
