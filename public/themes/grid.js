@@ -56,7 +56,7 @@ function mount(r, a) {
   root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
   el.page.addEventListener('click', (e) => { if (e.target.closest('[data-back]') && !(e.metaKey || e.ctrlKey)) { e.preventDefault(); api.closeGame(); } });
-  chartHover(el.big, api);
+  chartHover(el.big, api); chartHover(el.table, api);
   el.big.addEventListener('click', (e) => {
     const rg = e.target.closest('[data-range]'); if (rg) return api.setRange(rg.dataset.range);
     const pk = e.target.closest('[data-pick]'); if (pk && api.settings.game) { const [m, sd] = pk.dataset.pick.split('|'); api.pickChart(api.settings.game, m, sd); }

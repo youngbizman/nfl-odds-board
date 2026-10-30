@@ -46,6 +46,8 @@ function overlay(api, d, fx) {
 export function chartHover(root, api) {
   if (!root || root.dataset.chartHover) return; root.dataset.chartHover = '1';
   const show = (e) => {
+    const lp = e.target.closest?.('.ld-plot[data-ladder-hover]');
+    if (lp) { const r = lp.getBoundingClientRect(); ladderAt = { key: lp.dataset.ladderHover, fx: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) }; const o = lp.querySelector('.bc-hover'); if (o) o.innerHTML = ladderOverlay(api, LADDER.get(ladderAt.key), ladderAt.fx); return; }
     const plot = e.target.closest?.('.bc-plot[data-hover]'); if (!plot) return;
     const d = HOVER.get(plot.dataset.hover); if (!d) return;
     const r = plot.getBoundingClientRect(); const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
@@ -54,8 +56,9 @@ export function chartHover(root, api) {
   };
   root.addEventListener('pointermove', show); root.addEventListener('pointerdown', show);
   root.addEventListener('pointerout', (e) => {
-    const plot = e.target.closest?.('.bc-plot[data-hover]'); if (!plot || plot.contains(e.relatedTarget)) return;
-    hoverAt = null; const o = plot.querySelector('.bc-hover'); if (o) o.innerHTML = '';
+    const plot = e.target.closest?.('.bc-plot[data-hover], .ld-plot[data-ladder-hover]'); if (!plot || plot.contains(e.relatedTarget)) return;
+    if (plot.matches('.ld-plot')) ladderAt = null; else hoverAt = null;
+    const o = plot.querySelector('.bc-hover'); if (o) o.innerHTML = '';
   });
 }
 
@@ -169,21 +172,42 @@ export function ladderChart(api, gk, v) {
   if (!rows.length) return `<aside class="ld"><h4>${esc(title)}</h4>${chooser}<p class="ld-empty">No lines for this one.</p></aside>`;
   const W = 600, H = 220, n = rows.length;
   const X = (i) => (n === 1 ? W / 2 : 24 + (i * (W - 48)) / (n - 1)), Y = (p) => H - 12 - (p / 100) * (H - 24);
-  let paths = '', marks = ''; const dense = n > 24; // many lines: smaller marks so the two curves stay readable
+  // same rules as the big chart: lines only (a dot per number only when there are few), point at it for the prices,
+  // and a strip underneath says which book pays more at each number
+  let paths = '', marks = ''; const few = n <= 12;
   BOOKS.forEach((b, bi) => {
     let d = ''; rows.forEach((r, i) => {
       const o = r.cells[bi]; if (!o) return; const p = chance(api, o.odds);
       d += `${d ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p).toFixed(1)}`;
-      const best = r.cmp.kind === 'best' && r.cmp.best?.book === b;
-      marks += `<circle class="ld-pt ${B[b].cls}${best ? ' is-best' : ''}" cx="${X(i).toFixed(1)}" cy="${Y(p).toFixed(1)}" r="${best ? (dense ? 3.6 : 5.5) : dense ? 1.8 : 3.5}"><title>${esc(`${B[b].label} · ${r.label}: ${api.fmtOdds(o.odds)} (${p.toFixed(1)}%)${best ? ' · best price' : ''}`)}</title></circle>`;
+      if (few) marks += `<circle class="ld-pt ${B[b].cls}" cx="${X(i).toFixed(1)}" cy="${Y(p).toFixed(1)}" r="3"/>`;
     });
     if (d) paths += `<path class="ld-line ${B[b].cls}" d="${d}"/>`;
   });
+  const lineName = (r) => (v.kind === 'alt-spread' ? `${r.subject === 'away' ? g?.away.abbr : g?.home.abbr} ${api.fmtLine('spread', r.subject, r.line)}` : v.kind === 'alt-total' ? `${r.subject === 'over' ? 'Over' : 'Under'} ${r.line}` : `${r.name} ${r.line}+`);
+  const winner = (r) => (r.cmp.kind === 'best' ? B[r.cmp.best.book].cls : r.cmp.kind === 'tie' ? 'tie' : 'none');
+  const edge = (i) => (n === 1 ? [0, 100] : [Math.max(0, (X(i) - (W - 48) / (n - 1) / 2) / W) * 100, Math.min(W, X(i) + (W - 48) / (n - 1) / 2) / W * 100]);
+  const strip = `<div class="ld-best" aria-label="Which book pays more at each number">${rows.map((r, i) => { const [a, z] = edge(i); return `<span class="ld-win ${winner(r)}" style="left:${a.toFixed(2)}%;width:${(z - a).toFixed(2)}%"></span>`; }).join('')}</div>
+    <div class="ld-best-key"><span class="ld-win-key dk"></span>${B.draftkings.label} pays more<span class="ld-win-key fd"></span>${B.fanduel.label} pays more<span class="ld-win-key tie"></span>same price</div>`;
+  LADDER.set(gk, { n, W, H, X, Y, rows: rows.map((r) => ({ name: lineName(r), cells: r.cells, win: r.cmp.kind === 'best' ? r.cmp.best.book : r.cmp.kind })) });
+  const hov = ladderAt?.key === gk ? ladderOverlay(api, LADDER.get(gk), ladderAt.fx) : '';
   const every = Math.max(1, Math.ceil(n / 7));
   const ticks = rows.map((r, i) => (i % every === 0 || i === n - 1 ? `<span class="ld-x" style="left:${((X(i) / W) * 100).toFixed(2)}%">${esc(v.kind === 'alt-spread' ? api.fmtLine('spread', r.subject, r.line) : v.kind === 'alt-total' ? r.line : `${r.line}+`)}</span>` : '')).join('');
   return `<aside class="ld" aria-label="${esc(title)}"><h4>${esc(title)} <span>· implied chance</span></h4>${chooser}${legend}
-    <div class="ld-plot"><svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><g class="ld-grid">${[25, 50, 75].map((p) => `<line x1="0" x2="${W}" y1="${Y(p)}" y2="${Y(p)}"/>`).join('')}</g>${paths}${marks}</svg>
-      ${[100, 75, 50, 25, 0].map((p) => `<span class="ld-y" style="top:${((Y(p) / H) * 100).toFixed(1)}%">${p}%</span>`).join('')}</div>
-    <div class="ld-axis">${ticks}</div>
-    <p class="ld-note">Big ring = the better price at that number. Where one line sits lower, that book pays more.</p></aside>`;
+    <div class="ld-plot" data-ladder-hover="${esc(gk)}"><svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><g class="ld-grid">${[25, 50, 75].map((p) => `<line x1="0" x2="${W}" y1="${Y(p)}" y2="${Y(p)}"/>`).join('')}</g>${paths}${marks}</svg>
+      ${[100, 75, 50, 25, 0].map((p) => `<span class="ld-y" style="top:${((Y(p) / H) * 100).toFixed(1)}%">${p}%</span>`).join('')}<div class="bc-hover" aria-hidden="true">${hov}</div></div>
+    <div class="ld-axis">${ticks}</div>${strip}
+    <p class="ld-note">Point at the chart for both books' prices at a number. Where one line sits lower, that book pays more; the strip shows it at every number.</p></aside>`;
+}
+
+// ladder hover: snaps to the nearest number
+const LADDER = new Map(); let ladderAt = null;
+function ladderOverlay(api, d, fx) {
+  if (!d) return '';
+  const i = d.n === 1 ? 0 : Math.min(d.n - 1, Math.max(0, Math.round(((fx * d.W) - 24) / ((d.W - 48) / (d.n - 1)))));
+  const r = d.rows[i]; const left = (d.X(i) / d.W) * 100;
+  const cells = BOOKS.map((b, bi) => { const o = r.cells[bi]; if (!o) return null; const c = chance(api, o.odds); return { b, o, c, y: (d.Y(c) / d.H) * 100 }; }).filter(Boolean);
+  const verdict = r.win === 'draftkings' || r.win === 'fanduel' ? `${api.BOOK[r.win].label} pays more` : r.win === 'tie' ? 'same price' : 'only one book';
+  const side = left > 55 ? `right:${(100 - left).toFixed(2)}%;margin-right:12px` : `left:${left.toFixed(2)}%;margin-left:12px`;
+  return `<span class="bh-line" style="left:${left.toFixed(2)}%"></span>${cells.map((x) => `<i class="bh-dot ${api.BOOK[x.b].cls}" style="left:${left.toFixed(2)}%;top:${x.y.toFixed(2)}%"></i>`).join('')}
+    <div class="bh-box" style="${side}"><b>${esc(r.name)}</b>${cells.map((x) => `<span class="bh-row ${api.BOOK[x.b].cls}"><i></i>${api.BOOK[x.b].label} <strong>${esc(api.fmtOdds(x.o.odds))}</strong> · ${x.c.toFixed(1)}%</span>`).join('')}<em class="bh-verdict">${verdict}</em></div>`;
 }
