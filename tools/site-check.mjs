@@ -65,7 +65,7 @@ for (const lg of LEAGUES) {
     await b.click(); await page.waitForTimeout(400);
     if (await page.locator(`[data-range="${r}"][aria-pressed="true"]`).count() !== 1) mine.push(`the ${r} window did not select`);
   }
-  { const plot = page.locator('.bc-plot'); const bb = await plot.boundingBox(); if (bb) { await page.mouse.move(bb.x + bb.width * 0.5, bb.y + bb.height * 0.5); await page.waitForTimeout(200); if (!(await page.locator('.bh-box').count())) mine.push('no price read-out when pointing at the chart'); } }
+  { const plot = page.locator('.bc-plot'); await plot.evaluate((e) => e.scrollIntoView({ block: 'center' })).catch(() => {}); await page.waitForTimeout(300); const bb = await plot.boundingBox(); if (bb) { await page.mouse.move(bb.x + bb.width * 0.5, bb.y + bb.height * 0.5); await page.waitForTimeout(200); if (!(await page.locator('.bh-box').count())) mine.push('no price read-out when pointing at the chart'); } }
   await page.keyboard.press('Escape'); await page.waitForTimeout(800);
   if (page.url().includes('game=') || !(await page.locator('.game').count())) mine.push('Esc did not return to all games');
   for (const p of mine) problems.push(`game page: ${p}`);
