@@ -14,7 +14,7 @@ const qs = new URLSearchParams(location.search);
 
 const LEAGUE_IDS = ['nfl', 'ncaaf', 'cfl'];
 const settings = {
-  league: LEAGUE_IDS.includes(qs.get('league')) ? qs.get('league') : 'nfl', // nfl | ncaaf | cfl (?league= is shareable)
+  league: [...LEAGUE_IDS, 'all'].includes(qs.get('league')) ? qs.get('league') : 'nfl', // nfl | ncaaf | cfl | all (?league= is shareable)
   singleBook: false,                                                // college: also show games only one book prices
   game: qs.get('game') || null,                                     // a game's own page (?game=KEY)
   range: ['10m', '1h', '6h', '1d', '1w', 'all'].includes(qs.get('range')) ? qs.get('range') : null, // its chart window (null = automatic)
@@ -235,11 +235,12 @@ function tightest(n = 6) {
 /** Games priced by only one book. In college football FanDuel also lists ~50 small-school (FCS) games DraftKings does not,
  *  so outside the NFL those are hidden by default (nothing to compare) and one click shows them. */
 function bookCount(gk) { const b = new Set(); for (const q of state.quotes.values()) if (q.gameKey === gk) b.add(q.book); return b.size; }
-const hideSingles = () => settings.league !== 'nfl' && !settings.singleBook;
+const leagueOfKey = (k) => /^(ncaaf|cfl):/.exec(k || '')?.[1] || 'nfl';
+const hideSingles = () => settings.league !== 'nfl' && !settings.singleBook; // outside the NFL, games one book prices are hidden until asked for
 function hiddenSingles() {
   if (!hideSingles()) return 0;
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
-  return [...state.games.values()].filter((g) => withPrices.has(g.key) && bookCount(g.key) < 2).length;
+  return [...state.games.values()].filter((g) => withPrices.has(g.key) && leagueOfKey(g.key) !== 'nfl' && bookCount(g.key) < 2).length;
 }
 function visibleGames() {
   if (settings.game) { const g = state.games.get(settings.game); return g ? [g] : []; } // a game's own page
@@ -248,19 +249,27 @@ function visibleGames() {
   const single = hideSingles();
   return [...state.games.values()]
     .filter((g) => withPrices.has(g.key))
-    .filter((g) => !single || bookCount(g.key) >= 2)
+    .filter((g) => !single || leagueOfKey(g.key) === 'nfl' || bookCount(g.key) >= 2)
     .filter((g) => settings.phase === 'all' || (settings.phase === 'starred' ? starred.has(g.key) : phaseOf(g) === settings.phase))
     .filter((g) => !term || [g.away.abbr, g.home.abbr, g.away.name, g.home.name, g.away.nick, g.home.nick].some((x) => String(x || '').toLowerCase().includes(term)))
     .sort((a, b) => (phaseOf(a) === 'live' ? 0 : 1) - (phaseOf(b) === 'live' ? 0 : 1) || new Date(a.start) - new Date(b.start) || a.key.localeCompare(b.key));
 }
+/** Games in display groups: starred first, then live, then each kickoff slot. With "All" leagues the board is split by
+ *  league (NFL, then college, then CFL), each with the same groups inside and a league header on its first group. */
 function groups() {
-  const out = new Map();
-  if (settings.phase !== 'starred') for (const g of visibleGames()) if (starred.has(g.key)) { if (!out.has('starred')) out.set('starred', { key: 'starred', starred: true, start: null, games: [] }); out.get('starred').games.push(g); }
-  for (const g of visibleGames()) {
-    if (settings.phase !== 'starred' && starred.has(g.key)) continue;
-    const k = phaseOf(g) === 'live' ? 'live' : g.start;
-    if (!out.has(k)) out.set(k, { key: k, live: k === 'live', start: k === 'live' ? null : new Date(g.start), games: [] });
-    out.get(k).games.push(g);
+  const out = new Map(); const vis = visibleGames(); const all = settings.league === 'all' && !settings.game;
+  if (settings.phase !== 'starred') for (const g of vis) if (starred.has(g.key)) { if (!out.has('starred')) out.set('starred', { key: 'starred', starred: true, start: null, games: [] }); out.get('starred').games.push(g); }
+  for (const lg of all ? LEAGUE_IDS : [null]) {
+    const games = vis.filter((g) => (!lg || leagueOfKey(g.key) === lg) && (settings.phase === 'starred' || !starred.has(g.key)));
+    let first = true;
+    for (const g of games) {
+      const k = `${lg || ''}|${phaseOf(g) === 'live' ? 'live' : g.start}`;
+      if (!out.has(k)) {
+        const meta = lg && first ? { leagueHead: { id: lg, ...(state.leagues.find((l) => l.id === lg) || { label: lg, title: lg }), count: games.length } } : {};
+        out.set(k, { key: k, live: phaseOf(g) === 'live', start: phaseOf(g) === 'live' ? null : new Date(g.start), games: [], ...meta }); first = false;
+      }
+      out.get(k).games.push(g);
+    }
   }
   return [...out.values()];
 }
@@ -292,9 +301,12 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
     for (const [id, pts] of src) if (pts.length && id.startsWith(`${g.key}|`) && (first == null || pts[0][0] < first)) first = pts[0][0];
     return first;
   },
-  league: () => state.leagues.find((l) => l.id === settings.league) || state.leagues[0],
+  league: () => (settings.league === 'all' ? { id: 'all', label: 'All', title: 'All leagues', games: state.leagues.reduce((n, l) => n + (l.games || 0), 0) } : state.leagues.find((l) => l.id === settings.league) || state.leagues[0]),
+  /** The league buttons: All, then each league, with game counts. */
+  leagueOptions: () => [{ id: 'all', label: 'All', title: 'Every league', games: state.leagues.reduce((n, l) => n + (l.games || 0), 0) }, ...state.leagues],
+  leagueOfKey,
   setLeague(id) {
-    if (!LEAGUE_IDS.includes(id) || id === settings.league) return;
+    if (![...LEAGUE_IDS, 'all'].includes(id) || id === settings.league) return;
     settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = null; state.gameHistory = null; setParam('game', null, null); setParam('league', id, 'nfl');
     for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
     state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = { draftkings: 0, fanduel: 0 }; state.history = new Map(); state.histFrom = null; state.changedAt.clear();

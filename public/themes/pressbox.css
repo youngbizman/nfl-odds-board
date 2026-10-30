@@ -597,3 +597,24 @@ html[data-scheme=dark] .ld-bar b { color:#0e1319; }
 .ld-best-key { display:flex; align-items:center; gap:5px 6px; flex-wrap:wrap; margin-top:6px; font-size:var(--text-xs); color:var(--text-muted); }
 .ld-win-key { display:inline-block; width:12px; height:8px; border-radius:2px; margin-left:8px; } .ld-win-key:first-child { margin-left:0; }
 .bh-verdict { font:600 var(--text-xs) var(--font-ui); font-style:normal; color:var(--text); }
+
+/* ---- no scroll boxes anywhere: the page scrolls, nothing inside it does ---- */
+.holds-list { grid-auto-flow:row; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); grid-auto-columns:auto; overflow:visible; padding-bottom:0; }
+.x-tabs { flex-wrap:wrap; overflow:visible; }
+.x-scroll { max-height:none; overflow:visible; }
+.x-more { margin:10px 0 0; min-height:34px; padding:6px 14px; border:1px solid var(--border-control); border-radius:var(--radius-sm); background:var(--surface); color:var(--accent); font-weight:600; font-size:var(--text-sm); }
+.x-more:hover { border-color:var(--accent); background:var(--accent-soft); }
+@media(max-width:700px) {
+  .holds-list { grid-template-columns:1fr; grid-auto-columns:auto; overflow:visible; }
+  .holds-list > li:nth-child(n+4) { display:none; }
+  .x-tabs { flex-wrap:wrap; overflow:visible; }
+  .x-table { table-layout:fixed; } .x-table th, .x-table td { white-space:normal; overflow-wrap:anywhere; }
+}
+/* "All" leagues: a header for each league, then its games */
+.league-head { display:flex; align-items:baseline; gap:12px; margin:26px 0 2px; padding-bottom:8px; border-bottom:2px solid var(--text); font:600 26px/1.1 var(--font-price); letter-spacing:-.03em; }
+.league-head span { font:400 var(--text-sm) var(--font-ui); letter-spacing:0; color:var(--text-muted); }
+.games > .league-head:first-child { margin-top:8px; }
+.holds-list { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+.hc-legs { flex-wrap:wrap; white-space:normal; gap:2px 14px; }
+@media(max-width:1050px) { .holds-list { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+@media(max-width:700px) { .holds-list { grid-template-columns:1fr; } }

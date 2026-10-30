@@ -349,7 +349,7 @@ html[data-scheme=dark] .ld-bar b { color:#0d1117; }
 
 /* ---- no sideways scrolling: the table fits the window ---- */
 .chart.is-clickable, .g-spark { user-select:none; }
-@media (max-width:1260px) {
+@media (max-width:1600px) {
   .g-wrap { overflow-x:visible; border:0; border-radius:0; }
   .g-table { min-width:0; }
   .g-table thead th { position:sticky; }
@@ -436,3 +436,18 @@ html[data-scheme=dark] .ld-bar b { color:#0d1117; }
 .ld-best-key { display:flex; align-items:center; gap:5px 6px; flex-wrap:wrap; margin-top:6px; font-size:11px; color:var(--muted); }
 .ld-win-key { display:inline-block; width:12px; height:8px; border-radius:2px; margin-left:8px; } .ld-win-key:first-child { margin-left:0; }
 .bh-verdict { font-weight:600; font-style:normal; color:var(--text); }
+
+/* ---- no scroll boxes anywhere: the page scrolls, nothing inside it does ---- */
+.g-panel { max-height:none; overflow:visible; }
+.g-xscroll { max-height:none; overflow:visible; }
+.g-xmore { display:block; width:100%; height:28px; border:0; border-top:1px solid var(--line); background:var(--panel); color:var(--accent); font:600 11.5px var(--mono); }
+.g-xmore:hover { background:var(--accent-soft); }
+@media (max-width:700px) { .g-xt th, .g-xt td { white-space:normal; overflow-wrap:anywhere; } }
+/* "All" leagues: a header row for each league */
+.g-lg td { background:var(--best); color:#fff; font:700 12px var(--font); letter-spacing:.08em; text-transform:uppercase; padding:8px 8px 7px !important; border-bottom:0; }
+html[data-scheme=dark] .g-lg td { background:var(--head); color:var(--text); border-top:2px solid var(--accent); }
+.g-lg .g-n { font:400 11px var(--mono); letter-spacing:0; text-transform:none; opacity:.85; }
+
+/* the table may never be wider than the window */
+.g-wrap { max-width:100%; } .g-table { max-width:100%; }
+@media (max-width:920px) { .g-hold, .g-hold-h, .g-win, .g-win-h { display:none; } .g-table td[data-market] { padding:3px 4px; } .g-table .c-best .bk { margin-left:3px; } .bk-only { display:none; } }

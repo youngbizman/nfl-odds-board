@@ -5,7 +5,7 @@
 import { chromium } from 'playwright';
 
 const BASE = (process.argv[2] || 'https://nfl-odds-board-hgim.onrender.com').replace(/\/$/, '');
-const LEAGUES = ['nfl', 'ncaaf', 'cfl'];
+const LEAGUES = ['nfl', 'ncaaf', 'cfl', 'all'];
 const VIEWS = [
   { name: 'desktop', viewport: { width: 1440, height: 900 } },
   { name: 'phone', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
@@ -31,11 +31,14 @@ async function check(path, view, label) {
     prices: document.querySelectorAll('.odds, .g-table td[data-market]').length,
     stale: /stale|reconnecting/i.test(document.querySelector('#connection-banner:not([hidden]), #g-banner:not([hidden])')?.innerText || ''),
     overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+    // no scroll box inside the page, sideways or up-down: the page itself is the only thing that scrolls
+    boxes: [...document.querySelectorAll('body *')].filter((e) => { const cs = getComputedStyle(e); return (['auto', 'scroll'].includes(cs.overflowX) && e.scrollWidth > e.clientWidth + 1) || (['auto', 'scroll'].includes(cs.overflowY) && e.scrollHeight > e.clientHeight + 1); }).map((e) => `${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]}`).slice(0, 3),
     title: document.querySelector('h1, .g-sub')?.innerText || '',
   }));
   if (!shown) mine.push('nothing rendered within 30 s');
   if (info.stale) mine.push('a "stale / reconnecting" banner is showing');
-  if (view.isMobile && info.overflowX) mine.push('page scrolls sideways on a phone');
+  if (info.overflowX) mine.push(`page scrolls sideways (${view.name})`);
+  if (info.boxes.length) mine.push(`a scroll box inside the page: ${info.boxes.join(', ')}`);
   for (const p of mine) problems.push(`${label}: ${p}`);
   notes.push(`${label.padEnd(34)} ${String(info.prices).padStart(4)} prices · first prices ${firstPrices} ms · ${mine.length ? `${mine.length} problem(s)` : 'ok'}`);
   await ctx.close();
@@ -48,7 +51,7 @@ for (const lg of LEAGUES) for (const theme of ['pressbox', 'grid']) for (const v
 await check('/?scheme=dark', VIEWS[0], 'nfl · pressbox · desktop · dark');
 await check('/?theme=grid&scheme=dark', VIEWS[0], 'nfl · grid · desktop · dark');
 // every league's first game on its own page (big chart, time windows), both designs
-for (const lg of LEAGUES) {
+for (const lg of LEAGUES.filter((l) => l !== 'all')) {
   const games = (await (await fetch(`${BASE}/api/board?league=${lg}`)).json()).games || []; if (!games.length) continue;
   const key = encodeURIComponent(games[0].key);
   for (const theme of ['pressbox', 'grid']) for (const view of VIEWS) await check(`/?league=${lg}&game=${key}${theme === 'grid' ? '&theme=grid' : ''}`, view, `${lg} · game page · ${theme} · ${view.name}`);

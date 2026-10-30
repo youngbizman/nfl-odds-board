@@ -162,6 +162,8 @@ test('server: the stream, board and history carry only the league asked for; hea
     await waitFor(async () => { try { return (await (await fetch(`${base}/api/board?league=all`)).json()).games.length === 3 + 4 + 2; } catch { return false; } }, 6000);
     const nfl = await firstSnapshot(`${base}/api/stream`), ncaaf = await firstSnapshot(`${base}/api/stream?league=ncaaf`), cfl = await firstSnapshot(`${base}/api/stream?league=cfl`);
     assert.deepEqual([nfl.games.length, ncaaf.games.length, cfl.games.length], [3, 4, 2]);
+    const every = await firstSnapshot(`${base}/api/stream?league=all`); // "All" leagues: one stream with every game
+    assert.equal(every.games.length, 3 + 4 + 2); assert.deepEqual(new Set(every.quotes.map((q) => leagueOf(q.gameKey))), new Set(['nfl', 'ncaaf', 'cfl']));
     assert.ok(nfl.games.every((g) => leagueOf(g.key) === 'nfl') && ncaaf.quotes.every((q) => leagueOf(q.gameKey) === 'ncaaf'));
     assert.deepEqual(ncaaf.leagues.map((l) => [l.id, l.games]), [['nfl', 3], ['ncaaf', 4], ['cfl', 2]]);
     assert.equal((await (await fetch(`${base}/api/board`)).json()).games.length, 3, 'no league = NFL, as before');

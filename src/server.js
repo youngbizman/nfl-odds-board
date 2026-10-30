@@ -64,6 +64,7 @@ setInterval(saveHistory, 60_000);
 const clients = new Map(); // res -> league the viewer is looking at (each viewer gets only that league's games)
 const LEAGUES_ON = enabledLeagues().map((l) => l.id);
 const leagueParam = (q) => (LEAGUES[String(q || '').toLowerCase()] ? String(q).toLowerCase() : 'nfl');
+const viewParam = (q) => (String(q || '').toLowerCase() === 'all' ? 'all' : leagueParam(q)); // one league, or every league at once
 let pending = { quotes: new Map(), games: new Map(), sources: new Map(), firstAt: null, scheduled: false };
 function queue(kind, item, key) {
   pending[kind].set(key, item);
@@ -77,7 +78,7 @@ function flush() {
   const payloads = new Map(); // built once per league, only for leagues someone is watching
   const payloadFor = (lg) => {
     if (!payloads.has(lg)) {
-      const q = quotes.filter((x) => leagueOf(x.gameKey) === lg), g = games.filter((x) => leagueOf(x.key) === lg);
+      const q = lg === 'all' ? quotes : quotes.filter((x) => leagueOf(x.gameKey) === lg), g = lg === 'all' ? games : games.filter((x) => leagueOf(x.key) === lg);
       payloads.set(lg, q.length || g.length || Object.keys(sources).length ? `event: batch\ndata: ${JSON.stringify({ serverTs, quotes: q, games: g, sources })}\n\n` : null);
     }
     return payloads.get(lg);
@@ -178,10 +179,10 @@ app.get('/api/history', (req, res) => {
     return res.json(store.historyView({ hours, points: 600, recentHours: Math.min(hours, 6), recentMax: 3000, only: (id) => id.startsWith(`${game}|`) }));
   }
   const hours = Math.min(72, Math.max(1, Number(req.query.hours) || 48)), points = Math.min(240, Math.max(10, Number(req.query.points) || 90));
-  const league = leagueParam(req.query.league), key = `${hours}|${points}|${league}`;
+  const league = viewParam(req.query.league), key = `${hours}|${points}|${league}`;
   if (histCache.key !== key || Date.now() - histCache.at > 5000) {
     const v = store.historyView({ hours, points });
-    for (const id of Object.keys(v.series)) if (leagueOf(id) !== league) delete v.series[id];
+    if (league !== 'all') for (const id of Object.keys(v.series)) if (leagueOf(id) !== league) delete v.series[id];
     histCache = { at: Date.now(), key, body: JSON.stringify(v) };
   }
   res.type('application/json').send(histCache.body);
@@ -209,7 +210,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
   res.socket?.setNoDelay(true); // small frames go out immediately (no Nagle delay)
-  const league = leagueParam(req.query.league);
+  const league = viewParam(req.query.league);
   res.write(snapshotSse(league));
   clients.set(res, league); metrics.sse.clients = clients.size;
   req.on('close', () => { clients.delete(res); metrics.sse.clients = clients.size; });

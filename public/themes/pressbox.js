@@ -106,7 +106,8 @@ function mount(r, a) {
     const ld = e.target.closest('[data-ladder]'); if (ld) return api.setExtras(ld.closest('[data-extras]').dataset.extras, { ladder: ld.dataset.ladder });
     const t = e.target.closest('[data-extras-toggle]'); if (t) return api.toggleExtras(t.dataset.extrasToggle);
     const st = e.target.closest('[data-star]'); if (st) return api.toggleStar(st.dataset.star);
-    const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind });
+    const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind, showAll: false });
+    const xa = e.target.closest('[data-x-all]'); if (xa) return api.setExtras(xa.closest('[data-extras]').dataset.extras, { showAll: xa.dataset.xAll === '1' });
     pickFrom(e.target);
   });
   el.board.addEventListener('change', (e) => {
@@ -278,6 +279,10 @@ function oddsCell(o, cmp) {
   const tag = o.suspended ? ' <span class="badge">Suspended</span>' : win && cmp.kind === 'tie' ? ' <span class="badge">Tie</span>' : '';
   return `<td class="${cls}">${o.moved ? `<span class="change ${o.moved}">${o.moved === 'up' ? '↑' : '↓'}</span> ` : ''}<strong>${esc(api.fmtOdds(o.odds))}</strong>${prev}${tag}</td>`;
 }
+// long tables open at 20 rows with a button for the rest (the page scrolls, never a box inside it)
+const SHOW = 20;
+const showN = (gk, v) => (api.state.extras.get(gk)?.showAll ? 250 : SHOW);
+const moreBtn = (gk, v) => (v.rows.length > SHOW ? `<button type="button" class="x-more" data-x-all="${api.state.extras.get(gk)?.showAll ? 0 : 1}">${api.state.extras.get(gk)?.showAll ? 'Show fewer' : `Show all ${Math.min(250, v.rows.length)} lines`}</button>` : '');
 function extrasInner(gk) {
   const v = api.extrasView(gk); if (!v) return '';
   if (!v.loaded) return '<p class="x-note">Loading both books\' alt lines and player props…</p>';
@@ -287,8 +292,7 @@ function extrasInner(gk) {
   const head = `<div class="x-bar"><div class="segment x-tabs" role="group" aria-label="Kind of bet">${tabs}</div>
     <label class="x-both"><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> Only lines both books offer</label></div>`;
   const body = v.rows.length ? `<div class="x-body"><div class="x-scroll" tabindex="0" aria-label="${esc(api.state.extrasKinds[v.kind] || v.kind)} table"><table class="x-table"><thead><tr><th scope="col">${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player'}</th><th scope="col"><span class="book dk">DraftKings</span></th><th scope="col"><span class="book fd">FanDuel</span></th></tr></thead>
-    <tbody>${v.rows.slice(0, 250).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table></div>${ladderChart(api, gk, v)}</div>
-    ${v.rows.length > 250 ? `<p class="x-note">Showing 250 of ${v.rows.length}.</p>` : ''}`
+    <tbody>${v.rows.slice(0, showN(gk, v)).map((r) => `<tr><th scope="row">${esc(r.label)}</th>${r.cells.map((o) => oddsCell(o, r.cmp)).join('')}</tr>`).join('')}</tbody></table>${moreBtn(gk, v)}</div>${ladderChart(api, gk, v)}</div>`
     : `<p class="x-note">${v.bothOnly ? 'No line here that both books offer at the same number. Untick the box to see each book\'s own lines.' : 'Nothing here right now.'}</p>`;
   const foot = `<p class="x-note">Best = higher odds on the exact same line and threshold; anything else is shown, never ranked. DraftKings pushes changes as they happen (<span data-x-age="draftkings" data-age-ts="${st.draftkings?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.draftkings?.lastDataAt))}</span>); FanDuel is re-checked every 3 s while this is open (<span data-x-age="fanduel" data-age-ts="${st.fanduel?.lastDataAt || ''}" data-age-prefix="data ">data ${esc(api.ago(st.fanduel?.lastDataAt))}</span>).</p>`;
   return head + body + foot;
@@ -347,7 +351,7 @@ function chartHtml(g) {
 function render() {
   root.querySelectorAll('.view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === api.settings.view)));
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
-  root.querySelector('#leagues').innerHTML = api.state.leagues.map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
+  root.querySelector('#leagues').innerHTML = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
   root.querySelectorAll('[data-density]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.density === api.settings.density)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
   root.querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === api.settings.format)));
@@ -355,7 +359,7 @@ function render() {
   const dark = document.documentElement.dataset.scheme === 'dark';
   const sb = root.querySelector('#scheme-btn'); sb.textContent = dark ? '☀' : '☾'; sb.setAttribute('aria-label', dark ? 'Switch to light' : 'Switch to dark');
   const groups = api.groups();
-  const total = groups.reduce((n, g) => n + g.games.length, 0), live = groups.find((g) => g.live)?.games.length || 0;
+  const total = groups.reduce((n, g) => n + g.games.length, 0), live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="link-btn" data-singles>show ${hidden} more priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="link-btn" data-singles>hide single-book games</button>' : '';
   el.results.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live${singles}</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
@@ -363,7 +367,7 @@ function render() {
   if (!api.state.everConnected) el.board.innerHTML = '';
   else if (api.settings.game) el.board.innerHTML = pg ? gamePage(pg) : `<div class="empty"><strong>This game is not on the board any more.</strong><a href="${esc(location.pathname)}" data-back>‹ All games</a></div>`;
   else if (!total) el.board.innerHTML = `<div class="empty"><strong>No games match.</strong>${api.settings.search || api.settings.phase !== 'all' ? 'Clear the search or choose All to see every game.' : `Neither book has ${esc(api.league().title)} game lines up right now; the board fills itself as soon as one does.`}</div>`;
-  else el.board.innerHTML = groups.map((grp) => `<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
+  else el.board.innerHTML = groups.map((grp) => `${grp.leagueHead ? `<h2 class="league-head">${esc(grp.leagueHead.title)} <span>${grp.leagueHead.count} ${grp.leagueHead.count === 1 ? 'game' : 'games'}</span></h2>` : ''}<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
       ${grp.games.map((g) => `<article class="game" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g)}</article>`).join('')}</section>`).join('');
   renderFeeds(); renderBanner(); renderWire(); renderHolds();
 }

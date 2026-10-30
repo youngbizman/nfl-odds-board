@@ -82,7 +82,8 @@ function onTableClick(e) {
   const s = e.target.closest('[data-sort]'); if (s) { sort = sort === s.dataset.sort ? 'time' : s.dataset.sort; return render(); }
   const st = e.target.closest('[data-star]'); if (st) return api.toggleStar(st.dataset.star);
   const x = e.target.closest('[data-extras-toggle]'); if (x) return api.toggleExtras(x.dataset.extrasToggle);
-  const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind });
+  const k = e.target.closest('[data-x-kind]'); if (k) return api.setExtras(k.closest('[data-extras]').dataset.extras, { kind: k.dataset.xKind, showAll: false });
+  const xa = e.target.closest('[data-x-all]'); if (xa) return api.setExtras(xa.closest('[data-extras]').dataset.extras, { showAll: xa.dataset.xAll === '1' });
   const c = e.target.closest('td[data-market]'); const g = c?.closest('[data-game]');
   if (c && g) {
     api.pickChart(g.dataset.game, c.dataset.market, c.dataset.side);
@@ -221,9 +222,10 @@ function extrasInner(gk) {
     const cls = [o.suspended ? 'susp' : '', win ? (cmp.kind === 'tie' ? 'tie' : 'win') : '', o.moved ? `fl-${o.moved}` : ''].filter(Boolean).join(' ');
     return `<td class="${cls}"><b class="od">${esc(api.fmtOdds(o.odds))}</b>${o.moved ? `<i class="mv ${o.moved}">${o.moved === 'up' ? '▲' : '▼'}</i>` : ''}${o.suspended ? '<span class="tag">susp</span>' : win && cmp.kind === 'best' ? '<span class="star">★</span>' : ''}</td>`;
   };
-  const rows = v.rows.slice(0, 250).map((r) => `<tr><th>${esc(r.label)}</th>${r.cells.map((o) => cell(o, r.cmp)).join('')}</tr>`).join('');
+  const x = api.state.extras.get(gk) || {}; const N = x.showAll ? 250 : 20;
+  const rows = v.rows.slice(0, N).map((r) => `<tr><th>${esc(r.label)}</th>${r.cells.map((o) => cell(o, r.cmp)).join('')}</tr>`).join('');
   const body = v.rows.length
-    ? `<div class="g-xbody"><div class="g-xscroll"><table class="g-xt"><thead><tr><th>${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player · threshold'}</th><th>DraftKings</th><th>FanDuel</th></tr></thead><tbody>${rows}</tbody></table></div>${ladderChart(api, gk, v)}</div>`
+    ? `<div class="g-xbody"><div class="g-xscroll"><table class="g-xt"><thead><tr><th>${v.kind === 'alt-spread' || v.kind === 'alt-total' ? 'Line' : 'Player · threshold'}</th><th>DraftKings</th><th>FanDuel</th></tr></thead><tbody>${rows}</tbody></table>${v.rows.length > 20 ? `<button type="button" class="g-xmore" data-x-all="${x.showAll ? 0 : 1}">${x.showAll ? 'show fewer' : `show all ${Math.min(250, v.rows.length)} lines`}</button>` : ''}</div>${ladderChart(api, gk, v)}</div>`
     : '<p class="g-note">No bet here that both books offer at the same number; untick "both books only" to see each book\'s own lines.</p>';
   return `<div class="g-x"><div class="g-xbar"><div class="g-xtabs">${tabs}</div><label><input type="checkbox" data-x-both ${v.bothOnly ? 'checked' : ''}> both books only</label></div>${body}</div>`;
 }
@@ -246,7 +248,7 @@ function sortedGames() {
 function render() {
   root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view())));
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
-  root.querySelector('#g-leagues').innerHTML = api.state.leagues.map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}${l.games != null ? ` · ${l.games} games` : ''}">${esc(l.label)}</button>`).join('');
+  root.querySelector('#g-leagues').innerHTML = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}${l.games != null ? ` · ${l.games} games` : ''}">${esc(l.label)}</button>`).join('');
   root.querySelector('#g-scheme').textContent = document.documentElement.dataset.scheme === 'dark' ? '☀' : '☾';
   root.querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === api.settings.format)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
@@ -255,7 +257,7 @@ function render() {
   el.page.innerHTML = api.settings.game ? `<a class="g-back" href="${esc(location.pathname)}" data-back>‹ All games</a><b>${pg ? `${esc(pg.away.name)} @ ${esc(pg.home.name)}` : 'This game is not on the board any more'}</b>${pg ? `<span class="mut">${pg.status === 'live' ? '● live' : esc(et(new Date(pg.start), { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET')} · Esc to go back</span>` : ''}` : '';
   el.big.innerHTML = pg ? bigChart(api, pg, { pick: api.chartPick(pg.key), range: api.settings.range }) : '';
   el.table.dataset.view = view();
-  const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.find((g) => g.live)?.games.length || 0;
+  const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="g-link" data-singles>+${hidden} priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="g-link" data-singles>hide single-book games</button>' : '';
   el.meta.innerHTML = `<span>${total} games · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book · ¢ = edge over the other book</span>`;
@@ -268,7 +270,7 @@ function render() {
     const flat = sortedGames();
     html = flat ? flat.map(gameRows).join('') : groups.map((grp) => {
       const label = grp.starred ? '★ STARRED' : grp.live ? '● LIVE' : `${esc(et(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase())} · ${esc(et(grp.start, { hour: 'numeric', minute: '2-digit' }))} ET <span class="g-cd" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`;
-      return `<tbody class="g-sep"><tr><td colspan="${colCount()}">${label}<span class="g-n">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></td></tr></tbody>${grp.games.map(gameRows).join('')}`;
+      return `${grp.leagueHead ? `<tbody class="g-lg"><tr><td colspan="${colCount()}">${esc(grp.leagueHead.title)}<span class="g-n">${grp.leagueHead.count} ${grp.leagueHead.count === 1 ? 'game' : 'games'}</span></td></tr></tbody>` : ''}<tbody class="g-sep"><tr><td colspan="${colCount()}">${label}<span class="g-n">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></td></tr></tbody>${grp.games.map(gameRows).join('')}`;
     }).join('');
   }
   thead.insertAdjacentHTML('afterend', html);

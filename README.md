@@ -210,8 +210,11 @@ one page per league and puts every market on the push. `LEAGUES=nfl,ncaaf,cfl` (
   FanDuel had not posted yet.
 * **Kept apart.** Each league's snapshot can only remove that league's prices. NFL game keys are unchanged
   (`CAR@GB:2026-10-29`), other leagues are prefixed (`ncaaf:troy@james-madison:2026-10-29`, `cfl:WPG@TOR:2026-10-31`),
-  so stored history still matches. `/api/stream?league=`, `/api/board?league=` (or `all`) and `/api/history?league=`
-  send only that league, so the NFL page is not slowed by ~1,400 college prices.
+  so stored history still matches. `/api/stream?league=`, `/api/board?league=` and `/api/history?league=` send only
+  that league, so the NFL page is not slowed by ~1,400 college prices; `league=all` sends every league.
+* **All leagues on one board.** The League switch has **All**: one stream with every league, the board split into an
+  NFL section, a college section and a CFL section, each with its own live games first and then its kickoff slots;
+  the Live / Pregame / Starred filters work inside it the same way.
 * **Polling budget.** The NFL and every live college or CFL game are polled every beat (1 s); the other leagues'
   pregame markets (~360) take turns, one batch of ≤ 50 per beat, so each is re-read every ~8 s (pregame lines move
   slowly; the push adds what it catches). That keeps FanDuel at about 3 requests a second when no college game is live.
@@ -483,7 +486,7 @@ under a restart-on-exit supervisor.)
 | Show the odds moving (flash / previous price) | Yes — strong green/red flash, then a thick coloured bar + the previous price on a pill for 8 s, line-move notice, the wire, and per-game charts from 10 min to 1 week |
 | Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen for both books (each stamps its pushes) |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
-| Props, alt lines, other leagues | **Yes, all three.** Alt lines + player props: alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number. Other leagues: **college football and the CFL**, game lines from both books, live, with a League switch (§3). |
+| Props, alt lines, other leagues | **Yes, all three.** Alt lines + player props: alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number. Other leagues: **college football and the CFL**, game lines from both books, live, with a League switch including **All** (every league on one board, split by league) (§3). |
 | What changes for a third book, or ten; where AI helps | §11 |
 
 ## 13. With more time
