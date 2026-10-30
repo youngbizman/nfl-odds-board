@@ -6,6 +6,8 @@
 // N browsers just subscribe to the store — adding viewers never adds requests to the books.
 import express from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { BoardStore } from './store.js';
@@ -133,6 +135,22 @@ setInterval(() => { const payload = `event: status\ndata: ${JSON.stringify(extra
 // ---------- HTTP ----------
 const app = express();
 app.disable('x-powered-by');
+// Browser safety headers. The page's one inline script (it picks the design's stylesheet before first paint) is allowed
+// by its hash, read from index.html at start-up, so the policy needs no 'unsafe-inline' for scripts. Inline style
+// attributes are how the charts place their points, so styles keep 'unsafe-inline'.
+const INDEX_HTML = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+const INLINE_HASHES = [...INDEX_HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
+const CSP = ["default-src 'self'", `script-src 'self' ${INLINE_HASHES.join(' ')}`, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com", "img-src 'self' data:", "connect-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', CSP);
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  next();
+});
 app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public'), { etag: true, maxAge: 0 }));
 // the browser uses the exact same comparison rules the tests check

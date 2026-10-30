@@ -186,7 +186,7 @@ export function ladderChart(api, gk, v) {
   const lineName = (r) => (v.kind === 'alt-spread' ? `${r.subject === 'away' ? g?.away.abbr : g?.home.abbr} ${api.fmtLine('spread', r.subject, r.line)}` : v.kind === 'alt-total' ? `${r.subject === 'over' ? 'Over' : 'Under'} ${r.line}` : `${r.name} ${r.line}+`);
   const winner = (r) => (r.cmp.kind === 'best' ? B[r.cmp.best.book].cls : r.cmp.kind === 'tie' ? 'tie' : 'none');
   const edge = (i) => (n === 1 ? [0, 100] : [Math.max(0, (X(i) - (W - 48) / (n - 1) / 2) / W) * 100, Math.min(W, X(i) + (W - 48) / (n - 1) / 2) / W * 100]);
-  const strip = `<div class="ld-best" aria-label="Which book pays more at each number">${rows.map((r, i) => { const [a, z] = edge(i); return `<span class="ld-win ${winner(r)}" style="left:${a.toFixed(2)}%;width:${(z - a).toFixed(2)}%"></span>`; }).join('')}</div>
+  const strip = `<div class="ld-best" role="img" aria-label="Which book pays more at each number">${rows.map((r, i) => { const [a, z] = edge(i); return `<span class="ld-win ${winner(r)}" style="left:${a.toFixed(2)}%;width:${(z - a).toFixed(2)}%"></span>`; }).join('')}</div>
     <div class="ld-best-key"><span class="ld-win-key dk"></span>${B.draftkings.label} pays more<span class="ld-win-key fd"></span>${B.fanduel.label} pays more<span class="ld-win-key tie"></span>same price</div>`;
   LADDER.set(gk, { n, W, H, X, Y, rows: rows.map((r) => ({ name: lineName(r), cells: r.cells, win: r.cmp.kind === 'best' ? r.cmp.best.book : r.cmp.kind })) });
   const hov = ladderAt?.key === gk ? ladderOverlay(api, LADDER.get(gk), ladderAt.fx) : '';

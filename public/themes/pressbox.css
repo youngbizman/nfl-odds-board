@@ -624,3 +624,6 @@ html, body { overflow-anchor:none; }
 .sticky.is-stuck { box-shadow:0 6px 12px -10px rgba(0,0,0,.35); }
 .x-close { margin-left:auto; min-height:32px; padding:4px 12px; border:1px solid var(--border-control); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:var(--text-xs); font-weight:600; }
 .x-close:hover { border-color:var(--price-down); color:var(--price-down); background:var(--price-down-bg); }
+/* contrast: FanDuel's chart teal a shade darker so its small labels pass 4.5:1 */
+:root { --chart-fd:#087873; }
+html[data-scheme=dark] { --chart-fd:#3fd3c8; }

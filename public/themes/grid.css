@@ -454,3 +454,12 @@ html[data-scheme=dark] .g-lg td { background:var(--head); color:var(--text); bor
 .g-xclose { margin-left:auto; height:26px; padding:0 10px; border:1px solid var(--line-strong); border-radius:6px; background:var(--bg); color:var(--text); font:600 11.5px var(--font); }
 .g-xclose:hover { border-color:var(--down); color:var(--down); }
 .g-more[aria-expanded=true] { color:var(--down); }
+
+/* contrast (WCAG AA, 4.5:1 for small text): the grey labels were too pale, and white on the light-blue buttons in dark */
+:root { --muted:#566170; --faint:#5f6b7b; }
+html[data-scheme=dark] { --faint:#8a96a5; }
+html[data-scheme=dark] .g-seg button[aria-pressed=true], html[data-scheme=dark] .g-xtabs button.on,
+html[data-scheme=dark] .bc-ranges button[aria-pressed=true], html[data-scheme=dark] .bc-picks button[aria-pressed=true],
+html[data-scheme=dark] .ld-subjects button[aria-pressed=true] { color:#0d1117; }
+:root { --chart-fd:#087873; }
+html[data-scheme=dark] { --chart-fd:#3fd3c8; }

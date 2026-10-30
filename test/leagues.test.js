@@ -162,6 +162,9 @@ test('server: the stream, board and history carry only the league asked for; hea
     await waitFor(async () => { try { return (await (await fetch(`${base}/api/board?league=all`)).json()).games.length === 3 + 4 + 2; } catch { return false; } }, 6000);
     const nfl = await firstSnapshot(`${base}/api/stream`), ncaaf = await firstSnapshot(`${base}/api/stream?league=ncaaf`), cfl = await firstSnapshot(`${base}/api/stream?league=cfl`);
     assert.deepEqual([nfl.games.length, ncaaf.games.length, cfl.games.length], [3, 4, 2]);
+    const page = await fetch(`${base}/`); // browser safety headers, and the inline script allowed by its hash only
+    assert.match(page.headers.get('content-security-policy'), /frame-ancestors 'none'/); assert.match(page.headers.get('content-security-policy'), /script-src 'self' 'sha256-/);
+    assert.equal(page.headers.get('x-content-type-options'), 'nosniff'); assert.equal(page.headers.get('x-frame-options'), 'DENY');
     const every = await firstSnapshot(`${base}/api/stream?league=all`); // "All" leagues: one stream with every game
     assert.equal(every.games.length, 3 + 4 + 2); assert.deepEqual(new Set(every.quotes.map((q) => leagueOf(q.gameKey))), new Set(['nfl', 'ncaaf', 'cfl']));
     assert.ok(nfl.games.every((g) => leagueOf(g.key) === 'nfl') && ncaaf.quotes.every((q) => leagueOf(q.gameKey) === 'ncaaf'));

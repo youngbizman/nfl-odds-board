@@ -48,7 +48,7 @@ function mount(r, a) {
   </div>`;
   el = { table: root.querySelector('#g-table'), feeds: root.querySelector('#g-feeds'), holds: root.querySelector('#g-holds'), wire: root.querySelector('#g-wire'),
     banner: root.querySelector('#g-banner'), meta: root.querySelector('#g-meta'), help: root.querySelector('#g-help'), page: root.querySelector('#g-page'), big: root.querySelector('#g-big') };
-  root.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
+  root.querySelectorAll('button[data-view]').forEach((b) => b.addEventListener('click', () => api.set('view', b.dataset.view)));
   root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
   root.querySelector('#g-leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
   el.meta.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
@@ -246,7 +246,7 @@ function sortedGames() {
   return games.sort((a, b) => e(b) - e(a));
 }
 function render() {
-  root.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view())));
+  root.querySelectorAll('button[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view())));
   root.querySelectorAll('[data-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.phase === api.settings.phase)));
   root.querySelector('#g-leagues').innerHTML = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}${l.games != null ? ` · ${l.games} games` : ''}">${esc(l.label)}</button>`).join('');
   root.querySelector('#g-scheme').textContent = document.documentElement.dataset.scheme === 'dark' ? '☀' : '☾';
