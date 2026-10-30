@@ -8,6 +8,7 @@ export function topbarHtml(api, repo) {
   const design = api.themes.length > 1 ? `<div class="tb-seg tb-design" role="group" aria-label="Design">${api.themes.map((t) => `<button type="button" data-theme-switch="${t.id}">${esc(t.short || t.name)}</button>`).join('')}</div>` : '';
   return `<header class="tb">
     <div class="tb-row">
+      <h1 class="sr" id="tb-title"></h1>
       <div class="tb-brand"><span class="tb-logo" aria-hidden="true"></span><b>Odds Board</b><span class="tb-sub">Ontario · DraftKings vs FanDuel · live</span></div>
       <div class="tb-right">${design}
         <div class="tb-icons"><button type="button" class="tb-icon" id="tb-scheme" title="Light / dark (d)" aria-label="Switch light or dark"></button><button type="button" class="tb-icon" id="tb-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button><a class="tb-icon" href="${repo}#readme" title="How it works" aria-label="How it works">i</a></div>
@@ -46,6 +47,7 @@ export function renderTopbar(root, api) {
   const bar = root.querySelector('.tb'); if (!bar) return;
   const leagues = api.leagueOptions().map((l) => `<button type="button" data-league="${l.id}" aria-pressed="${l.id === api.settings.league}" title="${esc(l.title)}">${esc(l.label)}${l.games != null ? ` <small>${l.games}</small>` : ''}</button>`).join('');
   const L = bar.querySelector('#tb-leagues'); if (L.innerHTML !== leagues) L.innerHTML = leagues;
+  const title = `${api.league().title} odds: DraftKings vs FanDuel`; const h = bar.querySelector('#tb-title'); if (h.textContent !== title) h.textContent = title; // for screen readers
   const press = (sel, on) => bar.querySelectorAll(sel).forEach((b) => b.setAttribute('aria-pressed', String(on(b))));
   press('[data-theme-switch]', (b) => b.dataset.themeSwitch === api.settings.theme);
   press('[data-view]', (b) => b.dataset.view === api.settings.view);

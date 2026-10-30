@@ -85,11 +85,12 @@ for (const lg of LEAGUES.filter((l) => l !== 'all')) {
   page.on('pageerror', (e) => mine.push(`script error: ${e.message}`));
   await page.goto(BASE, { waitUntil: 'domcontentloaded' }); await page.waitForSelector('[data-league="ncaaf"]', { timeout: 30_000 });
   await page.click('[data-league="ncaaf"]'); await page.waitForTimeout(3000);
-  const h1 = await page.locator('h1').innerText(); if (!/College/.test(h1)) mine.push(`heading after switching league: "${h1}"`);
+  if (!(await page.locator('[data-league="ncaaf"][aria-pressed="true"]').count())) mine.push('the College button is not selected after switching league');
+  const h1 = await page.locator('h1').first().textContent(); if (!/College/.test(h1 || '')) mine.push(`heading after switching league: "${h1}"`);
   if (!page.url().includes('league=ncaaf')) mine.push('the link does not keep the league');
   const single = page.locator('[data-singles]'); if (await single.count()) { await single.first().click(); await page.waitForTimeout(500); }
   await page.click('[data-league="nfl"]'); await page.waitForTimeout(3000);
-  if (!/NFL/.test(await page.locator('h1').innerText())) mine.push('could not switch back to NFL');
+  if (!(await page.locator('[data-league="nfl"][aria-pressed="true"]').count()) || !/NFL/.test((await page.locator('h1').first().textContent()) || '')) mine.push('could not switch back to NFL');
   for (const p of mine) problems.push(`league switch: ${p}`);
   notes.push(`league switch in the page${' '.repeat(10)}${mine.length ? `${mine.length} problem(s)` : 'ok'}`);
   await ctx.close();
