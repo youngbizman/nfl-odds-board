@@ -338,6 +338,16 @@ the restored board is then re-confirmed by the server's own snapshot.
 
 ## 8. Measured latency
 
+### At a glance (current cloud-only setup; details and dates below)
+Measured = timed from a timestamp the book put on the change. Medians (p50) and 90th percentiles (p90).
+
+| Book · phase | Book → our server | Our server → browser | Book → browser | Basis |
+| --- | --- | --- | --- | --- |
+| DraftKings · live | **p50 23–53 ms, p90 131–157 ms** (measured) | p50 ≈ 30 ms (17–50) | **p50 ≈ 75 ms** (43–153, measured in a viewer's browser) | Thu Oct 29, 7:20–11:55 pm, 10,600+ changes; DK `publishedTime`, clock offset removed (± RTT/2, ≈ ±19 ms) |
+| DraftKings · pregame | p50 44 ms (measured) | ≈ 30 ms | ≈ 75 ms (measured) | Wed Oct 28 evening, few moves (pregame lines rarely move) |
+| FanDuel · live | push: **p50 ≈ 0.6 s, p90 ≈ 1.0 s** (measured from FanDuel's own stamp, which includes FanDuel's internal delay; its clock can't be corrected) | p50 ≈ 30 ms | **not measured** | Thu Oct 29, 15,000+ changes; about half came first by push, half by the 1 s poll |
+| FanDuel · pregame | not measured separately (few pushes) | ≈ 30 ms | **not measured** | polled prices carry no FanDuel timestamp, so book → browser cannot be timed; the poll beat (1 s NFL, rotating for other leagues) is a cadence, not a measured delay |
+
 ### How I measured
 * **DraftKings, book → our server:** every WS frame carries DK's own `publishedTime`; lag = time the cloud server
   applied the change − publishedTime, with DK's clock offset removed. The offset is measured NTP-style on every
@@ -360,7 +370,7 @@ the restored board is then re-confirmed by the server's own snapshot.
 | Our processing per update | **2.5 µs** per DK frame | **~0.25 ms** per 87-market poll (25 µs per 9 markets) |
 | Wait before sending to browsers | p50 0 ms | p50 0 ms |
 | Server → browser (Toronto) | ~30 ms | ~30 ms |
-| **Book → page (received)** | **≈ 75 ms** measured in the browser | **≈ 0.3 s average, ≈ 0.55 s worst** (1 s beat alone: 0.55 s / 1.05 s) |
+| **Book → page (received)** | **≈ 75 ms** measured in the browser | not measured (no FanDuel stamp on polled prices); *estimate* from the poll beat only, not a measurement: ≈ 0.3 s average |
 
 ### Before → after (what tuning bought)
 | Change | Before | After |
