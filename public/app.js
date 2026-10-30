@@ -476,7 +476,7 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
     if (c <= 30 && settings.format !== 'decimal') return { text: `+${c}¢`, title: `${c} cents better (${fmtOdds(a)} vs ${fmtOdds(b)})` };
     // −650 vs −800 is "150 cents", which means nothing to most people: say how much more it pays instead
     const pa = decimalOdds(a) - 1, pb = decimalOdds(b) - 1; const p = Math.round(((pa - pb) / pb) * 100);
-    return { text: `+${p}% profit`, title: `${p}% more profit than ${fmtOdds(b)} if it wins, for the same stake` };
+    return { text: `+${p}% winnings`, title: `Wins ${p}% more than ${fmtOdds(b)} for the same stake, if this bet wins` };
   },
 };
 

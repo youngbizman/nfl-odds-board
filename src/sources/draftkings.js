@@ -162,7 +162,7 @@ export class DraftKingsSource {
   fail(where, e) {
     const msg = `${where}: ${e?.message || e}`;
     this.log('dk', msg);
-    this.store.setSource(BOOK, { lastError: msg, state: this.ws?.readyState === WebSocket.OPEN ? 'live' : 'down' });
+    this.store.setSource(BOOK, { lastError: msg, state: this.ws?.readyState === WebSocket.OPEN && !this.recovering ? 'live' : 'down' });
   }
 
   // ---------- 1) snapshot ----------
@@ -187,6 +187,7 @@ export class DraftKingsSource {
       const n = this.applySnapshot(r.value.data, r.value.at, 'direct', r.value.lg.id); games += n.games; prices += n.selections;
     }
     const now = Date.now();
+    if (this.recovering && t0 >= (this.openedAt || Infinity)) this.finishRecovery(); // requested after the new subscription
     this.metrics.dk.snapshotMs.push(now - t0);
     this.store.setSource(BOOK, { lastError: null, transport: this.http.transport, snapshotMs: now - t0, detail: `${games} games, ${prices} prices (${this.leagues.map((l) => l.label).join(' + ')}), snapshot ${now - t0} ms (${this.http.transport} client)` });
   }
@@ -220,6 +221,7 @@ export class DraftKingsSource {
     }
     this.metrics.dk.snapshots++;
     this.store.setSource(BOOK, { lastSnapshotAt: now, lastDataAt: now, snapshotVia: via });
+    if (via === 'edge' && this.recovering && now >= (this.openedAt || Infinity)) this.finishRecovery();
     this.saveCheckpoint();
     return { games: games.size, selections: (data.selections || []).length };
   }
@@ -310,7 +312,13 @@ export class DraftKingsSource {
           includeMarkets: `$filter=clientMetadata/subCategoryId eq '${SUBCATEGORY}' AND tags/all(t: t ne 'SportcastBetBuilder') and tags/any(t: t eq 'OSB')` },
         forwardedHeaders: {}, clientMetadata: { feature: 'league', 'X-Client-Name': 'web', 'X-Client-Version': '2643.4.1.10' },
         jwt: 'default-token', siteName: this.siteName } }));
-      this.store.setSource(BOOK, { state: 'live', lastError: null, lastDataAt: Date.now() });
+      this.openedAt = Date.now();
+      if (this.recovering) {
+        // Back after a drop: prices may have moved while we were away, so they do not count (greyed, never best) until
+        // a snapshot taken after this subscription has been applied.
+        this.store.setSource(BOOK, { state: 'down', detail: 'socket back; waiting for a fresh snapshot before its prices count again' });
+        this.recover(ws);
+      } else this.store.setSource(BOOK, { state: 'live', lastError: null, lastDataAt: Date.now() });
       this.log('dk', `socket open + subscribed (${this.wsHost}, ${this.siteName}, ${this.leagues.map((l) => l.label).join(' + ')})`);
       // Silence is normal on a delta feed (no line moved), so we ping to tell "quiet" from "dead".
       clearInterval(this.pingTimer);
@@ -326,11 +334,26 @@ export class DraftKingsSource {
     ws.on('close', (code) => {
       clearInterval(this.pingTimer); clearTimeout(this.pongTimer);
       if (this.stopped || this.ws !== ws) return;
-      this.metrics.dk.reconnects++;
+      this.metrics.dk.reconnects++; this.recovering = true;
       this.store.setSource(BOOK, { state: 'down', reconnects: this.metrics.dk.reconnects, detail: `socket closed (${code}); reconnecting in ${this.backoff / 1000}s` });
-      this.reconnectTimer = setTimeout(() => { this.connect(); this.refreshSnapshot('reconnect'); }, this.backoff);
+      this.reconnectTimer = setTimeout(() => this.connect(), this.backoff); // the snapshot follows the new subscription (recover)
       this.backoff = Math.min(this.backoff * 2, 30_000);
     });
+  }
+
+  /** After a reconnect: a snapshot requested after the new subscription, retried until it works. The edge path
+   *  (this IP refused) asks the edge; its snapshot completes the recovery in applySnapshot. */
+  async recover(ws) {
+    for (let wait = 1000; this.recovering && this.ws === ws && !this.stopped; wait = Math.min(wait * 2, 15_000)) {
+      if (this.restBlocked) { this.onNeedSnapshot?.('reconnect'); return; }
+      try { await this.snapshot(); return; } catch (e) { this.fail('recovery snapshot', e); await new Promise((r) => setTimeout(r, wait)); }
+    }
+  }
+  finishRecovery() {
+    if (!this.recovering || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.recovering = false;
+    this.store.setSource(BOOK, { state: 'live', lastError: null, lastDataAt: Date.now(), detail: 'recovered: fresh snapshot after reconnect' });
+    this.log('dk', 'recovered after reconnect: fresh snapshot applied, prices count again');
   }
 
   /** NTP-style: the ack carries DK's send time; offset = dkTime − midpoint(our send, our receive), error ≤ RTT/2. */

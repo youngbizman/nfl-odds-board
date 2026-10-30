@@ -145,6 +145,26 @@ test('Ontario snapshot + Ontario subscription, and it reconnects + re-snapshots 
   } finally { dk.stop(); fake.close(); }
 });
 
+test('after a socket drop, prices do not count until a fresh snapshot works, even if the snapshot host fails for a while', async () => {
+  const fake = await fakeDraftKings({ allowSite: 'CA-ON-SB' });
+  const { store, dk } = source({ nashBase: fake.base, wsUrl: fake.ws });
+  try {
+    await dk.start();
+    await waitFor(() => fake.subs.length === 1 && store.sources.draftkings.state === 'live');
+    const before = fake.sites.length;
+    // the snapshot host starts failing, then the socket drops
+    const realFetch = dk.fetchSnapshot.bind(dk); let failing = true;
+    dk.fetchSnapshot = (lg) => (failing ? Promise.reject(new Error('HTTP 503')) : realFetch(lg));
+    for (const c of fake.wss.clients) c.terminate();
+    await waitFor(() => fake.subs.length === 2, 5000);                  // socket back and subscribed
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(store.sources.draftkings.state, 'down', 'socket back but no fresh snapshot yet: its prices must not count');
+    failing = false;                                                     // the snapshot host recovers: the retry completes it
+    await waitFor(() => store.sources.draftkings.state === 'live', 6000);
+    assert.ok(fake.sites.length > before, 'a fresh snapshot was fetched after the new subscription');
+  } finally { dk.stop(); fake.close(); }
+});
+
 test('when the snapshot host refuses this IP, the socket still runs and snapshots are requested from the edge', async () => {
   const fake = await fakeDraftKings({ allowSite: 'nowhere' });
   const asks = [];
