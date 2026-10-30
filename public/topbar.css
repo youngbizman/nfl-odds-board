@@ -25,17 +25,17 @@ html[data-scheme=dark] .tb, html[data-scheme=dark] .tb-foot { --tb-surface:#0e13
 .tb-icon:hover { border-color:var(--tb-accent); color:var(--tb-accent); }
 
 /* the league title, with which prices to show beside it */
-.tb-heading { display:flex; justify-content:space-between; align-items:end; gap:24px; padding:18px 0 14px; flex-wrap:wrap; }
-.tb h1 { font-size:43px; line-height:1; font-weight:600; letter-spacing:-.045em; color:var(--tb-text); }
+.tb-heading { display:flex; justify-content:space-between; align-items:end; gap:24px; padding:20px 0 16px; flex-wrap:wrap; }
+.tb h1 { font-size:40px; line-height:1.15; font-weight:600; letter-spacing:-.03em; color:var(--tb-text); }
 .tb h1 span { color:var(--tb-accent); }
-.tb-subtitle { color:var(--tb-muted); font-size:12px; margin-top:6px; }
+.tb-subtitle { color:var(--tb-muted); font-size:13px; line-height:1.5; margin-top:8px; }
 .tb-view { display:flex; gap:24px; border-bottom:1px solid var(--tb-border); }
 .tb-view button { background:transparent; border:0; border-bottom:2px solid transparent; padding:10px 0; min-height:40px; font-size:12px; color:var(--tb-muted); white-space:nowrap; }
 .tb-view button[aria-pressed=true] { color:var(--tb-accent); border-bottom-color:var(--tb-accent); font-weight:600; }
 
 /* League · Show · Find a team · Odds */
 .tb-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px 18px; margin-bottom:18px; }
-.tb-field { display:flex; flex-direction:column; gap:5px; font-size:11px; color:var(--tb-muted); }
+.tb-field { display:flex; flex-direction:column; gap:6px; font-size:11px; color:var(--tb-muted); }
 .tb-field input { min-height:38px; width:180px; background:var(--tb-surface); color:var(--tb-text); border:1px solid var(--tb-control); border-radius:4px; padding:7px 10px; font-family:inherit; font-size:12px; }
 .tb-searchf { margin-left:auto; }
 .tb kbd { font-family:inherit; font-size:10px; font-weight:500; border:1px solid var(--tb-control); border-radius:3px; padding:0 4px; margin-left:4px; color:var(--tb-muted); }
@@ -68,7 +68,7 @@ html[data-scheme=dark] .tb, html[data-scheme=dark] .tb-foot { --tb-surface:#0e13
   .tb-mast { flex-wrap:wrap; align-items:start; }
   .tb-mast-left { width:100%; justify-content:space-between; }
   .tb-links { gap:10px; justify-content:end; } .tb-demo { max-width:150px; text-align:right; } .tb-links a { display:none; }
-  .tb-heading { padding:18px 0; gap:16px; } .tb h1 { font-size:34px; }
+  .tb-heading { padding:18px 0; gap:16px; } .tb h1 { font-size:32px; }
   .tb-view { width:100%; justify-content:space-between; gap:10px; } .tb-view button { min-height:44px; }
   .tb-toolbar { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:end; }
   .tb-league, .tb-phase { grid-column:1/-1; }
