@@ -76,7 +76,9 @@ function focusSearch() { const i = root.querySelector('#g-search'); i.focus(); i
 function toggleHelp(force) { const open = force ?? el.help.hidden; el.help.hidden = !open; root.querySelector('#g-help-btn').setAttribute('aria-expanded', String(open)); }
 function closeHelp() { if (el.help && !el.help.hidden) toggleHelp(false); }
 
+let theadObs = null;
 function onTableClick(e) {
+  if (e.target.closest('[data-clear-search]')) { root.querySelector('#g-search').value = ''; return api.set('search', ''); }
   const og = e.target.closest('[data-open-game]'); if (og) { if (og.tagName === 'A' && (e.metaKey || e.ctrlKey || e.shiftKey)) return; e.preventDefault(); return api.openGame(og.dataset.openGame); }
   const ld = e.target.closest('[data-ladder]'); if (ld) return api.setExtras(ld.closest('[data-extras]').dataset.extras, { ladder: ld.dataset.ladder });
   const s = e.target.closest('[data-sort]'); if (s) { sort = sort === s.dataset.sort ? 'time' : s.dataset.sort; return render(); }
@@ -158,7 +160,7 @@ function spark(g) {
   let lo = 1, hi = 0, moves = 0;
   for (const b of books) { moves += Math.max(0, S.books[b].length - 1); for (const p of S.books[b]) { const v = prob(p[1]); lo = Math.min(lo, v); hi = Math.max(hi, v); } }
   if (hi < lo) return '<span class="g-nodata">—</span>';
-  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 0.01); lo = mid - half; hi = mid + half;
+  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 0.025); lo = mid - half; hi = mid + half; // ≥ 5 points of chance
   const span = Math.max(1, S.to - S.from);
   const X = (t) => ((Math.min(Math.max(t, S.from), S.to) - S.from) / span) * 100, Y = (v) => (1 - (v - lo) / (hi - lo)) * 100;
   const paths = books.map((b) => {
@@ -254,18 +256,21 @@ function render() {
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeSwitch === api.settings.theme)));
   const pg = api.game(); root.querySelector('.g-app').classList.toggle('on-gamepage', !!api.settings.game);
   el.page.hidden = !api.settings.game;
-  el.page.innerHTML = api.settings.game ? `<a class="g-back" href="${esc(location.pathname)}" data-back>‹ All games</a><b>${pg ? `${esc(pg.away.name)} @ ${esc(pg.home.name)}` : 'This game is not on the board any more'}</b>${pg ? `<span class="mut">${pg.status === 'live' ? '● live' : esc(et(new Date(pg.start), { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET')} · Esc to go back</span>` : ''}` : '';
+  el.page.innerHTML = api.settings.game ? `<a class="g-back" href="${esc(location.pathname)}" data-back>‹ All games</a><b>${pg ? `${esc(pg.away.name)} @ ${esc(pg.home.name)}` : 'This game is not on the board any more'}</b>${pg ? `<span class="mut">${pg.status === 'live' ? '● live' : esc(et(new Date(pg.start), { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET')}<span class="g-esc"> · Esc to go back</span></span>` : ''}` : '';
   el.big.innerHTML = pg ? bigChart(api, pg, { pick: api.chartPick(pg.key), range: api.settings.range }) : '';
   el.table.dataset.view = view();
   const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="g-link" data-singles>+${hidden} priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="g-link" data-singles>hide single-book games</button>' : '';
-  el.meta.innerHTML = `<span>${total} games · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book · ¢ = edge over the other book</span>`;
+  el.meta.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book<span class="g-ed-key"> · ¢ = edge over the other book</span></span>`;
   const thead = el.table.querySelector('thead'); thead.innerHTML = head();
+  // the alt-lines table's header sticks just under this one
+  if (!theadObs) { try { theadObs = new ResizeObserver(() => document.documentElement.style.setProperty('--g-head-h', `${thead.offsetHeight}px`)); theadObs.observe(thead); } catch {} }
+  document.documentElement.style.setProperty('--g-head-h', `${thead.offsetHeight}px`);
   for (const tb of [...el.table.querySelectorAll('tbody')]) tb.remove();
   let html;
   if (!api.state.everConnected) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">Connecting to both books…</td></tr></tbody>`;
-  else if (!total) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">${api.settings.search || api.settings.phase !== 'all' ? 'No games match. Clear the search or choose All.' : `Neither book has ${esc(api.league().title)} game lines up right now.`}</td></tr></tbody>`;
+  else if (!total) { const m = api.emptyMessage(); html = `<tbody><tr><td colspan="${colCount()}" class="g-empty"><b>${esc(m.title)}</b> ${esc(m.detail)}${m.clear ? ' <button type="button" class="g-link" data-clear-search>clear search</button>' : ''}</td></tr></tbody>`; }
   else {
     const flat = sortedGames();
     html = flat ? flat.map(gameRows).join('') : groups.map((grp) => {
@@ -286,12 +291,11 @@ function renderGame(key) {
 }
 
 // ---------- panels ----------
-/** "server 69 ms ·n 412 · page 75 ms ·n 23": the medians behind the big number, with their sample counts. */
+/** The detail under the big latency number: sample counts and the other hop, never the big number again. */
 function latBits(api, L) {
   const out = [];
-  if (L.server) out.push(`server ${api.secs(L.server.p50)} ·n ${L.server.n}`);
-  if (L.page) out.push(`page ${api.secs(L.page.p50)} ·n ${L.page.n}`);
-  else if (L.hop) out.push(`+${api.secs(L.hop.p50)} server→page ·n ${L.hop.n}`);
+  if (L.page) { out.push(`median of ${L.page.n}`); if (L.server) out.push(`server ${api.secs(L.server.p50)} (median of ${L.server.n})`); }
+  else if (L.server) { out.push(`median of ${L.server.n}`); if (L.server.pm == null) out.push('book clock not synced'); if (L.hop) out.push(`+${api.secs(L.hop.p50)} to this page`); }
   return out.join(' · ') || 'no samples yet';
 }
 function renderFeeds() {
@@ -308,7 +312,7 @@ function renderFeeds() {
       <td class="fr"><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
   el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th>Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th title="Medians of measured samples only: book → our server, and book → this page (DraftKings stamps every change). Point at a cell for sample counts, age and clock error.">Latency</th><th title="Full re-download that double-checks the stream">Snapshot</th><th class="num">Prices</th><th class="num" title="Price moves seen since this page opened">Moves</th><th class="num">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
-    <tr class="f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : 'reconnecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
+    <tr class="f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : api.state.everConnected ? 'reconnecting' : 'connecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
 }
 function renderBanner() {
   const st = api.state; const b = el.banner;
@@ -327,7 +331,7 @@ function renderWire() {
     const lm = m.prevLine != null && m.prevLine !== m.line;
     const fmt = (l, o) => `${lm ? `${api.fmtLine(m.market, m.side, l)} ` : ''}${api.fmtOdds(o)}`;
     return `<tr><td class="mut" data-age-local="${m.at}">${esc(api.ago(m.at, Date.now()))}</td><th>${esc(m.game.replace(' @ ', '@'))}</th><td>${esc(m.sideName)} ${SHORT[m.market]}</td><td class="mono">${esc(fmt(m.prevLine, m.prevOdds))} → <b>${esc(fmt(m.line, m.odds))}</b></td><td>${api.BOOK[m.book].short}</td></tr>`;
-  }).join('')}</table>` : '<p class="g-note">No moves since this page opened. Lines are quiet midweek; Sundays and live games move constantly.</p>';
+  }).join('')}</table>` : `<p class="g-note">${api.state.everConnected ? 'No price moves since this page opened. Pregame lines can sit still for minutes; live games move constantly.' : 'Waiting for the first prices…'}</p>`;
 }
 function renderHolds() {
   const main = api.tightest(6).map((t) => ({ ...t, alt: null }));

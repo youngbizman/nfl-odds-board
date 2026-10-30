@@ -629,3 +629,19 @@ html, body { overflow-anchor:none; }
 /* contrast: FanDuel's chart teal a shade darker so its small labels pass 4.5:1 */
 :root { --chart-fd:#087873; }
 html[data-scheme=dark] { --chart-fd:#3fd3c8; }
+
+/* ---- design review fixes (Oct 30) ---- */
+/* latency figures: secondary detail, not the loudest text above the odds */
+.feed .latency { font-size:var(--text-xs); color:var(--text-muted); }
+/* connecting is not "healthy": neutral until data arrives */
+.feed.is-connecting .status { color:var(--text-muted); }
+/* the game page keeps the feeds to one line each (tap to open), so the chart sits higher */
+.on-gamepage .feeds:not(.is-open) .feed p, .on-gamepage .feeds:not(.is-open) .feed .latency { display:none; }
+/* the alt-lines table's own header sticks under the status bar, so its columns stay named while scrolling */
+.x-scroll .x-table thead th { top:var(--sticky-h, 0px); z-index:5; }
+/* labels never break inside a button or link */
+.segment button, .footer a, .link-btn { white-space:nowrap; }
+/* a time window without enough history: greyed, not crossed out */
+.bc-ranges button:disabled { text-decoration:none; }
+/* search and the control beside it line up on a phone */
+@media(max-width:700px) { .toolbar { align-items:end; } .segment button { padding-left:6px; padding-right:6px; } }

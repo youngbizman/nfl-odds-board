@@ -170,7 +170,7 @@ td[data-charted] { box-shadow:inset 0 -2px 0 var(--accent); }
 .g-xscroll { max-height:300px; overflow:auto; max-width:620px; border:1px solid var(--line); border-radius:6px; background:var(--bg); }
 .g-xt { width:100%; border-collapse:collapse; font:12px var(--mono); }
 .g-xt th, .g-xt td { text-align:left; padding:3px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
-.g-xt thead th { position:sticky; top:0; background:var(--head); font:600 10px var(--font); text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+.g-xt thead th { position:sticky; top:var(--g-head-h, 0px); z-index:4; background:var(--head); font:600 10px var(--font); text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
 .g-xt tbody th { font-weight:500; }
 .g-xt td.stale { opacity:.5; } .g-xt td.win { background:var(--win); } .g-xt td.tie { background:var(--head); } .g-xt td.susp .od { color:var(--faint); text-decoration:line-through; }
 .g-xt td.none { color:var(--faint); }
@@ -354,7 +354,8 @@ html[data-scheme=dark] .ld-bar b { color:#0d1117; }
   .g-wrap { overflow-x:visible; border:0; border-radius:0; }
   .g-table { min-width:0; }
   .g-table thead th { position:sticky; }
-  .g-table td.g-team, .g-table thead th.g-team-h { position:static; box-shadow:none; }
+  .g-table td.g-team { position:static; box-shadow:none; }
+  .g-table thead th.g-team-h { position:sticky; left:auto; box-shadow:none; background:var(--head); }
   .g-table td[data-market] { padding:3px 6px; height:auto; line-height:1.2; }
   .g-table td[data-market] .ln { display:block; font-size:10px; margin:0 0 1px; }
   .g-table .c-best .ed { display:none; }
@@ -411,7 +412,7 @@ html[data-scheme=dark] .ld-bar b { color:#0d1117; }
 .bc-dot { width:7px; height:7px; margin:-3.5px 0 0 -3.5px; border-width:1.5px; }
 .bc-dot.is-line { width:10px; height:10px; margin:-5px 0 0 -5px; border-width:2px; }
 .bc-plot.is-dense .bc-line { stroke-width:2; }
-.bc-ranges button:disabled { opacity:.4; cursor:not-allowed; text-decoration:line-through; }
+.bc-ranges button:disabled { opacity:.4; cursor:not-allowed; }
 .bc-lines { margin:8px 50px 0 0; display:grid; gap:4px; }
 .bc-lines-key { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font:400 11px var(--font); color:var(--muted); }
 .bc-lane { display:grid; grid-template-columns:24px 1fr; align-items:center; gap:6px; }
@@ -454,7 +455,7 @@ html[data-scheme=dark] .g-lg td { background:var(--head); color:var(--text); bor
 @media (max-width:920px) { .g-hold, .g-hold-h, .g-win, .g-win-h { display:none; } .g-table td[data-market] { padding:3px 4px; } .g-table .c-best .bk { margin-left:3px; } .bk-only { display:none; } }
 .g-xclose { margin-left:auto; height:26px; padding:0 10px; border:1px solid var(--line-strong); border-radius:6px; background:var(--bg); color:var(--text); font:600 11.5px var(--font); }
 .g-xclose:hover { border-color:var(--down); color:var(--down); }
-.g-more[aria-expanded=true] { color:var(--down); }
+.g-more[aria-expanded=true] { color:var(--accent); }
 
 /* contrast (WCAG AA, 4.5:1 for small text): the grey labels were too pale, and white on the light-blue buttons in dark */
 :root { --muted:#566170; --faint:#5f6b7b; }
@@ -464,3 +465,12 @@ html[data-scheme=dark] .bc-ranges button[aria-pressed=true], html[data-scheme=da
 html[data-scheme=dark] .ld-subjects button[aria-pressed=true] { color:#0d1117; }
 :root { --chart-fd:#087873; }
 html[data-scheme=dark] { --chart-fd:#3fd3c8; }
+
+/* ---- design review fixes (Oct 30) ---- */
+#g-scheme { font-size:15px; font-weight:700; color:var(--text); }
+.g-feedt td, .g-feedt th { white-space:nowrap; }
+.g-feedt td.big, .g-feedt td.big .lat-n { white-space:normal; }
+.g-ed-key { white-space:nowrap; }
+@media (max-width:1600px) { .g-ed-key { display:none; } }
+@media (hover:none) { .g-search input::placeholder { color:transparent; } .g-esc { display:none; } }
+@media (max-width:700px) { .g-feedt th, .g-feedt td { white-space:normal; } }

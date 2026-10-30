@@ -102,7 +102,8 @@ export function bigChart(api, g, { pick, range }) {
   const now = books.map((b) => { const p = S.books[b]; const last = p[p.length - 1]; return last ? `<span class="bc-now ${api.BOOK[b].cls}"><i></i>${api.BOOK[b].label} <b>${esc(api.fmtOdds(last[1]))}</b>${pick.market === 'moneyline' ? '' : ` ${esc(api.fmtLine(pick.market, pick.side, last[2]))}`} · ${chance(api, last[1]).toFixed(1)}%</span>` : ''; }).join('');
   const head = `<div class="bc-head"><div><h3>${esc(pickName(g, pick))} <span>· implied chance</span></h3><div class="bc-legend">${now}</div></div>${ranges}</div>${picks}`;
   if (!Number.isFinite(lo)) { HOVER.delete(g.key); return `<section class="bc" aria-label="Price movement">${head}<p class="bc-empty">No price for this yet.</p></section>`; }
-  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.15, 1); lo = mid - half; hi = mid + half;
+  // at least 5 points of chance on the axis, so a half-point wobble does not look like a crash
+  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.15, 2.5); lo = mid - half; hi = mid + half;
   const span = Math.max(1, S.to - S.from);
   const X = (t) => ((Math.min(Math.max(t, S.from), S.to) - S.from) / span) * 1000, Y = (v) => (1 - (v - lo) / (hi - lo)) * 300;
   // a window is offered only when the history covers all of it, so this shading is a safety net (clock skew)
@@ -191,7 +192,9 @@ export function ladderChart(api, gk, v) {
   LADDER.set(gk, { n, W, H, X, Y, rows: rows.map((r) => ({ name: lineName(r), cells: r.cells, win: r.cmp.kind === 'best' ? r.cmp.best.book : r.cmp.kind })) });
   const hov = ladderAt?.key === gk ? ladderOverlay(api, LADDER.get(gk), ladderAt.fx) : '';
   const every = Math.max(1, Math.ceil(n / 7));
-  const ticks = rows.map((r, i) => (i % every === 0 || i === n - 1 ? `<span class="ld-x" style="left:${((X(i) / W) * 100).toFixed(2)}%">${esc(v.kind === 'alt-spread' ? api.fmtLine('spread', r.subject, r.line) : v.kind === 'alt-total' ? r.line : `${r.line}+`)}</span>` : '')).join('');
+  // the last number is always labelled; the regular label just before it is dropped when the two would touch
+  const lastReg = Math.floor((n - 1) / every) * every; const dropReg = lastReg !== n - 1 && (n - 1 - lastReg) < every * 0.75;
+  const ticks = rows.map((r, i) => ((i % every === 0 && !(dropReg && i === lastReg)) || i === n - 1 ? `<span class="ld-x" style="left:${((X(i) / W) * 100).toFixed(2)}%">${esc(v.kind === 'alt-spread' ? api.fmtLine('spread', r.subject, r.line) : v.kind === 'alt-total' ? r.line : `${r.line}+`)}</span>` : '')).join('');
   return `<aside class="ld" aria-label="${esc(title)}"><h4>${esc(title)} <span>· implied chance</span></h4>${chooser}${legend}
     <div class="ld-plot" data-ladder-hover="${esc(gk)}"><svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><g class="ld-grid">${[25, 50, 75].map((p) => `<line x1="0" x2="${W}" y1="${Y(p)}" y2="${Y(p)}"/>`).join('')}</g>${paths}${marks}</svg>
       ${[100, 75, 50, 25, 0].map((p) => `<span class="ld-y" style="top:${((Y(p) / H) * 100).toFixed(1)}%">${p}%</span>`).join('')}<div class="bc-hover" aria-hidden="true">${hov}</div></div>

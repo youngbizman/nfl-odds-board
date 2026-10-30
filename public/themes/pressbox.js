@@ -53,7 +53,7 @@ function mount(r, a) {
         <button type="button" data-phase="all">All</button><button type="button" data-phase="live">Live</button><button type="button" data-phase="pregame">Pregame</button><button type="button" data-phase="starred">★ Starred</button></div></div>
       <div class="field density-field"><span id="density-label">Density</span><div class="segment" role="group" aria-labelledby="density-label">
         <button type="button" data-density="comfortable">Comfortable</button><button type="button" data-density="compact">Compact</button></div></div>
-      <label class="field search"><span>Find a team <kbd>/</kbd></span><input id="search" type="search" autocomplete="off" placeholder="Team or abbreviation"></label>
+      <label class="field search"><span>Find a team <kbd>/</kbd></span><input id="search" type="search" autocomplete="off" placeholder="Search teams"></label>
       <div class="field format-field"><span id="format-label">Odds</span><div class="segment" role="group" aria-labelledby="format-label"><button type="button" data-format="american">American</button><button type="button" data-format="decimal">Decimal</button></div></div>
     </div>
     <section class="holds" id="holds" aria-label="Tightest markets right now"></section>
@@ -93,6 +93,10 @@ function mount(r, a) {
   root.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => api.set('phase', b.dataset.phase)));
   root.querySelector('#leagues').addEventListener('click', (e) => { const b = e.target.closest('[data-league]'); if (b) api.setLeague(b.dataset.league); });
   el.results.addEventListener('click', (e) => { if (e.target.closest('[data-singles]')) api.set('singleBook', !api.settings.singleBook); });
+  el.board.addEventListener('click', (e) => { if (e.target.closest('[data-clear-search]')) { root.querySelector('#search').value = ''; api.set('search', ''); } });
+  // the alt-lines table's own header sticks just under the status bar (whose height changes as it condenses)
+  const stickyH = () => document.documentElement.style.setProperty('--sticky-h', `${el.sticky.offsetHeight}px`);
+  try { new ResizeObserver(stickyH).observe(el.sticky); } catch {} stickyH();
   root.querySelector('#search').addEventListener('input', (e) => api.set('search', e.target.value));
   root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
@@ -242,8 +246,8 @@ function holdsLine(g) {
 }
 function legTxt(g, market, o) {
   const B = api.BOOK[o.book];
-  const who = market === 'total' ? (o.side === 'over' ? 'O' : 'U') : g[o.side]?.abbr ?? '';
-  const line = market === 'moneyline' ? '' : ` ${market === 'total' ? o.line : api.fmtLine('spread', o.side, o.line)}`;
+  const who = market === 'total' ? '' : g[o.side]?.abbr ?? '';
+  const line = market === 'moneyline' ? '' : market === 'total' ? api.fmtLine('total', o.side, o.line) : ` ${api.fmtLine('spread', o.side, o.line)}`;
   return `<span class="leg">${esc(who)}${esc(line)} <b>${esc(api.fmtOdds(o.odds))}</b> <span class="book ${B.cls}">${B.short}</span></span>`;
 }
 function renderHolds() {
@@ -324,7 +328,7 @@ function chartHtml(g) {
   const head = `<div class="chart-head"><span>${esc(what)} · implied chance</span>`;
   const open = ` data-open-game="${esc(g.key)}" tabindex="0" title="Click to open the full chart (10 min to 1 week) on this game's own page. Implied chance = 1 ÷ decimal odds, so it includes the book's margin."`;
   if (!Number.isFinite(lo)) return `<div class="chart is-clickable"${open}>${head}</div><p class="chart-empty">No price yet.</p></div>`;
-  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 1.5); lo = mid - half; hi = mid + half;
+  const mid = (lo + hi) / 2, half = Math.max(((hi - lo) / 2) * 1.2, 2.5); lo = mid - half; hi = mid + half; // ≥ 5 points of chance
   const span = Math.max(1, S.to - S.from);
   const X = (t) => ((Math.min(Math.max(t, S.from), S.to) - S.from) / span) * 1000, Y = (v) => (1 - (v - lo) / (hi - lo)) * 100;
   let paths = '', dots = '', now = '';
@@ -362,11 +366,11 @@ function render() {
   const total = groups.reduce((n, g) => n + g.games.length, 0), live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="link-btn" data-singles>show ${hidden} more priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="link-btn" data-singles>hide single-book games</button>' : '';
-  el.results.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live${singles}</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
+  el.results.innerHTML = !api.state.everConnected ? '<span>Loading games…</span><span></span>' : `<span>${total} ${total === 1 ? 'game' : 'games'} shown · ${live} live${singles}</span><span>${api.settings.format === 'decimal' ? 'Decimal' : 'American'} odds</span>`;
   const pg = api.game();
   if (!api.state.everConnected) el.board.innerHTML = '';
   else if (api.settings.game) el.board.innerHTML = pg ? gamePage(pg) : `<div class="empty"><strong>This game is not on the board any more.</strong><a href="${esc(location.pathname)}" data-back>‹ All games</a></div>`;
-  else if (!total) el.board.innerHTML = `<div class="empty"><strong>No games match.</strong>${api.settings.search || api.settings.phase !== 'all' ? 'Clear the search or choose All to see every game.' : `Neither book has ${esc(api.league().title)} game lines up right now; the board fills itself as soon as one does.`}</div>`;
+  else if (!total) { const m = api.emptyMessage(); el.board.innerHTML = `<div class="empty"><strong>${esc(m.title)}</strong>${esc(m.detail)}${m.clear ? ' <button type="button" class="link-btn" data-clear-search>Clear search</button>' : ''}</div>`; }
   else el.board.innerHTML = groups.map((grp) => `${grp.leagueHead ? `<h2 class="league-head">${esc(grp.leagueHead.title)} <span>${grp.leagueHead.count} ${grp.leagueHead.count === 1 ? 'game' : 'games'}</span></h2>` : ''}<section class="kickoff-group${grp.starred ? ' is-starred' : ''}"><h2 class="kickoff">${grp.starred ? '<span class="star-tag">★ Starred</span> pinned to the top' : grp.live ? '<span class="live-tag">● Live</span> In progress' : `${esc(etTime(grp.start, { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + etTime(grp.start, { hour: 'numeric', minute: '2-digit' }) + ' ET')} <span class="countdown" data-countdown="${grp.start.getTime()}">${esc(countdown(grp.start.getTime()))}</span>`}<span class="group-count">${grp.games.length} ${grp.games.length === 1 ? 'game' : 'games'}</span></h2>
       ${grp.games.map((g) => `<article class="game" aria-label="${esc(`${g.away.abbr} @ ${g.home.abbr}`)}" data-game="${esc(g.key)}">${gameInner(g)}</article>`).join('')}</section>`).join('');
   renderFeeds(); renderBanner(); renderWire(); renderHolds();
@@ -382,10 +386,10 @@ function renderFeeds() {
   el.feeds.innerHTML = ['draftkings', 'fanduel'].map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
     const status = { live: '● Live', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
-    const cls = f === 'stale' ? ' is-stale' : f === 'reconnecting' || f === 'lost' ? ' is-reconnecting' : '';
+    const cls = f === 'stale' ? ' is-stale' : f === 'reconnecting' || f === 'lost' ? ' is-reconnecting' : f === 'connecting' ? ' is-connecting' : '';
     const how = b === 'draftkings' ? 'push over WebSocket' : L.push ? `push over WebSocket, checked by polling every ${api.secs(L.beatMs)}` : `polled every ${api.secs(L.beatMs)}${L.interleave ? ' from 2 IPs' : ''}`;
     const T = api.latencyText(b);
-    const timing = f !== 'live' ? '<li>timing unavailable while the feed is down</li>' : T.lines.map((l) => `<li>${esc(l)}</li>`).join('');
+    const timing = f === 'connecting' ? '<li>waiting for the first data</li>' : f !== 'live' ? '<li>timing unavailable while the feed is down</li>' : T.lines.map((l) => `<li>${esc(l)}</li>`).join('');
     return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span></div>
       <p>${esc(s.region || 'Ontario')} · ${esc(how)}</p>
       <ul class="latency" aria-label="${api.BOOK[b].label} latency, medians of measured samples">${timing}</ul>
@@ -409,7 +413,7 @@ function renderBanner() {
 }
 function renderWire() {
   const moves = api.state.moves.slice(0, 6);
-  if (!moves.length) { el.wire.innerHTML = '<div class="empty"><strong>No price moves yet.</strong>Lines are quiet midweek; they move constantly on Sundays and during live games.</div>'; return; }
+  if (!moves.length) { el.wire.innerHTML = !api.state.everConnected ? '<div class="empty"><strong>Waiting for the first prices…</strong></div>' : '<div class="empty"><strong>No price moves since this page opened.</strong>Pregame lines can sit still for minutes; live games move constantly.</div>'; return; }
   el.wire.innerHTML = `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>`;
 }
 function moveHtml(m) {

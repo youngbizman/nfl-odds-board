@@ -54,14 +54,26 @@ function fmtOdds(a) {
 }
 function fmtLine(market, side, l) {
   if (l == null) return '';
-  if (market === 'total') return `${side === 'over' ? 'O' : 'U'} ${l}`;
+  if (market === 'total') return `${side === 'over' ? 'o' : 'u'}${l}`; // lower case: a capital O reads as zero in a monospace font
   return l > 0 ? `+${l}` : l === 0 ? 'PK' : minus(l);
 }
 function ago(ts, now = serverNow()) {
   if (!ts) return 'never'; const s = Math.max(0, (now - ts) / 1000);
-  return s < 10 ? `${s.toFixed(1)} s ago` : s < 60 ? `${Math.round(s)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+  return s < 10 ? `${s.toFixed(1)}\u00a0s ago` : s < 60 ? `${Math.round(s)}\u00a0s ago` : s < 3600 ? `${Math.round(s / 60)}\u00a0min ago` : `${Math.round(s / 3600)}\u00a0h ago`;
 }
-const secs = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+const secs = (ms) => ms == null ? '—' : ms < 1000 ? `${Math.round(ms)}\u00a0ms` : `${(ms / 1000).toFixed(1)}\u00a0s`; // a number never wraps away from its unit
+/** What an empty board should say, for the filter that emptied it. */
+function emptyMessage() {
+  const term = settings.search.trim();
+  if (term) return { title: `No team matches “${term}”.`, detail: 'Clear the search to see every game.', clear: true };
+  if (settings.phase === 'starred') return { title: 'No starred games yet.', detail: 'Tap ☆ next to a game to keep it at the top of the board.' };
+  if (settings.phase === 'live') {
+    const next = listGames(hideSingles()).filter((g) => phaseOf(g) !== 'live' && new Date(g.start) > Date.now()).sort((a, b) => new Date(a.start) - new Date(b.start))[0];
+    return { title: 'Nothing is live right now.', detail: next ? `Next kickoff: ${new Date(next.start).toLocaleString('en-US', { timeZone: 'America/Toronto', weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET, ${next.away.abbr} @ ${next.home.abbr}.` : 'Live games appear here as soon as they start.' };
+  }
+  if (settings.phase === 'pregame') return { title: 'No upcoming games.', detail: 'Every game on the board has started.' };
+  return { title: 'No games yet.', detail: `Neither book has ${api.league().title} game lines up right now; the board fills itself as soon as one does.` };
+}
 const pct = (arr, q) => { if (!arr.length) return null; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
 const quote = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book}`);
 // A dropped stream only counts as lost after a short grace (a league switch or a 1 s network blip reconnects by itself;
@@ -247,16 +259,18 @@ function tightest(n = 6) {
 function bookCount(gk) { const b = new Set(); for (const q of state.quotes.values()) if (q.gameKey === gk) b.add(q.book); return b.size; }
 const leagueOfKey = (k) => /^(ncaaf|cfl):/.exec(k || '')?.[1] || 'nfl';
 const hideSingles = () => settings.league !== 'nfl' && !settings.singleBook; // outside the NFL, games one book prices are hidden until asked for
+/** One-book games hidden right now that the current filters (Live, Starred, search) would otherwise show. */
 function hiddenSingles() {
-  if (!hideSingles()) return 0;
-  const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
-  return [...state.games.values()].filter((g) => withPrices.has(g.key) && leagueOfKey(g.key) !== 'nfl' && bookCount(g.key) < 2).length;
+  if (!hideSingles() || settings.game) return 0;
+  return listGames(false).length - listGames(true).length;
 }
 function visibleGames() {
   if (settings.game) { const g = state.games.get(settings.game); return g ? [g] : []; } // a game's own page
+  return listGames(hideSingles());
+}
+function listGames(single) {
   const withPrices = new Set([...state.quotes.values()].map((q) => q.gameKey));
   const term = settings.search.trim().toLowerCase();
-  const single = hideSingles();
   return [...state.games.values()]
     .filter((g) => withPrices.has(g.key))
     .filter((g) => !single || leagueOfKey(g.key) === 'nfl' || bookCount(g.key) >= 2)
@@ -345,7 +359,8 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   },
   league: () => (settings.league === 'all' ? { id: 'all', label: 'All', title: 'All leagues', games: state.leagues.reduce((n, l) => n + (l.games || 0), 0) } : state.leagues.find((l) => l.id === settings.league) || state.leagues[0]),
   /** The league buttons: All, then each league, with game counts. */
-  leagueOptions: () => [{ id: 'all', label: 'All', title: 'Every league', games: state.leagues.reduce((n, l) => n + (l.games || 0), 0) }, ...state.leagues],
+  leagueOptions: () => [{ id: 'all', label: 'All', title: 'Every league', games: state.leagues.some((l) => l.games != null) ? state.leagues.reduce((n, l) => n + (l.games || 0), 0) : null }, ...state.leagues],
+  emptyMessage,
   leagueOfKey,
   setLeague(id) {
     if (![...LEAGUE_IDS, 'all'].includes(id) || id === settings.league) return;
