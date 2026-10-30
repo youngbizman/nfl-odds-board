@@ -172,7 +172,7 @@ td[data-charted] { box-shadow:inset 0 -2px 0 var(--accent); }
 .g-xt th, .g-xt td { text-align:left; padding:3px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
 .g-xt thead th { position:sticky; top:0; background:var(--head); font:600 10px var(--font); text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
 .g-xt tbody th { font-weight:500; }
-.g-xt td.win { background:var(--win); } .g-xt td.tie { background:var(--head); } .g-xt td.susp .od { color:var(--faint); text-decoration:line-through; }
+.g-xt td.stale { opacity:.5; } .g-xt td.win { background:var(--win); } .g-xt td.tie { background:var(--head); } .g-xt td.susp .od { color:var(--faint); text-decoration:line-through; }
 .g-xt td.none { color:var(--faint); }
 
 .g-foot { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); line-height:1.55; }
@@ -233,6 +233,7 @@ html[data-scheme=dark] .g-design .g-seg button[aria-pressed=true] { background:v
 .g-feedt tbody th { font:700 14px var(--font); }
 .g-feedt .num { text-align:right; font-variant-numeric:tabular-nums; }
 .g-feedt td.big { font-weight:700; color:var(--num); font-size:15px; }
+.g-feedt td.big .lat-n { display:block; font-weight:400; font-size:11px; color:var(--muted); white-space:normal; }
 .g-feedt td.st { font-weight:600; text-transform:uppercase; font-size:12px; letter-spacing:.04em; }
 .g-feedt .f-live td.st { color:var(--up); }
 .g-feedt .dot { width:9px; height:9px; }

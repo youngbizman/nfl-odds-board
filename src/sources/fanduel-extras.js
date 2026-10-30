@@ -6,7 +6,7 @@
 // It shares FanDuel's rate budget with the main board's poller, so on any 403/429 it pauses itself for 5 minutes
 // (the main board's 1 s poll matters more than props).
 import { fdKind, fdExtraRef, fdOdds, fdSuspended } from '../extras.js';
-import { fanduelEndpoints } from './fanduel.js';
+import { fanduelEndpoints, ontarioRegion } from './fanduel.js';
 
 const BOOK = 'fanduel';
 const APP_KEY = 'FhMFpcPWXMeyZxOx';
@@ -14,7 +14,7 @@ const APP_KEY = 'FhMFpcPWXMeyZxOx';
 export class FanDuelExtras {
   constructor(extras, board, log, opts = {}) {
     this.extras = extras; this.board = board; this.log = log;
-    this.region = (opts.region || process.env.FD_REGION || 'ON').toUpperCase();
+    this.region = ontarioRegion(opts.region || process.env.FD_REGION, log); // Ontario only, like DraftKings
     this.ep = fanduelEndpoints(this.region);
     this.headers = opts.headers;
     this.eventUrl = opts.eventUrl || process.env.FD_EVENT_URL || this.ep.snapshot.replace('content-managed-page', 'event-page');

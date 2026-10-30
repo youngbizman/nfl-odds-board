@@ -8,9 +8,9 @@
 //           ("Florida Atlantic", "UCF"). The rest go through a short alias list ("Miami FL" = "Miami Florida").
 // Game keys: NFL keeps its original form (AWAY@HOME:date) so stored history still matches; other leagues are prefixed
 // ("ncaaf:troy@james-madison:2026-10-29").
-import { resolveTeam } from './model.js';
+import { resolveTeam, torontoDate } from './model.js';
 
-const easternDate = (iso) => new Date(new Date(iso).getTime() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+const easternDate = torontoDate; // the calendar day in Toronto, daylight saving included
 
 // ---------- CFL ----------
 const CFL = [

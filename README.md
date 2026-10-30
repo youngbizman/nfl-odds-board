@@ -40,8 +40,10 @@ What is on the page, beyond the board itself:
   the lines stay readable. It has its own link (`?game=…`), so it can be shared; Esc or Back returns.
 * **More lines has a chart beside the table** — each book's chance at every alt spread / total / yardage threshold
   (ringed where that book pays more), or a bar per player for anytime touchdowns.
-* **Per-book feed cards** — how the book is read (push, poll, or both); **book to screen**, the latency *this browser*
-  measured (the speed); **last heard**, how long since the book last sent anything (DraftKings only sends when a price
+* **Per-book feed cards** — how the book is read (push, poll, or both); **latency, measured only** — the book's own
+  stamp → our server, and → *this page* (received) and → drawn on screen, each a median with its sample count, when the
+  last sample came and how far the clocks can be off (nothing is filled in with a guess: no samples = "measured on
+  the next price move"); **last heard**, how long since the book last sent anything (DraftKings only sends when a price
   changes, plus a connection check every 10 s, so on a quiet day this counts up to ~10 s — it is proof of life, not a
   delay); **last price move**; and a freshness bar that drains as that silence approaches the stale limit.
 * **Stale handling** — a book that stops answering turns red, its prices grey out, a banner says so; the other book
@@ -231,8 +233,12 @@ Ontario (§6), so the board uses **Ontario for both books**: DraftKings `CA-ON-S
 (`on.sportsbook.fanduel.ca`, region `ON`). I found this the hard way: the brief's FanDuel link
 (`sportsbook.fanduel.com`) opened from Toronto serves **New Jersey** prices, so my first version compared DK Ontario
 with FD New Jersey. On Oct 28 FanDuel NJ and ON happened to be identical (174/174), but they are separate markets with
-separate ids and can diverge. Each book's region is shown on the page, and a banner appears if they ever differ.
-`FD_REGION=NJ` (or any US state code) switches FanDuel to a US feed; DraftKings US needs a US residential IP.
+separate ids and can diverge. Each book's region is shown on the page.
+**Ontario is enforced, not just the default:** every DraftKings snapshot URL, socket subscription (`siteName dkcaon`),
+restored checkpoint and edge snapshot must be `CA-ON-SB`, and FanDuel is always region `ON`. A different `DK_SITE` /
+`FD_REGION` setting is ignored with a log line; a checkpoint or edge snapshot from another site is refused (counted in
+`edgeRefused`). If Ontario's snapshot host refuses the server, the page says so and waits for an Ontario snapshot;
+it never fills the board from another region's prices.
 
 ## 4. Snapshots vs deltas — who keeps the state
 
@@ -265,7 +271,7 @@ separate ids and can diverge. Each book's region is shown on the page, and a ban
 | | DraftKings | FanDuel |
 | --- | --- | --- |
 | Bot protection | **Akamai.** Headless Chromium → 403 on the HTML page. The old public API (`/sites/US-SB/api/v5/eventgroups/88808`) → 403. **Node's HTTPS client from a datacenter IP → 403 on the data API** (AWS Ohio, reference ids in `/api/diag/draftkings`), while the HTML page still returns 200 from the same IP; a client with Chrome's TLS/HTTP2 handshake (curl_cffi) from the same IP → 200. Real Chrome and plain Node from a residential IP pass with the site's own `x-client-*`/`referer` headers. | **PerimeterX** (`_px3` token on API calls). Plain Node *without* the token gets 200 from a residential IP **and** from AWS Ohio (15 ms per poll — FD's API lives next door). |
-| Geo | **Fenced by IP per licensed region.** From Ontario only `CA-ON-SB` answers; `US-NJ-SB`, `US-OH-SB`, `US-SB` → 403, and vice-versa. The worker probes a list of regional sites at start-up and keeps the first that answers. | Not fenced for reading odds: both the Ontario (`.ca`, `ON`) and New Jersey (`.com`, `NJ`) APIs answer from Toronto *and* from AWS Ohio. Note the `.com` site shows NJ prices even from Canada. |
+| Geo | **Fenced by IP per licensed region.** From Ontario only `CA-ON-SB` answers; `US-NJ-SB`, `US-OH-SB`, `US-SB` → 403, and vice-versa. The worker only ever asks for `CA-ON-SB`. | Not fenced for reading odds: both the Ontario (`.ca`, `ON`) and New Jersey (`.com`, `NJ`) APIs answer from Toronto *and* from AWS Ohio. Note the `.com` site shows NJ prices even from Canada. |
 | Rate limits | none hit (1 WS connection + 1 snapshot / 30 s) | none hit at 1 poll / 2 s for hours, then 1 poll / s (2 parallel requests since the 80-market cap); one push connection; back-off on 429/403 is implemented and tested |
 | Sessions / tokens | `jwt: default-token` — nothing to expire. If DK ever rejects it, the worker reconnects with backoff and re-snapshots; stale state is shown meanwhile. | `_ak` is a public app key baked into the site; no cookie needed. |
 
@@ -299,11 +305,11 @@ the restored board is then re-confirmed by the server's own snapshot.
 * Normalized model: `Game {key, home, away, start, status, books:{dk:{eventId}, fd:{eventId}}}` and
   `Quote {gameKey, market, side, line, odds, book, updatedAt, sourceTs, prevOdds, prevLine}`.
 * **Team names:** "GB Packers" vs "Green Bay Packers" — NFL nicknames are unique, so each name is resolved by nickname
-  against a 32-team table; the game key is `AWAY@HOME:<US-Eastern game date>`. 29/29 games matched.
+  against a 32-team table; the game key is `AWAY@HOME:<game date in Toronto>` (America/Toronto, daylight saving included). 29/29 games matched.
 * **Markets:** DK `Moneyline / Spread / Total` ↔ FD `MONEY_LINE / MATCH_HANDICAP_(2-WAY) / TOTAL_POINTS_(OVER/UNDER)`.
   Sides from DK `outcomeType` (Home/Away/Over/Under) and FD `result.type`; the line is DK `points` / FD `handicap`.
 * **Live:** FD market `inPlay`, DK event status; a game is live if either book says so.
-* **Best price:** moneyline → higher American odds wins. Spread/total → prices are only comparable **on the same
+* **Best price:** moneyline → the price that pays more wins (ranked by decimal payout, so −100 and +100 tie). Spread/total → prices are only comparable **on the same
   number**; if both books post the same line the better odds wins (equal odds show "Tie" with both books). If they post
   different lines (−3 −110 vs −3.5 +100) the board shows **both offers side by side, "Different lines · no best price",
   and crowns neither**. A suspended or stale offer stays visible with its reason but can never win; if only one book is
@@ -320,7 +326,8 @@ the restored board is then re-confirmed by the server's own snapshot.
   subscribe: the ack carries DK's send time, offset = DK time − midpoint(our send, our receive), error ≤ RTT/2.
 * **Relay hop (DK only, because of §6):** round trip of a ping over the relay WebSocket, edge ↔ cloud; one way ≈ half.
 * **Server → browser:** each quote is stamped `updatedAt` when the store learns it; the browser corrects its clock
-  against `/api/time` (NTP-style, best of 3) and measures paint − `updatedAt`. The page shows it live in the feed cards;
+  against `/api/time` (NTP-style, best of 3, error ≤ RTT/2) and measures *received* − `updatedAt`, and for DraftKings
+  also publishedTime → received and publishedTime → *drawn* (the frame after the update was rendered) separately. The page shows it live in the feed cards;
   `tools/measure-latency.mjs <url> <minutes>` does the same from outside (results in `research/latency/`).
 * **FanDuel, book → server:** each pushed market carries FanDuel's own `updatedAt`; lag = our receive time −
   updatedAt (no clock-offset correction is possible here, so this includes FanDuel's clock error; their servers and
@@ -335,7 +342,7 @@ the restored board is then re-confirmed by the server's own snapshot.
 | Our processing per update | **2.5 µs** per DK frame | **~0.25 ms** per 87-market poll (25 µs per 9 markets) |
 | Wait before sending to browsers | p50 0 ms | p50 0 ms |
 | Server → browser (Toronto) | ~30 ms | ~30 ms |
-| **Book → screen** | **≈ 75 ms** | **≈ 0.3 s average, ≈ 0.55 s worst** (1 s beat alone: 0.55 s / 1.05 s) |
+| **Book → page (received)** | **≈ 75 ms** measured in the browser | **≈ 0.3 s average, ≈ 0.55 s worst** (1 s beat alone: 0.55 s / 1.05 s) |
 
 ### Before → after (what tuning bought)
 | Change | Before | After |
@@ -397,7 +404,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 65 tests, ~12 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 81 tests, ~20 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
@@ -409,9 +416,13 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 * **DraftKings, on real recorded payloads** (`test/fixtures/`, made by `npm run fixtures` from the capture): snapshot →
   18 prices with mirrored spreads; JSON `change` frames apply with DK's publish time; a line move (`remove`+`add`) applies
   instantly with the new line; status changes flip games live; real recorded frames for unknown games are ignored and
-  trigger a snapshot request; garbage frames are counted, never thrown. Against a **fake DraftKings** (HTTP + WebSocket): skips a region
-  that answers 403, subscribes with the right payload, reconnects and re-snapshots when the socket drops, and when every region refuses
-  the snapshot it still holds the socket and asks the edge for snapshots.
+  trigger a snapshot request; garbage frames are counted, never thrown. **Availability:** a snapshot market with
+  `isSuspended: true` greys both prices (they can never be best); a market-only `change` frame suspends and reopens
+  with no price change; a partial selection change keeps the flag; a line move while suspended stays suspended; a fresh
+  snapshot repairs a missed suspend or reopen; suspension survives a restart. Against a **fake DraftKings** (HTTP +
+  WebSocket): Ontario snapshot and Ontario subscription, reconnects and re-snapshots when the socket drops; when
+  Ontario refuses the snapshot it still holds the Ontario socket and asks the edge — **and never touches another region,
+  even when that region would answer and the configuration names it**; a checkpoint from another site is not restored.
 * **FanDuel, on real recorded payloads:** props ignored, in-place line move via `handicap`, suspended runner, a
   suspended *market* greys every price in it, game turns live. Against a **fake FanDuel:** every market on a ~100 ms
   beat; split into parallel requests under a per-request cap with nothing left out; 429 → backs off (honours
@@ -485,7 +496,7 @@ under a restart-on-exit supervisor.)
 | Asked for | Done |
 | --- | --- |
 | Show the odds moving (flash / previous price) | Yes — strong green/red flash, then a thick coloured bar + the previous price on a pill for 8 s, line-move notice, the wire, and per-game charts from 10 min to 1 week |
-| Show latency on the page, per book | Yes — feed cards: freshness bar, data age, measured book→screen for both books (each stamps its pushes) |
+| Show latency on the page, per book | Yes — feed cards: freshness bar, data age, book → our server for both books (each stamps its pushes), book → this page (received) and → drawn for DraftKings, each with sample count, age and clock error |
 | Reconnects, retries, and a UI that says data is stale | Yes — backoff reconnects, re-snapshot, stale flag + banner + greyed prices; browser reconnects with a new snapshot |
 | Props, alt lines, other leagues | **Yes, all three.** Alt lines + player props: alt spreads/totals, anytime TD, yardage and reception milestones from both books, compared on the same number. Other leagues: **college football and the CFL**, game lines from both books, live, with a League switch including **All** (every league on one board, split by league) (§3). |
 | What changes for a third book, or ten; where AI helps | §11 |

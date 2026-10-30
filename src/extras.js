@@ -48,9 +48,9 @@ export function dkExtraRow(kind, market, sel) {
 export function slimDk(data) {
   return {
     events: (data.events || []).map((e) => ({ id: e.id })),
-    markets: (data.markets || []).map((m) => ({ id: m.id, eventId: m.eventId, name: m.name, marketType: { name: m.marketType?.name } })),
+    markets: (data.markets || []).map((m) => ({ id: m.id, eventId: m.eventId, name: m.name, marketType: { name: m.marketType?.name }, isSuspended: m.isSuspended, isOpen: m.isOpen, status: m.status })),
     selections: (data.selections || []).map((s) => ({ id: s.id, marketId: s.marketId, label: s.label, displayOdds: { american: s.displayOdds?.american },
-      points: s.points, outcomeType: s.outcomeType, milestoneValue: s.milestoneValue,
+      points: s.points, outcomeType: s.outcomeType, milestoneValue: s.milestoneValue, isSuspended: s.isSuspended, isOpen: s.isOpen, status: s.status,
       participants: (s.participants || []).filter((p) => p.type === 'Player').map((p) => ({ name: p.name, type: p.type })) })),
   };
 }
@@ -79,12 +79,13 @@ export const fdOdds = (runner) => parseAmerican(runner.winRunnerOdds?.americanDi
 export const fdSuspended = (runner) => !!runner.runnerStatus && runner.runnerStatus !== 'ACTIVE';
 
 // ---------- the store ----------
+export const EXTRAS_STALE_MS = { draftkings: 300_000, fanduel: 180_000 }; // > 2 missed DraftKings snapshots / FanDuel 60 s polls
 export class ExtrasStore extends EventEmitter {
   constructor() {
     super(); this.setMaxListeners(0);
     this.rows = new Map();   // rowKey -> { key, gameKey, kind, subject, name, line, offers: { book: { odds, suspended, updatedAt, prevOdds } } }
     this.byGame = new Map(); // gameKey -> Set(rowKey)
-    this.status = { draftkings: { lastSnapshotAt: null, lastDataAt: null, detail: '' }, fanduel: { lastSnapshotAt: null, lastDataAt: null, detail: '' } };
+    this.status = { draftkings: { lastSnapshotAt: null, lastDataAt: null, detail: '', stale: false }, fanduel: { lastSnapshotAt: null, lastDataAt: null, detail: '', stale: false } }; // set by refreshStaleness()
   }
   static rowKey(gameKey, r) { return `${gameKey}|${r.kind}|${r.subject}|${r.line ?? ''}`; }
 
@@ -123,6 +124,21 @@ export class ExtrasStore extends EventEmitter {
     }
   }
 
+  /**
+   * A book's more-lines prices are stale when that book has told us nothing for too long (DraftKings re-sends a full
+   * snapshot every 2 min and pushes changes in between; FanDuel answers every 3 s for open games, 60 s otherwise), or
+   * when the same book's main feed is down (same upstream). Stale prices stay visible, greyed, and never count as best.
+   * Returns true when a book's state flipped.
+   */
+  refreshStaleness(now = Date.now(), boardDown = {}, limits = EXTRAS_STALE_MS) {
+    let flipped = false;
+    for (const [book, st] of Object.entries(this.status)) {
+      const stale = !!boardDown[book] || !st.lastDataAt || now - st.lastDataAt > (limits[book] ?? 300_000);
+      if (stale !== st.stale) { st.stale = stale; flipped = true; }
+    }
+    return flipped;
+  }
+
   forGame(gameKey) { return [...(this.byGame.get(gameKey) || [])].map((k) => this.rows.get(k)).filter(Boolean); }
 
   /** The tightest alt lines on the board: per game and kind, the lowest hold from the best price on each side (either book). */
@@ -132,7 +148,7 @@ export class ExtrasStore extends EventEmitter {
       const rows = [...keys].map((k) => this.rows.get(k)).filter(Boolean);
       for (const [kind, A, B, pair] of [['alt-spread', 'away', 'home', oppositeLine], ['alt-total', 'over', 'under', (l) => l]]) {
         const offers = (subj) => rows.filter((r) => r.kind === kind && r.subject === subj)
-          .flatMap((r) => Object.entries(r.offers).map(([book, o]) => ({ book, odds: o.odds, line: r.line, suspended: o.suspended, subject: subj })));
+          .flatMap((r) => Object.entries(r.offers).map(([book, o]) => ({ book, odds: o.odds, line: r.line, suspended: o.suspended, stale: !!this.status[book]?.stale, subject: subj })));
         const h = bestHold(offers(A), offers(B), pair);
         if (h) out.push({ gameKey: gk, kind, hold: h.hold, a: h.a, b: h.b });
       }

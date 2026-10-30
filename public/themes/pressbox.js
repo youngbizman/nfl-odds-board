@@ -274,7 +274,7 @@ function extrasToggle(g) {
 function oddsCell(o, cmp) {
   if (!o) return '<td class="x-none">—</td>';
   const win = (cmp.kind === 'best' && cmp.best.book === o.book) || (cmp.kind === 'tie' && cmp.books.includes(o.book));
-  const cls = [o.suspended ? 'x-susp' : '', win ? (cmp.kind === 'tie' ? 'x-tie' : 'x-best') : '', o.moved ? `x-${o.moved}` : ''].filter(Boolean).join(' ');
+  const cls = [o.suspended ? 'x-susp' : '', o.stale ? 'x-stale' : '', win ? (cmp.kind === 'tie' ? 'x-tie' : 'x-best') : '', o.moved ? `x-${o.moved}` : ''].filter(Boolean).join(' ');
   const prev = o.moved && o.prevOdds != null ? ` <s>${esc(api.fmtOdds(o.prevOdds))}</s>` : '';
   const tag = o.suspended ? ' <span class="badge">Suspended</span>' : win && cmp.kind === 'tie' ? ' <span class="badge">Tie</span>' : '';
   return `<td class="${cls}">${o.moved ? `<span class="change ${o.moved}">${o.moved === 'up' ? '↑' : '↓'}</span> ` : ''}<strong>${esc(api.fmtOdds(o.odds))}</strong>${prev}${tag}</td>`;
@@ -384,13 +384,11 @@ function renderFeeds() {
     const status = { live: '● Live', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
     const cls = f === 'stale' ? ' is-stale' : f === 'reconnecting' || f === 'lost' ? ' is-reconnecting' : '';
     const how = b === 'draftkings' ? 'push over WebSocket' : L.push ? `push over WebSocket, checked by polling every ${api.secs(L.beatMs)}` : `polled every ${api.secs(L.beatMs)}${L.interleave ? ' from 2 IPs' : ''}`;
-    let timing;
-    if (f !== 'live') timing = 'Timing bound unavailable';
-    else if (b === 'draftkings') timing = L.bookToScreenMs != null ? `book to screen ${api.secs(L.bookToScreenMs)}${L.clockPm != null ? ` ±${L.clockPm} ms` : ''}${L.measured ? '' : ' (server-measured)'}` : 'book to screen: measuring on the next move';
-    else if (L.push) timing = L.bookToScreenMs != null ? `book to screen ${api.secs(L.bookToScreenMs)}` : `book to screen: measuring on the next move (never more than ${api.secs(L.maxAgeMs)} old)`;
-    else timing = `any number is at most ${api.secs(L.maxAgeMs)} old`;
+    const T = api.latencyText(b);
+    const timing = f !== 'live' ? '<li>timing unavailable while the feed is down</li>' : T.lines.map((l) => `<li>${esc(l)}</li>`).join('');
     return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span></div>
-      <p>${esc(s.region || 'Ontario')} · ${esc(how)} · <span class="latency">${esc(timing)}</span></p>
+      <p>${esc(s.region || 'Ontario')} · ${esc(how)}</p>
+      <ul class="latency" aria-label="${api.BOOK[b].label} latency, medians of measured samples">${timing}</ul>
       <p class="last-move" data-age-ts="${s.lastChangeAt || ''}" data-age-prefix="Last price move ">Last price move ${esc(api.ago(s.lastChangeAt))}</p>
       <div class="freshness" role="progressbar" aria-label="${api.BOOK[b].label} data age within its stale limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(fr.fill * 100)}"><span data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(1)}%"></span></div></article>`;
   }).join('');

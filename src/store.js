@@ -34,7 +34,7 @@ export class BoardStore extends EventEmitter {
   }
 
   /**
-   * Insert/replace a quote. Only emits when price or line actually moved, so idle polls cost nothing downstream.
+   * Insert/replace a quote. Only emits when price, line or availability actually changed, so idle polls cost nothing downstream.
    * q = { gameKey, market, side, book, line, odds, sourceTs? }
    */
   upsertQuote(q, now = Date.now()) {

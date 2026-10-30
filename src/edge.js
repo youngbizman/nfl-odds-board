@@ -57,9 +57,10 @@ async function pollFanDuel(msg) {
   finally { fdBusy = false; }
 }
 
+// Ontario only (dk.site is always CA-ON-SB): if Ontario refuses this machine too, we send nothing rather than another region.
 async function pickSite() {
-  for (const c of dk.candidates) { Object.assign(dk, c); try { await dk.fetchSnapshot(); site = c.site; log('dk', `snapshot host accepts this IP for ${c.site}`); return true; } catch (e) { log('dk', `${c.site}: ${String(e.message).slice(0, 60)}`); } }
-  return false;
+  try { await dk.fetchSnapshot(); site = dk.site; log('dk', `snapshot host accepts this IP for ${dk.site}`); return true; }
+  catch (e) { log('dk', `${dk.site}: ${String(e.message).slice(0, 60)}`); return false; }
 }
 
 async function sendSnapshot(why) {
@@ -67,7 +68,7 @@ async function sendSnapshot(why) {
   try {
     const t0 = Date.now();
     const snapshot = await dk.fetchSnapshot();
-    const body = JSON.stringify({ type: 'snapshot', why, edgeTs: Date.now(), rttMs, fetchMs: Date.now() - t0, snapshot });
+    const body = JSON.stringify({ type: 'snapshot', site: dk.site, why, edgeTs: Date.now(), rttMs, fetchMs: Date.now() - t0, snapshot });
     if (ws?.readyState === WebSocket.OPEN) ws.send(body);
     else { // socket down: plain HTTPS so the cloud still converges
       const r = await fetch(`${CLOUD}/ingest/dk-snapshot`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, body, signal: AbortSignal.timeout(15_000) });
@@ -84,7 +85,7 @@ let xi = 0, xSent = 0, xFailed = 0, xBytes = 0;
 async function sendExtras(sub = SUBS[xi++ % SUBS.length]) {
   if (!site || ws?.readyState !== WebSocket.OPEN || process.env.EXTRAS === '0') return;
   try {
-    const body = JSON.stringify({ type: 'dk-extras', sub, data: slimDk(await dk.http.getJson(dkExtrasUrl(dk.nashBase, site, sub), DK_HEADERS, 20_000)) });
+    const body = JSON.stringify({ type: 'dk-extras', site, sub, data: slimDk(await dk.http.getJson(dkExtrasUrl(dk.nashBase, site, sub), DK_HEADERS, 20_000)) });
     if (ws?.readyState === WebSocket.OPEN) { ws.send(body); xSent++; xBytes += body.length; }
   } catch (e) { xFailed++; if (xFailed % 10 === 1) log('extras', `subcategory ${sub}: ${e.message}`); }
 }
@@ -100,7 +101,7 @@ function connect() {
 }
 function ping() { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); }
 
-if (!(await pickSite())) { log('dk', 'no DraftKings site accepts this machine either; retrying in 60 s'); setInterval(async () => { if (!site && (await pickSite())) sendSnapshot('site found'); }, 60_000); }
+if (!(await pickSite())) { log('dk', 'the Ontario snapshot host refuses this machine too; retrying in 60 s'); setInterval(async () => { if (!site && (await pickSite())) sendSnapshot('site found'); }, 60_000); }
 connect();
 setInterval(ping, 10_000);
 setInterval(() => sendSnapshot('periodic'), EVERY);

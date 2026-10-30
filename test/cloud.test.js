@@ -24,7 +24,7 @@ test('own DraftKings snapshots work → edge snapshots are ignored and counted',
     const edge = new WebSocket(`ws://127.0.0.1:${port}/ingest/ws`, { headers: { authorization: 'Bearer t' } });
     await new Promise((r, j) => { edge.on('open', r); edge.on('error', j); });
     const moved = structuredClone(DK_SNAP); moved.selections[0].displayOdds.american = '+999';
-    edge.send(JSON.stringify({ type: 'snapshot', why: 'test', edgeTs: Date.now(), rttMs: 10, snapshot: moved }));
+    edge.send(JSON.stringify({ type: 'snapshot', site: 'CA-ON-SB', why: 'test', edgeTs: Date.now(), rttMs: 10, snapshot: moved }));
     const m = await waitFor(async () => { const x = await (await fetch(`${base}/api/metrics`)).json(); return x.edgeIgnored >= 1 ? x : null; }, 3000);
     assert.equal(m.edgeIgnored, 1);
     const board = await (await fetch(`${base}/api/board`)).json();

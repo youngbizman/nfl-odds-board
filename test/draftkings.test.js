@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
-import { DraftKingsSource, familyOf, lineFromId, regionLabel } from '../src/sources/draftkings.js';
+import { DraftKingsSource, familyOf, lineFromId, regionLabel, closedFlag, ONTARIO } from '../src/sources/draftkings.js';
+import { compare } from '../src/model.js';
 import { fixture, fresh, quiet, waitFor, quotesOf } from './helpers.js';
 import { makeHttp } from '../src/transport/http.js';
 import { LEAGUES } from '../src/leagues.js';
@@ -20,7 +21,7 @@ const frame = ({ add = {}, change = {}, remove = {} }, publishedTime = '2026-10-
 
 function source(opts = {}) {
   const { store, metrics } = fresh();
-  return { store, metrics, dk: new DraftKingsSource(store, metrics, quiet, { candidates: [{ site: 'CA-ON-SB', siteName: 'dkcaon', wsHost: 'x' }], http: makeHttp({ mode: 'native' }), leagues: [LEAGUES.nfl], ...opts }) };
+  return { store, metrics, dk: new DraftKingsSource(store, metrics, quiet, { http: makeHttp({ mode: 'native' }), leagues: [LEAGUES.nfl], ...opts }) };
 }
 
 test('selection ids: family survives a line move, line is read from the id, region label from the site', () => {
@@ -111,9 +112,9 @@ test('real recorded frames for games we do not hold are ignored safely and trigg
 
 // ---------- against a fake DraftKings (HTTP snapshot + JSON WebSocket) ----------
 async function fakeDraftKings({ allowSite = 'CA-ON-SB' } = {}) {
-  const subs = [];
+  const subs = [], sites = [];
   const httpServer = http.createServer((req, res) => {
-    const site = /\/sites\/([^/]+)\//.exec(req.url)?.[1];
+    const site = /\/sites\/([^/]+)\//.exec(req.url)?.[1]; sites.push(site);
     if (site !== allowSite) { res.writeHead(403, { 'content-type': 'text/html' }); return res.end('<H1>Access Denied</H1>'); }
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(SNAP));
   });
@@ -121,15 +122,15 @@ async function fakeDraftKings({ allowSite = 'CA-ON-SB' } = {}) {
   wss.on('connection', (ws) => ws.on('message', (d) => { const m = JSON.parse(d); subs.push(m); ws.send(JSON.stringify({ id: m.id, event: 'subscribed', data: '' })); }));
   await new Promise((r) => httpServer.listen(0, '127.0.0.1', r));
   const port = httpServer.address().port;
-  return { port, subs, wss, base: `http://127.0.0.1:${port}`, ws: `ws://127.0.0.1:${port}/websocket`, close: () => { for (const c of wss.clients) c.terminate(); wss.close(); httpServer.close(); } };
+  return { port, subs, sites, wss, base: `http://127.0.0.1:${port}`, ws: `ws://127.0.0.1:${port}/websocket`, close: () => { for (const c of wss.clients) c.terminate(); wss.close(); httpServer.close(); } };
 }
 
-test('picks the regional site that answers, subscribes, and reconnects + re-snapshots when the socket drops', async () => {
+test('Ontario snapshot + Ontario subscription, and it reconnects + re-snapshots when the socket drops', async () => {
   const fake = await fakeDraftKings({ allowSite: 'CA-ON-SB' });
-  const { store, metrics, dk } = source({ candidates: ['US-OH-SB', 'CA-ON-SB'].map((site) => ({ site, siteName: site === 'CA-ON-SB' ? 'dkcaon' : 'dkusoh', wsHost: 'x' })), nashBase: fake.base, wsUrl: fake.ws });
+  const { store, metrics, dk } = source({ nashBase: fake.base, wsUrl: fake.ws });
   try {
     await dk.start();
-    assert.equal(dk.site, 'CA-ON-SB', 'skips the region that returned 403');
+    assert.equal(dk.site, 'CA-ON-SB');
     assert.equal(dk.restBlocked, false);
     await waitFor(() => fake.subs.length === 1);
     assert.equal(fake.subs[0].method, 'subscribe'); assert.equal(fake.subs[0].params.siteName, 'dkcaon'); assert.equal(fake.subs[0].params.jwt, 'default-token');
@@ -147,7 +148,7 @@ test('picks the regional site that answers, subscribes, and reconnects + re-snap
 test('when the snapshot host refuses this IP, the socket still runs and snapshots are requested from the edge', async () => {
   const fake = await fakeDraftKings({ allowSite: 'nowhere' });
   const asks = [];
-  const { store, dk } = source({ candidates: [{ site: 'CA-ON-SB', siteName: 'dkcaon', wsHost: 'x' }], nashBase: fake.base, wsUrl: fake.ws, onNeedSnapshot: (why) => asks.push(why) });
+  const { store, dk } = source({ nashBase: fake.base, wsUrl: fake.ws, onNeedSnapshot: (why) => asks.push(why) });
   try {
     await dk.start();
     assert.equal(dk.restBlocked, true);
@@ -194,7 +195,7 @@ test('durability: a new process rebuilds the exact DraftKings board from the che
   assert.equal(cp.frames.length, 3, 'every frame since the checkpoint is logged');
   a.dk.stop();
 
-  const b = source({ checkpoint: cp, candidates: [{ site: 'CA-ON-SB', siteName: 'dkcaon', wsHost: 'x' }] });
+  const b = source({ checkpoint: cp });
   await b.dk.restore();
   const view = (st) => [...st.quotes.values()].filter((q) => q.book === 'draftkings').map((q) => `${q.id}=${q.line}/${q.odds}`).sort();
   assert.deepEqual(view(b.store), view(a.store));
@@ -204,5 +205,159 @@ test('durability: a new process rebuilds the exact DraftKings board from the che
   // and it keeps working: a later change on the moved line applies
   assert.equal(b.dk.onMessage(frame({ change: { selections: [{ id: '0HC84695689N1050_1', displayOdds: { american: '−102' } }] } }), 5000), 1);
   assert.equal(b.dk.seq, 4, 'sequence continues after the restored frames');
+  b.dk.stop();
+});
+
+// ---------- Ontario only ----------
+test('Ontario only: a US site is never used, whatever the configuration says or whichever site would answer', async () => {
+  const logs = [];
+  const fake = await fakeDraftKings({ allowSite: 'US-OH-SB' }); // Ontario refuses us, Ohio would answer
+  const { store } = fresh();
+  const dk = new DraftKingsSource(store, fresh().metrics, (...a) => logs.push(a.join(' ')), { site: 'US-OH-SB', http: makeHttp({ mode: 'native' }), leagues: [LEAGUES.nfl], nashBase: fake.base, wsUrl: fake.ws });
+  try {
+    assert.equal(dk.site, ONTARIO); assert.equal(dk.siteName, 'dkcaon'); assert.equal(dk.wsHost, 'sportsbook-ws-ca-on.draftkings.com');
+    assert.ok(logs.some((l) => /DK_SITE=US-OH-SB ignored/.test(l)), 'a non-Ontario setting is refused out loud');
+    await dk.start();
+    assert.ok(fake.sites.length >= 1 && fake.sites.every((x) => x === 'CA-ON-SB'), `only Ontario snapshots were requested: ${fake.sites}`);
+    await waitFor(() => fake.subs.length === 1);
+    assert.equal(fake.subs[0].params.siteName, 'dkcaon', 'the socket subscription is Ontario too');
+    assert.equal(dk.restBlocked, true);
+    assert.equal(quotesOf(store, 'draftkings').length, 0, 'no prices from another region');
+    assert.equal(store.sources.draftkings.region, 'Ontario');
+    assert.match(store.sources.draftkings.detail, /Ontario snapshot host refuses/);
+  } finally { dk.stop(); fake.close(); }
+});
+
+test('Ontario only: a checkpoint written from another site is not restored', async () => {
+  const { MemoryCheckpoint } = await import('../src/checkpoint.js');
+  const cp = new MemoryCheckpoint();
+  const a = source({ checkpoint: cp });
+  a.dk.applySnapshot(SNAP, 1000); await new Promise((r) => setImmediate(r)); a.dk.stop();
+  const state = (await cp.load()).state; state.site = 'US-OH-SB'; await cp.save(state);
+  const b = source({ checkpoint: cp });
+  await b.dk.restore();
+  assert.equal(quotesOf(b.store, 'draftkings').length, 0);
+  assert.notEqual(b.store.sources.draftkings.snapshotVia, 'checkpoint');
+  b.dk.stop();
+});
+
+// ---------- availability: suspended / reopened, with or without a price change ----------
+// DraftKings' own shapes: a snapshot market carries `isSuspended: true` (no flag = open); a socket
+// `change.markets` entry is partial, e.g. { id, name, isSuspended, tags, sortOrder }, and reopening is an explicit false.
+const ML = '1_84695689', TOTAL = '3_84695689'; // JAX moneyline / total in the fixture
+const jax = (store, market, side) => store.quotes.get(`${JAX}|${market}|${side}|draftkings`);
+const marketChange = (id, extra) => ({ id, name: 'Moneyline', tags: ['SGP', 'OSB'], sortOrder: 1, isTeamInPossession: false, ...extra });
+const withSuspended = (ids, selIds = []) => {
+  const snap = structuredClone(SNAP);
+  for (const m of snap.markets) if (ids.includes(m.id)) m.isSuspended = true;
+  for (const x of snap.selections) if (selIds.includes(x.id)) x.isSuspended = true;
+  return snap;
+};
+
+test('availability flags: true/false when DraftKings says so, undefined on a partial object', () => {
+  assert.equal(closedFlag({ isSuspended: true }), true);
+  assert.equal(closedFlag({ isSuspended: false }), false);
+  assert.equal(closedFlag({ isOpen: false }), true);
+  assert.equal(closedFlag({ status: 'SUSPENDED' }), true);
+  assert.equal(closedFlag({ status: 'Open' }), false);
+  assert.equal(closedFlag({ id: 'x', sortOrder: 3 }), undefined);
+  assert.equal(closedFlag(null), undefined);
+});
+
+test('snapshot: a market with isSuspended:true gives suspended quotes that cannot be best; the rest stay open', () => {
+  const { store, dk } = source();
+  dk.applySnapshot(withSuspended([ML]), 1000);
+  assert.equal(jax(store, 'moneyline', 'home').suspended, true); assert.equal(jax(store, 'moneyline', 'away').suspended, true);
+  assert.equal(jax(store, 'moneyline', 'home').odds, -500, 'the last price is kept, greyed');
+  assert.equal(jax(store, 'spread', 'home').suspended, false); assert.equal(jax(store, 'total', 'over').suspended, false);
+  const other = quotesOf(store, 'draftkings').filter((q) => q.gameKey !== JAX);
+  assert.ok(other.length === 12 && other.every((q) => !q.suspended));
+  const cmp = compare([{ book: 'draftkings', odds: -500, line: null, suspended: true }, { book: 'fanduel', odds: -520, line: null }]);
+  assert.equal(cmp.best?.book ?? cmp.best, 'fanduel', 'a suspended DraftKings price is never the best');
+});
+
+test('a selection-level isSuspended closes just that side', () => {
+  const { store, dk } = source();
+  dk.applySnapshot(withSuspended([], ['0ML84695689_1']), 1000);
+  assert.equal(jax(store, 'moneyline', 'home').suspended, true);
+  assert.equal(jax(store, 'moneyline', 'away').suspended, false);
+});
+
+test('status-only change: a market-only frame suspends, then reopens, both prices with no price change', () => {
+  const { store, metrics, dk } = source();
+  dk.applySnapshot(SNAP, 1000);
+  const seen = []; store.on('quote', (q) => seen.push(q));
+  assert.equal(dk.onMessage(frame({ change: { markets: [marketChange(ML, { isSuspended: true })] } }), 2000), 2);
+  assert.equal(jax(store, 'moneyline', 'home').suspended, true); assert.equal(jax(store, 'moneyline', 'away').suspended, true);
+  assert.equal(jax(store, 'moneyline', 'home').odds, -500, 'price unchanged');
+  assert.equal(jax(store, 'spread', 'home').suspended, false, 'other markets untouched');
+  assert.equal(seen.length, 2, 'viewers are told at once');
+  assert.equal(seen[0].prevOdds, seen[0].odds, 'not shown as a price move');
+  assert.equal(dk.onMessage(frame({ change: { markets: [marketChange(ML, { isSuspended: true })] } }), 2500), 0, 'the same state again changes nothing');
+  assert.equal(dk.onMessage(frame({ change: { markets: [marketChange(ML, { isSuspended: false })] } }), 3000), 2, 'reopened');
+  assert.equal(jax(store, 'moneyline', 'home').suspended, false); assert.equal(jax(store, 'moneyline', 'away').suspended, false);
+  assert.equal(metrics.dk.availabilityChanges, 4);
+  dk.stop();
+});
+
+test('a partial change keeps what it does not mention: no flag = still suspended; a price-only change while suspended stays greyed', () => {
+  const { store, dk } = source();
+  dk.applySnapshot(SNAP, 1000);
+  dk.onMessage(frame({ change: { markets: [marketChange(ML, { isSuspended: true })] } }), 2000);
+  // a market change with no availability field (sort order only) changes nothing
+  assert.equal(dk.onMessage(frame({ change: { markets: [{ id: ML, sortOrder: 9 }] } }), 2500), 0);
+  assert.equal(jax(store, 'moneyline', 'home').suspended, true);
+  // a selection change with only id + price, as DraftKings sends them: price moves, still suspended
+  assert.equal(dk.onMessage(frame({ change: { selections: [{ id: '0ML84695689_1', label: 'JAX Jaguars', displayOdds: { american: '−480' }, trueOdds: 1.2 }] } }), 3000), 1);
+  assert.equal(jax(store, 'moneyline', 'home').odds, -480); assert.equal(jax(store, 'moneyline', 'home').suspended, true);
+  // reopening applies to the new price
+  dk.onMessage(frame({ change: { markets: [marketChange(ML, { isSuspended: false })] } }), 4000);
+  assert.equal(jax(store, 'moneyline', 'home').odds, -480); assert.equal(jax(store, 'moneyline', 'home').suspended, false);
+  // and an open market's price change stays open
+  dk.onMessage(frame({ change: { selections: [{ id: '0OU84695689O4750_1', displayOdds: { american: '−115' } }] } }), 5000);
+  dk.stop();
+});
+
+test('a line move while suspended (remove + add) keeps the market suspended; a market re-added open reopens it', () => {
+  const { store, dk } = source();
+  dk.applySnapshot(SNAP, 1000);
+  const tot = SNAP.markets.find((m) => m.id === TOTAL);
+  dk.onMessage(frame({ change: { markets: [{ id: TOTAL, name: 'Total', isSuspended: true }] } }), 2000);
+  const over = SNAP.selections.find((x) => x.marketId === TOTAL && x.outcomeType === 'Over');
+  const moved = { ...over, id: over.id.replace(/O\d+_/, 'O4850_'), points: 48.5 };
+  dk.onMessage(frame({ remove: { selections: [over.id] }, add: { selections: [moved] } }), 3000);
+  assert.equal(jax(store, 'total', 'over').line, 48.5); assert.equal(jax(store, 'total', 'over').suspended, true);
+  // the whole market re-sent as a full object without the flag = open
+  dk.onMessage(frame({ add: { markets: [{ ...tot }] } }), 4000);
+  assert.equal(jax(store, 'total', 'over').suspended, false); assert.equal(jax(store, 'total', 'under').suspended, false);
+  dk.stop();
+});
+
+test('recovery: a fresh snapshot is the truth for availability both ways (missed suspend, missed reopen)', () => {
+  const { store, dk } = source();
+  dk.applySnapshot(SNAP, 1000);
+  // the socket was down when DraftKings suspended the market: the next snapshot suspends it, no price change needed
+  dk.applySnapshot(withSuspended([ML]), 2000);
+  assert.equal(jax(store, 'moneyline', 'home').suspended, true);
+  // and missed the reopening: the next snapshot (no flag) reopens it
+  dk.applySnapshot(SNAP, 3000);
+  assert.equal(jax(store, 'moneyline', 'home').suspended, false); assert.equal(jax(store, 'moneyline', 'away').suspended, false);
+  dk.stop();
+});
+
+test('durability: suspension survives a restart (checkpoint + replayed market-only frames)', async () => {
+  const { MemoryCheckpoint } = await import('../src/checkpoint.js');
+  const cp = new MemoryCheckpoint();
+  const a = source({ checkpoint: cp });
+  a.dk.applySnapshot(withSuspended([TOTAL]), 1000); await new Promise((r) => setImmediate(r));
+  a.dk.onMessage(frame({ change: { markets: [marketChange(ML, { isSuspended: true })] } }), 2000);
+  await new Promise((r) => setImmediate(r)); a.dk.stop();
+  const b = source({ checkpoint: cp });
+  await b.dk.restore();
+  assert.equal(jax(b.store, 'total', 'over').suspended, true, 'from the checkpoint');
+  assert.equal(jax(b.store, 'moneyline', 'home').suspended, true, 'from the replayed frame');
+  // and a reopen after the restart still reaches the quotes
+  b.dk.onMessage(frame({ change: { markets: [marketChange(TOTAL, { isSuspended: false })] } }), 3000);
+  assert.equal(jax(b.store, 'total', 'over').suspended, false);
   b.dk.stop();
 });

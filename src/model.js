@@ -36,13 +36,19 @@ export function resolveTeam(raw) {
   return null;
 }
 
+/** The calendar date in Toronto (America/Toronto, with daylight saving), YYYY-MM-DD. A fixed UTC−5 would put a
+ *  kickoff between midnight and 1 am EDT on the day before. */
+const TORONTO_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit' });
+export function torontoDate(iso) {
+  const p = Object.fromEntries(TORONTO_DAY.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
 /** Stable id for a matchup. Same game at both books -> same key. Date guards against rematches. */
 export function gameKey(away, home, startIso) {
-  const d = new Date(startIso);
-  // A game is identified by its calendar date in US Eastern time (NFL "game day"), so a 1:00 am UTC kickoff
-  // still belongs to the evening before.
-  const et = new Date(d.getTime() - 5 * 3600 * 1000).toISOString().slice(0, 10);
-  return `${away.abbr}@${home.abbr}:${et}`;
+  // A game is identified by its calendar date in Toronto (Eastern time), so a 1:00 am UTC kickoff still belongs to
+  // the evening before.
+  return `${away.abbr}@${home.abbr}:${torontoDate(startIso)}`;
 }
 
 /** "+160" | "−192" (unicode minus) | -110 -> integer american odds */
@@ -50,6 +56,7 @@ export function parseAmerican(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return Math.round(v);
   const s = String(v).replace('−', '-').replace('+', '').trim();
+  if (/^ev(en)?$/i.test(s)) return 100; // "EVEN" = +100
   const n = Number(s);
   return Number.isFinite(n) ? Math.round(n) : null;
 }
@@ -80,14 +87,19 @@ export function fmtLine(market, side, line) {
  *
  * quotes: Quote[] for one game/market/side, one per book.
  */
+// Prices are ranked by what they PAY (decimal odds), not by the American number: −100 and +100 both pay 2.0, so they
+// tie, although +100 > −100 as numbers. Away from ±100 the two orders agree.
+const pays = (a) => (a == null ? -Infinity : a > 0 ? 1 + a / 100 : 1 + 100 / Math.abs(a));
+const samePay = (a, b) => Math.abs(pays(a) - pays(b)) < 1e-9;
+
 export function bestPrice(quotes) {
   const live = quotes.filter((q) => q && q.odds != null && !q.suspended); // a suspended price cannot be bet, so it cannot be best
   if (!live.length) return null;
   const lines = new Set(live.map((q) => q.line ?? 'ml'));
-  if (lines.size > 1) return { conflict: true, offers: live.slice().sort((a, b) => (b.odds ?? -Infinity) - (a.odds ?? -Infinity)) };
-  const sorted = live.slice().sort((a, b) => b.odds - a.odds);
+  if (lines.size > 1) return { conflict: true, offers: live.slice().sort((a, b) => pays(b.odds) - pays(a.odds)) };
+  const sorted = live.slice().sort((a, b) => pays(b.odds) - pays(a.odds));
   const best = sorted[0];
-  const tiedBooks = sorted.filter((q) => q.odds === best.odds).map((q) => q.book);
+  const tiedBooks = sorted.filter((q) => samePay(q.odds, best.odds)).map((q) => q.book);
   return { conflict: false, best, books: tiedBooks, offers: sorted };
 }
 
@@ -109,8 +121,8 @@ export function compare(offers) {
   if (eligible.length === 0) return { kind: 'none', eligible, offers: present };
   if (eligible.length === 1) return { kind: 'partial', best: eligible[0], eligible, offers: present };
   if (new Set(eligible.map((o) => o.line ?? 'ml')).size > 1) return { kind: 'different', eligible, offers: eligible };
-  const sorted = eligible.slice().sort((a, b) => b.odds - a.odds);
-  const books = sorted.filter((o) => o.odds === sorted[0].odds).map((o) => o.book);
+  const sorted = eligible.slice().sort((a, b) => pays(b.odds) - pays(a.odds));
+  const books = sorted.filter((o) => samePay(o.odds, sorted[0].odds)).map((o) => o.book);
   return books.length > 1 ? { kind: 'tie', best: sorted[0], books, eligible, offers: sorted } : { kind: 'best', best: sorted[0], books, eligible, offers: sorted };
 }
 
@@ -134,7 +146,7 @@ export function cents(a, b) { const f = (x) => (x > 0 ? x - 100 : x + 100); retu
  */
 export function bestHold(sideA, sideB, pair = (l) => l) {
   const ok = (o) => o && o.odds != null && !o.suspended && !o.stale;
-  const top = (list, line) => list.filter((o) => ok(o) && (o.line ?? null) === line).sort((x, y) => y.odds - x.odds)[0];
+  const top = (list, line) => list.filter((o) => ok(o) && (o.line ?? null) === line).sort((x, y) => pays(y.odds) - pays(x.odds))[0];
   let best = null;
   for (const line of new Set(sideA.filter(ok).map((o) => o.line ?? null))) {
     const a = top(sideA, line), b = top(sideB, pair(line));

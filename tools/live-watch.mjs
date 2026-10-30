@@ -87,22 +87,24 @@ async function compare(lg) {
   const [board, dk, fd] = await Promise.all([getJson(`/api/board?league=${lg}`), http.getJson(dkUrl(dkId), dkH, 20_000).catch((e) => ({ error: e.message })), fetch(fdUrl(fdPage), { headers: fdH, signal: AbortSignal.timeout(20_000) }).then((r) => r.json()).catch((e) => ({ error: e.message }))]);
   const q = new Map(board.quotes.map((x) => [x.id, x])); const byEvent = { draftkings: new Map(), fanduel: new Map() };
   for (const g of board.games) for (const b of ['draftkings', 'fanduel']) if (g.books?.[b]?.eventId) byEvent[b].set(String(g.books[b].eventId), g);
-  const res = { draftkings: { same: 0, diff: 0, missing: 0, liveDiff: 0, error: dk.error || null }, fanduel: { same: 0, diff: 0, missing: 0, liveDiff: 0, error: fd.error || null } };
-  const cmp = (b, g, market, side, odds, line) => {
+  const res = { draftkings: { same: 0, diff: 0, missing: 0, liveDiff: 0, suspDiff: 0, error: dk.error || null }, fanduel: { same: 0, diff: 0, missing: 0, liveDiff: 0, suspDiff: 0, error: fd.error || null } };
+  // same = price, line AND open/suspended all agree with the book's own page
+  const cmp = (b, g, market, side, odds, line, suspended) => {
     const r = res[b]; const x = q.get(`${g.key}|${market}|${side}|${b}`);
     if (!x) { r.missing++; return; }
-    if (x.odds === odds && (market === 'moneyline' || x.line === line)) r.same++; else { r.diff++; if (g.status === 'live') r.liveDiff++; }
+    const priceOk = x.odds === odds && (market === 'moneyline' || x.line === line); const suspOk = !!x.suspended === !!suspended;
+    if (priceOk && suspOk) r.same++; else { r.diff++; if (!suspOk) r.suspDiff++; if (g.status === 'live') r.liveDiff++; }
   };
   const dkM = new Map((dk.markets || []).map((m) => [m.id, m]));
   for (const s of dk.selections || []) {
     const m = dkM.get(s.marketId); const market = MK[m?.name]; if (!market) continue; const g = byEvent.draftkings.get(String(m.eventId));
     if (!g) { res.draftkings.missing++; continue; }
-    cmp('draftkings', g, market, market === 'total' ? (s.outcomeType || s.label).toLowerCase() : s.outcomeType?.toLowerCase(), num(s.displayOdds?.american), market === 'moneyline' ? null : s.points);
+    cmp('draftkings', g, market, market === 'total' ? (s.outcomeType || s.label).toLowerCase() : s.outcomeType?.toLowerCase(), num(s.displayOdds?.american), market === 'moneyline' ? null : s.points, m.isSuspended === true || s.isSuspended === true);
   }
   for (const m of Object.values(fd.attachments?.markets || {})) {
     const market = MK[m.marketType]; if (!market) continue; const g = byEvent.fanduel.get(String(m.eventId));
     if (!g) { res.fanduel.missing += m.runners?.length || 0; continue; }
-    for (const r of m.runners || []) cmp('fanduel', g, market, r.result?.type?.toLowerCase(), num(r.winRunnerOdds?.americanDisplayOdds?.americanOdds), market === 'moneyline' ? null : r.handicap);
+    for (const r of m.runners || []) cmp('fanduel', g, market, r.result?.type?.toLowerCase(), num(r.winRunnerOdds?.americanDisplayOdds?.americanOdds), market === 'moneyline' ? null : r.handicap, (!!m.marketStatus && m.marketStatus !== 'OPEN') || (!!r.runnerStatus && r.runnerStatus !== 'ACTIVE'));
   }
   return { live: board.games.filter((g) => g.status === 'live').map((g) => `${g.away.abbr} @ ${g.home.abbr}`), ...res };
 }

@@ -102,3 +102,52 @@ test('tightest alt lines: lowest combined hold per game, from the best price on 
   const spread = h.find((e) => e.kind === 'alt-spread');
   assert.equal(spread.b.line, -spread.a.line, 'spread sides pair on opposite numbers');
 });
+
+test('DraftKings more lines: isSuspended greys an offer (snapshot or a market-only frame), reopening restores it, a price-only change keeps it greyed', () => {
+  const { x, dk, row } = setup();
+  const td = DK['12438'];
+  const sel = td.selections.find((s) => s.label === 'Derrick Henry' && td.markets.find((m) => m.id === s.marketId).marketType.name === 'Anytime Touchdown Scorer');
+  const henry = () => row('td', 'derrick-henry', null).offers.draftkings;
+  const frame = (d) => Buffer.from(JSON.stringify({ event: 'update', data: { data: d } }));
+  assert.equal(henry().suspended, false);
+  // market-only change, no price: suspended at the same price, and it cannot be the best price
+  assert.equal(dk.onMessage(frame({ change: { markets: [{ id: sel.marketId, isSuspended: true, sortOrder: 1 }] } }), 2000) > 0, true);
+  assert.equal(henry().suspended, true); assert.equal(henry().odds, -230);
+  assert.notEqual(compare([{ book: 'draftkings', ...henry() }, { book: 'fanduel', ...row('td', 'derrick-henry', null).offers.fanduel }]).best?.book, 'draftkings');
+  // a partial price change keeps it suspended
+  dk.onMessage(frame({ change: { selections: [{ id: sel.id, displayOdds: { american: '−250' } }] } }), 3000);
+  assert.equal(henry().odds, -250); assert.equal(henry().suspended, true);
+  // reopened
+  dk.onMessage(frame({ change: { markets: [{ id: sel.marketId, isSuspended: false }] } }), 4000);
+  assert.equal(henry().suspended, false); assert.equal(henry().odds, -250);
+  // a snapshot that says the market is suspended is the truth too
+  dk.applySnapshot('12438', { ...td, markets: td.markets.map((m) => (m.id === sel.marketId ? { ...m, isSuspended: true } : m)) }, 5000);
+  assert.equal(henry().suspended, true);
+  dk.applySnapshot('12438', td, 6000);
+  assert.equal(henry().suspended, false);
+});
+
+test('the edge relay keeps DraftKings\' availability flags', async () => {
+  const { slimDk } = await import('../src/extras.js');
+  const s = slimDk({ events: [], markets: [{ id: 'm', eventId: 'e', name: 'x', isSuspended: true }], selections: [{ id: 's', marketId: 'm', isSuspended: true, displayOdds: { american: '+100' } }] });
+  assert.equal(s.markets[0].isSuspended, true); assert.equal(s.selections[0].isSuspended, true);
+});
+
+test('more lines go stale with their book: quiet too long, or the main feed down; stale prices never make the tightest list', () => {
+  const { x } = setup();
+  const t = 1000;
+  x.refreshStaleness(t + 1000, {});
+  assert.equal(x.status.draftkings.stale, false); assert.equal(x.status.fanduel.stale, false);
+  const fresh = x.holds(50);
+  assert.ok(fresh.some((h) => h.a.book === 'draftkings' || h.b.book === 'draftkings'), 'DraftKings prices count while fresh');
+  // DraftKings' main feed goes down: its more-lines prices stop counting at once
+  assert.equal(x.refreshStaleness(t + 2000, { draftkings: true }), true);
+  assert.equal(x.status.draftkings.stale, true);
+  assert.ok(x.holds(50).every((h) => h.a.book !== 'draftkings' && h.b.book !== 'draftkings'));
+  // back up
+  x.refreshStaleness(t + 3000, {}); assert.equal(x.status.draftkings.stale, false);
+  // FanDuel quiet for longer than its limit
+  x.refreshStaleness(t + 181_000 + 1, {});
+  assert.equal(x.status.fanduel.stale, true);
+  assert.ok(x.holds(50).every((h) => h.a.book !== 'fanduel' && h.b.book !== 'fanduel'));
+});

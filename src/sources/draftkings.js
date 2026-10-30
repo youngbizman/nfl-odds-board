@@ -11,7 +11,15 @@
 // refuses Node's own HTTPS client from cloud IPs (403) but accepts a client with a browser's TLS/HTTP2 handshake,
 // so snapshots go through src/transport/http.js: Node first, the browser-compatible client after the first 403.
 // That makes the cloud server self-sufficient. An edge machine (src/edge.js → /ingest/dk-snapshot) is only a
-// fallback if both clients are refused. The socket is not geo-fenced: the region only selects which site's prices.
+// fallback if both clients are refused. The socket is not geo-fenced: the site name only selects which site's prices.
+//
+// Ontario only. Every snapshot URL, socket subscription and restored checkpoint is the Ontario site (CA-ON-SB),
+// the same jurisdiction as the FanDuel feed. If Ontario's snapshot host refuses us we say so and wait for an Ontario
+// snapshot from the edge; we never fill the board from another region's prices.
+//
+// Availability: DraftKings marks a market closed with `isSuspended: true` (a selection can carry it too). Snapshots
+// and `add` frames carry full objects (no flag = open); `change` frames are partial (no flag = unchanged). A
+// suspension or reopening can arrive on its own, as a market-only `change`, with no price change at all.
 //
 // Line moves: DK encodes the line in the selection id ("0HC84695615P350_3" = spread +3.5, away). A move arrives as
 // remove(old id) + add(new id, with marketId and points) and is applied immediately. If a change names an id we
@@ -27,25 +35,41 @@ const SUBCATEGORY = '4518';      // Game Lines (moneyline / spread / total), the
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const MARKET_MAP = { Moneyline: 'moneyline', Spread: 'spread', Total: 'total' };
 const LIVE_STATES = new Set(['STARTED', 'IN_PROGRESS', 'LIVE', 'INPLAY', 'IN_PLAY']);
-const SITES = ['CA-ON-SB', 'US-OH-SB', 'US-NJ-SB', 'US-PA-SB', 'US-MI-SB', 'US-VA-SB', 'US-SB'];
+export const ONTARIO = 'CA-ON-SB';
+const SIDES = { moneyline: ['home', 'away'], spread: ['home', 'away'], total: ['over', 'under'] };
+
+/** Is this DraftKings market/selection closed? true / false when the object says so, undefined when it does not. */
+export function closedFlag(o) {
+  if (!o || typeof o !== 'object') return undefined;
+  if (o.isSuspended === true || o.isOpen === false) return true;
+  const st = typeof o.status === 'string' ? o.status.toUpperCase() : null;
+  if (st === 'SUSPENDED' || st === 'CLOSED') return true;
+  if (o.isSuspended === false || o.isOpen === true || st === 'OPEN' || st === 'ACTIVE') return false;
+  return undefined;
+}
+
+/** The site this process may use: always Ontario. Anything else in the configuration is refused, loudly. */
+export function ontarioSite(wanted, log) {
+  if (wanted && wanted !== ONTARIO) log?.('dk', `DK_SITE=${wanted} ignored: this board shows Ontario prices only (${ONTARIO})`);
+  return ONTARIO;
+}
 
 export class DraftKingsSource {
   constructor(store, metrics, log, opts = {}) {
     this.store = store; this.metrics = metrics; this.log = log;
-    // The site we subscribe to (DK_SITE, default Ontario = same jurisdiction as our FanDuel feed). Other regional
-    // sites are tried for the REST snapshot only if the preferred one refuses this machine.
-    const pref = opts.site || process.env.DK_SITE || 'CA-ON-SB';
-    this.candidates = opts.candidates || [pref, ...SITES].filter((s, i, a) => a.indexOf(s) === i).map((site) => ({ site, siteName: siteNameFor(site), wsHost: wsHostFor(site) }));
-    Object.assign(this, this.candidates[0]);
+    // Ontario for the snapshot, the socket subscription and the checkpoint: the same jurisdiction as our FanDuel feed.
+    this.site = ontarioSite(opts.site || process.env.DK_SITE, log);
+    this.siteName = siteNameFor(this.site); this.wsHost = wsHostFor(this.site);
     this.nashBase = opts.nashBase || process.env.DK_NASH_BASE || 'https://sportsbook-nash.draftkings.com';
     this.wsUrlOverride = opts.wsUrl || process.env.DK_WS_URL || null;
     this.leagues = opts.leagues || enabledLeagues(); // NFL first; college football and the CFL from the same hosts
     this.resnapshotMs = Number(opts.resnapshotMs || process.env.DK_RESNAPSHOT_MS || 30_000); // a reconciliation check; the socket carries every change
     this.http = opts.http || makeHttp({ log });
     this.pingMs = Number(opts.pingMs || 10_000); // proof of life when no price moves (DK only sends changes)
-    this.selIndex = new Map();    // DK selection id -> { gameKey, market, side }
-    this.familyIndex = new Map(); // "HC84695615_3" -> { gameKey, market, side } (survives line moves)
-    this.marketIndex = new Map(); // DK market id -> { gameKey, market }
+    this.selIndex = new Map();    // DK selection id -> { gameKey, market, side, marketId }
+    this.familyIndex = new Map(); // "HC84695615_3" -> { gameKey, market, side, marketId } (survives line moves)
+    this.marketIndex = new Map(); // DK market id -> { gameKey, market, suspended }
+    this.quoteSel = new Map();    // our quote id -> { marketId, closed }: which DK market feeds it, and its selection's own flag
     this.eventIndex = new Map();  // DK event id -> gameKey
     this.restBlocked = false;     // this machine's IP is refused by the snapshot host → snapshots come from the edge
     this.onNeedSnapshot = opts.onNeedSnapshot || null; // called when we want a fresh snapshot but cannot fetch one
@@ -63,14 +87,13 @@ export class DraftKingsSource {
   async start() {
     this.store.setSource(BOOK, { mode: 'websocket', state: 'connecting', region: regionLabel(this.site), detail: 'probing snapshot access' });
     await this.restore();               // board from the durable checkpoint + frame log, if there is one
-    const ok = await this.pickSite();   // loads the first snapshot when this IP is allowed
+    const ok = await this.firstSnapshot(); // loads the first Ontario snapshot when this IP is allowed
     if (this.stopped) return;
     if (!ok) {
-      this.restBlocked = true;
-      Object.assign(this, this.candidates[0]); // subscribe to the preferred site anyway: the socket is open to everyone
+      this.restBlocked = true; // the Ontario socket is open to everyone; only the Ontario snapshot must come from the edge
       const restored = this.store.sources[BOOK]?.snapshotVia === 'checkpoint';
-      this.store.setSource(BOOK, { mode: 'websocket', region: regionLabel(this.site), ...(restored ? {} : { snapshotVia: 'edge' }), detail: `snapshot host refuses this server; socket direct, ${restored ? 'board restored from checkpoint, ' : ''}snapshots from edge` });
-      this.log('dk', `snapshot host refuses this server → socket direct (${this.wsHost}), waiting for a snapshot from the edge`);
+      this.store.setSource(BOOK, { mode: 'websocket', region: regionLabel(this.site), ...(restored ? {} : { snapshotVia: 'edge' }), detail: `Ontario snapshot host refuses this server; Ontario socket direct, ${restored ? 'board restored from an Ontario checkpoint, ' : ''}waiting for an Ontario snapshot from the edge (no other region is used)` });
+      this.log('dk', `Ontario snapshot host refuses this server → Ontario socket direct (${this.wsHost}), waiting for an Ontario snapshot from the edge`);
     } else this.store.setSource(BOOK, { snapshotVia: 'direct' });
     this.connect();
     this.timer = setInterval(() => this.refreshSnapshot('periodic'), this.resnapshotMs);
@@ -82,15 +105,17 @@ export class DraftKingsSource {
     const games = [...this.store.games.values()].filter((g) => g.books?.[BOOK]);
     const quotes = [...this.store.quotes.values()].filter((q) => q.book === BOOK);
     return { v: 1, savedAt: Date.now(), seq: this.seq, site: this.site, games, quotes,
-      selIndex: [...this.selIndex], familyIndex: [...this.familyIndex], eventIndex: [...this.eventIndex],
-      marketIndex: [...this.marketIndex].map(([id, r]) => [id, { market: r.market, gameKey: r.gameKey }]) };
+      selIndex: [...this.selIndex], familyIndex: [...this.familyIndex], eventIndex: [...this.eventIndex], quoteSel: [...this.quoteSel],
+      marketIndex: [...this.marketIndex].map(([id, r]) => [id, { market: r.market, gameKey: r.gameKey, suspended: !!r.suspended }]) };
   }
 
   importState(st) {
+    // a checkpoint is only trusted if it was written from the Ontario feed
+    if (st.site !== ONTARIO) throw new Error(`checkpoint is from site ${st.site || 'unknown'}, not ${ONTARIO}; ignored`);
     for (const g of st.games || []) this.store.upsertGame(g);
     for (const q of st.quotes || []) this.store.upsertQuote(q, q.updatedAt || st.savedAt);
     this.selIndex = new Map(st.selIndex); this.familyIndex = new Map(st.familyIndex); this.eventIndex = new Map(st.eventIndex);
-    this.marketIndex = new Map(st.marketIndex);
+    this.marketIndex = new Map(st.marketIndex); this.quoteSel = new Map(st.quoteSel || []);
     this.seq = st.seq || 0;
   }
 
@@ -122,15 +147,10 @@ export class DraftKingsSource {
     this.ws?.terminate();
   }
 
-  /** Try each regional site until one gives us a snapshot (the snapshot host is fenced by IP, see README). */
-  async pickSite() {
-    for (const c of this.candidates) {
-      Object.assign(this, c);
-      try { await this.snapshot(); this.log('dk', `snapshot ok from ${c.site} (${c.siteName}, ${c.wsHost})`); return true; }
-      catch (e) { this.log('dk', `site ${c.site} rejected: ${String(e.message).split('\n')[0].slice(0, 60)}`); }
-      if (this.stopped) return false;
-    }
-    return false;
+  /** The first Ontario snapshot (the snapshot host is fenced by IP, see README). No other region is tried. */
+  async firstSnapshot() {
+    try { await this.snapshot(); this.log('dk', `snapshot ok from ${this.site} (${this.siteName}, ${this.wsHost})`); return true; }
+    catch (e) { this.log('dk', `Ontario snapshot (${this.site}) refused: ${String(e.message).split('\n')[0].slice(0, 60)}`); return false; }
   }
 
   fail(where, e) {
@@ -184,7 +204,7 @@ export class DraftKingsSource {
       games.set(ev.id, g); this.eventIndex.set(ev.id, g.key);
       this.store.upsertGame(g);
     }
-    for (const m of data.markets || []) this.indexMarket(m, games.get(m.eventId));
+    for (const m of data.markets || []) this.indexMarket(m, games.get(m.eventId)); // full objects: no flag = open
     const seen = new Set();
     for (const s of data.selections || []) { const ref = this.applySelection(s, now, null); if (ref) seen.add(`${ref.gameKey}|${ref.market}|${ref.side}`); }
     // A market that disappeared from the snapshot (suspended / taken down) must not keep showing a stale price.
@@ -208,10 +228,32 @@ export class DraftKingsSource {
     return { key, league: league.id, home, away, start: ev.startEventDate, books: { [BOOK]: { eventId: ev.id, status: ev.status, live: LIVE_STATES.has(ev.status) } } };
   }
 
+  /** Index one FULL market object (snapshot or `add`): a missing availability flag means open. */
   indexMarket(m, game) {
     const market = MARKET_MAP[m.name] || MARKET_MAP[m.marketType?.name];
     if (!market || !game) return null;
-    const ref = { market, gameKey: game.key, game }; this.marketIndex.set(m.id, ref); return ref;
+    const ref = { market, gameKey: game.key, game, suspended: closedFlag(m) ?? false }; this.marketIndex.set(m.id, ref); return ref;
+  }
+
+  /** Suspended = the market that feeds this quote is closed, or the selection itself is. */
+  isSuspended(qid, marketId) {
+    const qs = this.quoteSel.get(qid);
+    const mk = this.marketIndex.get(marketId ?? qs?.marketId);
+    return !!(mk?.suspended || qs?.closed);
+  }
+
+  /** A market opened or closed with no price change: re-apply availability to the quotes that market feeds. */
+  applyAvailability(marketId, now, sourceTs) {
+    const mk = this.marketIndex.get(marketId); if (!mk) return 0;
+    let n = 0;
+    for (const side of SIDES[mk.market] || []) {
+      const qid = `${mk.gameKey}|${mk.market}|${side}|${BOOK}`;
+      const cur = this.store.quotes.get(qid); if (!cur) continue;
+      const fedBy = this.quoteSel.get(qid)?.marketId; if (fedBy && fedBy !== marketId) continue; // shown price comes from another DK market
+      const q = { gameKey: cur.gameKey, market: cur.market, side: cur.side, book: BOOK, line: cur.line, odds: cur.odds, suspended: this.isSuspended(qid, marketId), sourceTs };
+      if (this.store.upsertQuote(q, now)) { n++; this.metrics.dk.availabilityChanges = (this.metrics.dk.availabilityChanges || 0) + 1; if (sourceTs) this.recordLag(q, now - sourceTs); }
+    }
+    return n;
   }
 
   /** Index + upsert one full selection object (snapshot or `add`). Returns its ref or null. */
@@ -219,16 +261,21 @@ export class DraftKingsSource {
     const mk = this.marketIndex.get(s.marketId); if (!mk) return null;
     const game = mk.game || this.store.games.get(mk.gameKey); if (!game) return null;
     const side = this.sideOf(mk.market, s, game); if (!side) return null;
-    const ref = { gameKey: mk.gameKey, market: mk.market, side };
+    const ref = { gameKey: mk.gameKey, market: mk.market, side, marketId: s.marketId };
     this.selIndex.set(s.id, ref);
     const fam = familyOf(s.id); if (fam) this.familyIndex.set(fam, ref);
+    const qid = `${ref.gameKey}|${ref.market}|${ref.side}|${BOOK}`;
+    this.quoteSel.set(qid, { marketId: s.marketId, closed: closedFlag(s) ?? false }); // a full selection: no flag = open
+    const suspended = this.isSuspended(qid, s.marketId);
     const line = mk.market === 'moneyline' ? null : (s.points ?? lineFromId(s.id));
-    const changed = this.store.upsertQuote({ ...ref, book: BOOK, line, odds: parseAmerican(s.displayOdds?.american), sourceTs }, now);
+    let odds = parseAmerican(s.displayOdds?.american);
+    if (odds == null && suspended) odds = this.store.quotes.get(qid)?.odds ?? null; // closed without a price: keep the last one, greyed
+    const changed = this.store.upsertQuote({ gameKey: ref.gameKey, market: ref.market, side, book: BOOK, line, odds, suspended, sourceTs }, now);
     if (changed && sourceTs) this.recordLag(ref, now - sourceTs);
     return ref;
   }
 
-  recordLag(ref, lag) { if (this.replaying) return; const g = this.store.games.get(ref.gameKey); (g?.status === 'live' ? this.metrics.dk.ingestLagLive : this.metrics.dk.ingestLagPregame).push(lag); }
+  recordLag(ref, lag) { if (this.replaying) return; const g = this.store.games.get(ref.gameKey); (g?.status === 'live' ? this.metrics.dk.ingestLagLive : this.metrics.dk.ingestLagPregame).push(lag); this.metrics.dk.lastLagAt = Date.now(); }
 
   sideOf(market, sel, game) {
     if (market === 'total') return sel.outcomeType === 'Over' ? 'over' : sel.outcomeType === 'Under' ? 'under' : (/^over/i.test(sel.label) ? 'over' : /^under/i.test(sel.label) ? 'under' : null);
@@ -315,16 +362,32 @@ export class DraftKingsSource {
     for (const s of list(d.remove?.selections)) this.selIndex.delete(typeof s === 'string' ? s : s?.id);
     for (const m of list(d.remove?.markets)) { const id = typeof m === 'string' ? m : m?.id; const mk = this.marketIndex.get(id); if (mk) { this.marketIndex.delete(id); this.store.removeQuotes(BOOK, mk.gameKey, mk.market); } }
     for (const e of list(d.add?.events)) { const g = this.gameFromEvent(e, 'nfl'); if (g) { this.eventIndex.set(e.id, g.key); this.store.upsertGame(g); } }
-    for (const m of list(d.add?.markets)) { const key = this.eventIndex.get(m.eventId); const g = key && this.store.games.get(key); if (g) this.indexMarket(m, g); }
+    for (const m of list(d.add?.markets)) {
+      const key = this.eventIndex.get(m.eventId); const g = key && this.store.games.get(key);
+      if (g && this.indexMarket(m, g)) applied += this.applyAvailability(m.id, now, sourceTs); // re-added market: its quotes follow its flag
+    }
+    // market-only changes: `isSuspended` true/false is the whole message (partial object; no flag = unchanged)
+    for (const m of list(d.change?.markets)) {
+      const mk = this.marketIndex.get(m?.id); const flag = closedFlag(m);
+      if (!mk || flag === undefined || flag === mk.suspended) continue;
+      mk.suspended = flag;
+      applied += this.applyAvailability(m.id, now, sourceTs);
+    }
     for (const s of list(d.add?.selections)) { if (this.applySelection(s, now, sourceTs)) applied++; else unknown++; }
     for (const s of list(d.change?.selections)) {
       let ref = this.selIndex.get(s.id);
       if (!ref) { const fam = familyOf(s.id); ref = fam && this.familyIndex.get(fam); if (ref) { this.selIndex.set(s.id, ref); this.metrics.dk.lineMovesMapped++; } }
       if (!ref) { unknown++; continue; }
-      const cur = this.store.quotes.get(`${ref.gameKey}|${ref.market}|${ref.side}|${BOOK}`);
+      const qid = `${ref.gameKey}|${ref.market}|${ref.side}|${BOOK}`;
+      const cur = this.store.quotes.get(qid);
+      // partial: a field that is absent keeps its value (price, line, and the selection's own open/closed flag)
+      const prevSel = this.quoteSel.get(qid); const flag = closedFlag(s);
+      const marketId = ref.marketId ?? prevSel?.marketId;
+      this.quoteSel.set(qid, { marketId, closed: flag ?? prevSel?.closed ?? false });
+      const suspended = marketId ? this.isSuspended(qid, marketId) : (flag ?? cur?.suspended ?? false);
       const odds = s.displayOdds?.american != null ? parseAmerican(s.displayOdds.american) : cur?.odds ?? null;
       const line = ref.market === 'moneyline' ? null : (typeof s.points === 'number' ? s.points : (lineFromId(s.id) ?? cur?.line ?? null));
-      if (this.store.upsertQuote({ ...ref, book: BOOK, line, odds, sourceTs }, now)) { applied++; if (sourceTs) this.recordLag(ref, now - sourceTs); }
+      if (this.store.upsertQuote({ gameKey: ref.gameKey, market: ref.market, side: ref.side, book: BOOK, line, odds, suspended, sourceTs }, now)) { applied++; if (sourceTs) this.recordLag(ref, now - sourceTs); }
     }
     for (const e of list(d.change?.events)) {
       const key = this.eventIndex.get(e.id); const g = key && this.store.games.get(key);

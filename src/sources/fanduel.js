@@ -22,6 +22,11 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (
 const MARKET_MAP = { MONEY_LINE: 'moneyline', 'MATCH_HANDICAP_(2-WAY)': 'spread', 'TOTAL_POINTS_(OVER/UNDER)': 'total' };
 // FanDuel runs one site per jurisdiction. Ontario is a separate .ca site; US states share the .com API with a state code.
 // Same API shape everywhere; only hosts, region code and referer change. Default ON = same jurisdiction as our DraftKings feed.
+/** The region this process may use: always Ontario. Anything else in the configuration is refused, loudly. */
+export function ontarioRegion(wanted, log) {
+  if (wanted && String(wanted).toUpperCase() !== 'ON') log?.('fd', `FD_REGION=${wanted} ignored: this board shows Ontario prices only (ON)`);
+  return 'ON';
+}
 export function fanduelEndpoints(region) {
   const r = region.toUpperCase();
   if (r === 'ON') return { label: 'Ontario', site: 'https://on.sportsbook.fanduel.ca/', tz: 'America%2FToronto',
@@ -33,7 +38,7 @@ export function fanduelEndpoints(region) {
 export class FanDuelSource {
   constructor(store, metrics, log, opts = {}) {
     this.store = store; this.metrics = metrics; this.log = log;
-    this.region = (opts.region || process.env.FD_REGION || 'ON').toUpperCase();
+    this.region = ontarioRegion(opts.region || process.env.FD_REGION, log); // Ontario only, like DraftKings
     this.ep = fanduelEndpoints(this.region);
     this.basePollMs = Number(opts.pollMs || process.env.FD_POLL_MS || 1000);
     this.maxPollMs = 30_000;
@@ -92,7 +97,7 @@ export class FanDuelSource {
   applyPush(m, now = Date.now()) {
     this.metrics.fd.pushMarkets++;
     const lag = now - Date.parse(m.updatedAt || '');
-    if (Number.isFinite(lag) && lag > -5_000 && lag < 120_000) this.metrics.fd.pushLag.push(lag); // FanDuel's stamp → our receipt
+    if (Number.isFinite(lag) && lag > -5_000 && lag < 120_000) { this.metrics.fd.pushLag.push(lag); this.metrics.fd.lastPushLagAt = now; } // FanDuel's stamp → our receipt
     const changes = this.applyPrices([m], now, now);
     this.metrics.fd.pushChanges += changes;
     if (!changes) this.metrics.fd.pushNoChange++; // the push confirmed what a poll had already shown (or carried no price change)

@@ -104,7 +104,7 @@ function head() {
   const V = view(); const B = api.BOOK;
   const bookHead = (b) => {
     const f = api.feedState(b); const L = api.latency(b);
-    const st = f === 'live' ? (b === 'draftkings' || L.push ? `push${L.bookToScreenMs != null ? ` ${api.secs(L.bookToScreenMs)}` : ''}` : `poll ${api.secs(L.beatMs)}`) : f;
+    const st = f === 'live' ? (b === 'draftkings' || L.push ? `push${L.page ? ` ${api.secs(L.page.p50)}` : ''}` : `poll ${api.secs(L.beatMs)}`) : f;
     return `<th colspan="3" class="g-grp g-${B[b].cls}${f !== 'live' ? ' is-down' : ''}">${B[b].label} <span class="g-st"><i></i>${esc(st)}</span></th>`;
   };
   const groups = V === 'best' ? `<th colspan="3" class="g-grp g-best">Best available</th>${bookHead('draftkings')}${bookHead('fanduel')}` : bookHead(V);
@@ -219,7 +219,7 @@ function extrasInner(gk) {
   const cell = (o, cmp) => {
     if (!o) return '<td class="none">—</td>';
     const win = (cmp.kind === 'best' && cmp.best.book === o.book) || (cmp.kind === 'tie' && cmp.books.includes(o.book));
-    const cls = [o.suspended ? 'susp' : '', win ? (cmp.kind === 'tie' ? 'tie' : 'win') : '', o.moved ? `fl-${o.moved}` : ''].filter(Boolean).join(' ');
+    const cls = [o.suspended ? 'susp' : '', o.stale ? 'stale' : '', win ? (cmp.kind === 'tie' ? 'tie' : 'win') : '', o.moved ? `fl-${o.moved}` : ''].filter(Boolean).join(' ');
     return `<td class="${cls}"><b class="od">${esc(api.fmtOdds(o.odds))}</b>${o.moved ? `<i class="mv ${o.moved}">${o.moved === 'up' ? '▲' : '▼'}</i>` : ''}${o.suspended ? '<span class="tag">susp</span>' : win && cmp.kind === 'best' ? '<span class="star">★</span>' : ''}</td>`;
   };
   const x = api.state.extras.get(gk) || {}; const N = x.showAll ? 250 : 20;
@@ -286,20 +286,28 @@ function renderGame(key) {
 }
 
 // ---------- panels ----------
+/** "server 69 ms ·n 412 · page 75 ms ·n 23": the medians behind the big number, with their sample counts. */
+function latBits(api, L) {
+  const out = [];
+  if (L.server) out.push(`server ${api.secs(L.server.p50)} ·n ${L.server.n}`);
+  if (L.page) out.push(`page ${api.secs(L.page.p50)} ·n ${L.page.n}`);
+  else if (L.hop) out.push(`+${api.secs(L.hop.p50)} server→page ·n ${L.hop.n}`);
+  return out.join(' · ') || 'no samples yet';
+}
 function renderFeeds() {
   const prices = { draftkings: 0, fanduel: 0 }; const moves = api.state.moveCount || {};
   for (const q of api.state.quotes.values()) if (q.book in prices) prices[q.book]++;
   const rows = BOOKS.map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
-    const lat = f !== 'live' ? '—' : b === 'draftkings' ? (L.bookToScreenMs != null ? `${api.secs(L.bookToScreenMs)}${L.clockPm != null ? ` ±${L.clockPm}ms` : ''}` : 'on next move')
-      : L.push ? (L.bookToScreenMs != null ? api.secs(L.bookToScreenMs) : 'on next move') : `≤ ${api.secs(L.maxAgeMs)}`;
+    const T = api.latencyText(b);
+    const lat = f !== 'live' ? '—' : T.short;
     const mode = b === 'draftkings' ? 'ws push' : `${L.push ? 'ws push + ' : ''}poll ${api.secs(L.beatMs)}${L.interleave ? ' · 2 IPs' : ''}`;
     const snap = s.lastSnapshotAt ? `${s.snapshotVia || 'direct'} · <span data-age-ts="${s.lastSnapshotAt}">${esc(api.ago(s.lastSnapshotAt))}</span>` : '—';
     return `<tr class="f-${f}"><th><span class="g-bk g-${api.BOOK[b].cls}"></span>${api.BOOK[b].label}</th><td class="st"><i class="dot"></i>${esc(f)}</td><td>${esc(mode)}</td>
-      <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td class="big">${esc(lat)}</td><td>${snap}</td><td class="num">${prices[b]}</td><td class="num">${moves[b] ?? 0}</td><td class="num">${s.reconnects ?? 0}</td>
+      <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td class="big" title="${esc(f === 'live' ? T.title : '')}">${esc(lat)}${f === 'live' ? `<small class="lat-n">${esc(latBits(api, T.L))}</small>` : ''}</td><td>${snap}</td><td class="num">${prices[b]}</td><td class="num">${moves[b] ?? 0}</td><td class="num">${s.reconnects ?? 0}</td>
       <td class="fr"><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
-  el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th>Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th title="How long a price change takes to reach this screen">Latency to screen</th><th title="Full re-download that double-checks the stream">Snapshot</th><th class="num">Prices</th><th class="num" title="Price moves seen since this page opened">Moves</th><th class="num">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
+  el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th>Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th title="Medians of measured samples only: book → our server, and book → this page (DraftKings stamps every change). Point at a cell for sample counts, age and clock error.">Latency</th><th title="Full re-download that double-checks the stream">Snapshot</th><th class="num">Prices</th><th class="num" title="Price moves seen since this page opened">Moves</th><th class="num">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
     <tr class="f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : 'reconnecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
 }
 function renderBanner() {

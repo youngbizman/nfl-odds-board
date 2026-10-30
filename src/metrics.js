@@ -32,8 +32,9 @@ export class Metrics {
       pollChanges: 0, byLeague: {}, // which channel delivered each FanDuel price change first: { nfl: { push, poll }, … }
     };
     this.sse = { clients: 0, batchesSent: 0, bytesSent: 0, batchSize: new Ring(), coalesceWait: new Ring() };
-    // browser-reported: push lag (server updatedAt → browser paint) and DK end-to-end (publishedTime → browser paint)
-    this.browser = { pushLag: { draftkings: new Ring(), fanduel: new Ring() }, endToEnd: { draftkings: { pregame: new Ring(), live: new Ring() } }, reports: 0 };
+    // browser-reported: pushLag = server updatedAt → page received; endToEnd = DK publishedTime → page received;
+    // drawn = DK publishedTime → the frame after the page drew it
+    this.browser = { pushLag: { draftkings: new Ring(), fanduel: new Ring() }, endToEnd: { draftkings: { pregame: new Ring(), live: new Ring() } }, drawn: { draftkings: new Ring() }, reports: 0 };
   }
   toJSON() {
     const r = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v instanceof Ring ? v.stats() : (v && typeof v === 'object' && !Array.isArray(v) ? r(v) : v)]));

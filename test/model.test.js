@@ -102,3 +102,39 @@ test('fair line: each book de-vigged, books averaged; EV of a price against it',
   assert.ok(Math.abs(ev(100, 0.5)) < 1e-12);
   assert.ok(ev(-105, 0.52) > 0 && ev(-120, 0.52) < 0);
 });
+
+test('ranking is by payout: −100 and +100 both pay 2.0, so they tie (and bestPrice agrees)', async () => {
+  const { compare, bestPrice, bestHold } = await import('../src/model.js');
+  const c = compare([{ book: 'draftkings', odds: -100, line: 3 }, { book: 'fanduel', odds: 100, line: 3 }]);
+  assert.equal(c.kind, 'tie'); assert.deepEqual(c.books.sort(), ['draftkings', 'fanduel']);
+  const b = bestPrice([{ book: 'draftkings', odds: -100, line: null }, { book: 'fanduel', odds: 100, line: null }]);
+  assert.deepEqual(b.books.sort(), ['draftkings', 'fanduel']);
+  // away from ±100 nothing changes
+  assert.equal(compare([{ book: 'draftkings', odds: -105, line: null }, { book: 'fanduel', odds: 100, line: null }]).best.book, 'fanduel');
+  assert.equal(compare([{ book: 'draftkings', odds: 102, line: null }, { book: 'fanduel', odds: -100, line: null }]).best.book, 'draftkings');
+  assert.equal(compare([{ book: 'draftkings', odds: -110, line: null }, { book: 'fanduel', odds: -112, line: null }]).best.book, 'draftkings');
+  // hold is computed from what each price pays: −100 / +100 on the two sides = exactly 0
+  const h = bestHold([{ book: 'draftkings', odds: -100, line: null }], [{ book: 'fanduel', odds: 100, line: null }]);
+  assert.ok(Math.abs(h.hold) < 1e-12);
+});
+
+test('"EVEN" parses as +100', async () => {
+  const { parseAmerican } = await import('../src/model.js');
+  assert.equal(parseAmerican('EVEN'), 100); assert.equal(parseAmerican('even'), 100); assert.equal(parseAmerican('+100'), 100);
+});
+
+test('game day is the Toronto calendar day, daylight saving included', async () => {
+  const { torontoDate } = await import('../src/model.js');
+  const { leagueGameKey } = await import('../src/leagues.js');
+  // EDT (UTC−4): 04:30 UTC = 00:30 in Toronto, already the next day (a fixed UTC−5 said the day before)
+  assert.equal(torontoDate('2026-10-02T04:30:00Z'), '2026-10-02');
+  assert.equal(torontoDate('2026-10-02T03:59:00Z'), '2026-10-01');
+  // EST (UTC−5): 04:30 UTC = 23:30 the day before
+  assert.equal(torontoDate('2026-11-20T04:30:00Z'), '2026-11-19');
+  assert.equal(torontoDate('2026-11-20T05:00:00Z'), '2026-11-20');
+  // the change-over nights
+  assert.equal(torontoDate('2026-11-01T05:30:00Z'), '2026-11-01'); // 01:30 EDT→EST night
+  assert.equal(torontoDate('2026-03-08T06:30:00Z'), '2026-03-08'); // 02:30 UTC−4 after the spring change
+  const t = { key: 'A' }, u = { key: 'B' };
+  assert.equal(leagueGameKey('ncaaf', t, u, '2026-10-02T04:30:00Z'), 'ncaaf:A@B:2026-10-02');
+});

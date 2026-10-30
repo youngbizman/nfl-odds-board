@@ -118,8 +118,13 @@ test('a DraftKings snapshot relayed from an edge fills the board, and viewers ge
     ws.send(JSON.stringify({ type: 'ping', t: 42 }));
     assert.equal((await pong).t, 42);
     await waitFor(() => s.events.some((e) => e.ev === 'snapshot'));
-    const sentAt = Date.now();
+    // Ontario only: a snapshot from another region, or one that does not say where it is from, is refused
+    ws.send(JSON.stringify({ type: 'snapshot', site: 'US-OH-SB', why: 'test', edgeTs: Date.now(), rttMs: 30, snapshot: DK_SNAP }));
     ws.send(JSON.stringify({ type: 'snapshot', why: 'test', edgeTs: Date.now(), rttMs: 30, snapshot: DK_SNAP }));
+    await waitFor(async () => (await (await fetch(`${base}/api/metrics`)).json()).edgeRefused === 2, 3000);
+    assert.equal((await (await fetch(`${base}/api/health`)).json()).books.draftkings.quotes, 0, 'nothing from a non-Ontario snapshot reached the board');
+    const sentAt = Date.now();
+    ws.send(JSON.stringify({ type: 'snapshot', site: 'CA-ON-SB', why: 'test', edgeTs: Date.now(), rttMs: 30, snapshot: DK_SNAP }));
     const hit = await waitFor(() => s.events.find((e) => e.ev === 'batch' && e.data.quotes.some((q) => q.book === 'draftkings')), 3000);
     assert.ok(hit.at - sentAt < 300, `relay → viewer took ${hit.at - sentAt} ms`);
     assert.equal(hit.data.quotes.filter((q) => q.book === 'draftkings').length, 18);
