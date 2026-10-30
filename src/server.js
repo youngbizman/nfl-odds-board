@@ -167,7 +167,9 @@ app.get('/lib/model.js', (req, res) => res.type('application/javascript').sendFi
 /** The board for one league (or every league with league=all), plus which leagues exist and how many games each has. */
 function snapshot(league = 'nfl') {
   const s = store.snapshot(); const pick = (k) => league === 'all' || leagueOf(k) === league;
-  const counts = Object.fromEntries(LEAGUES_ON.map((id) => [id, 0])); for (const g of s.games) if (counts[leagueOf(g.key)] != null) counts[leagueOf(g.key)]++;
+  // a league's count = games with at least one price (a finished game whose prices were taken down is not counted)
+  const priced = new Set(s.quotes.map((q) => q.gameKey));
+  const counts = Object.fromEntries(LEAGUES_ON.map((id) => [id, 0])); for (const g of s.games) if (priced.has(g.key) && counts[leagueOf(g.key)] != null) counts[leagueOf(g.key)]++;
   return { ...s, league, games: s.games.filter((g) => pick(g.key)), quotes: s.quotes.filter((q) => pick(q.gameKey)),
     leagues: LEAGUES_ON.map((id) => ({ id, label: LEAGUES[id].label, title: LEAGUES[id].title, games: counts[id] })), config: { staleMs: STALE_MS, batchMs: BATCH_MS }, version: VERSION };
 }
