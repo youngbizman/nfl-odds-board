@@ -17,6 +17,8 @@ const browser = await chromium.launch({ headless: true }).catch(() => chromium.l
 async function check(path, view, label) {
   const ctx = await browser.newContext({ viewport: view.viewport, isMobile: view.isMobile, hasTouch: view.hasTouch });
   const page = await ctx.newPage(); const mine = [];
+  // the site sends a Content-Security-Policy: any resource or script it blocks is reported here as a problem
+  await page.addInitScript(() => document.addEventListener('securitypolicyviolation', (e) => console.error(`CSP blocked ${e.violatedDirective}: ${e.blockedURI}`)));
   page.on('pageerror', (e) => mine.push(`script error: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') mine.push(`console: ${m.text().slice(0, 160)}`); });
   page.on('response', (r) => { if (r.status() >= 400) mine.push(`HTTP ${r.status()} ${r.url()}`); });
@@ -24,7 +26,9 @@ async function check(path, view, label) {
   const t0 = Date.now();
   await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   // prices on screen = a price cell (either design) or the "no games" message for a league without games this week
-  const shown = await page.waitForFunction(() => document.querySelector('.odds, .g-table td[data-market]') || /No games|Neither book/.test(document.body.innerText), null, { timeout: 30_000 }).then(() => true).catch(() => false);
+  // polled with evaluate (Playwright's waitForFunction evaluates a string in the page, which the site's CSP rightly forbids)
+  let shown = false;
+  for (const end = Date.now() + 30_000; !shown && Date.now() < end;) { shown = await page.evaluate(() => !!(document.querySelector('.odds, .g-table td[data-market]') || /No games|Neither book/.test(document.body.innerText))).catch(() => false); if (!shown) await page.waitForTimeout(150); }
   const firstPrices = Date.now() - t0;
   await page.waitForTimeout(2500);
   const info = await page.evaluate(() => ({
