@@ -25,7 +25,7 @@ function mount(r, a) {
     <div id="g-banner" class="g-banner" hidden></div>
     <section class="g-feeds-panel" aria-label="Feeds"><h2>Feeds <span class="g-hint">live health of both books and of this page's stream</span><button type="button" class="g-link g-feeds-more" id="g-feeds-more" aria-expanded="false">▾ details</button></h2><div id="g-feeds"></div></section>
     <section class="g-panels" aria-label="Status">
-      <div class="g-panel"><h2>Tightest markets <span class="g-hint">hold at the best price per side · below 0 = arbitrage</span></h2><div id="g-holds"></div></div>
+      <div class="g-panel"><h2>Tightest markets <span class="g-hint" id="g-holds-scope"></span></h2><p class="g-explain">Margin = what the books keep if you bet both sides at the best prices. Lower is better for you; below 0% the two prices together pay back more than you stake (a possible arbitrage).</p><div id="g-holds"></div></div>
       <div class="g-panel"><h2>Wire <span class="g-hint">latest moves</span></h2><div id="g-wire"></div></div>
     </section>
     <div class="g-pagebar" id="g-page" hidden></div>
@@ -286,9 +286,10 @@ function renderFeeds() {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
     const T = api.latencyText(b);
     const lat = f !== 'live' ? '—' : T.short;
-    const mode = b === 'draftkings' ? 'ws push' : `${L.push ? 'ws push + ' : ''}poll ${api.secs(L.beatMs)}${L.interleave ? ' · 2 IPs' : ''}`;
+    const C = api.fanduelCadence(L);
+    const mode = b === 'draftkings' ? 'ws push' : `${L.push ? 'ws push + ' : ''}poll ${C.nflOnly ? C.beat : `${C.beat}–${C.turn}`}${L.interleave ? ' · 2 IPs' : ''}`;
     const snap = s.lastSnapshotAt ? `${s.snapshotVia || 'direct'} · <span data-age-ts="${s.lastSnapshotAt}">${esc(api.ago(s.lastSnapshotAt))}</span>` : '—';
-    return `<tr class="f-${f}"><th><span class="g-bk g-${api.BOOK[b].cls}"></span>${api.BOOK[b].label}</th><td class="st"><i class="dot"></i>${esc(f)}</td><td class="xd">${esc(mode)}</td>
+    return `<tr class="f-${f}"><th><span class="g-bk g-${api.BOOK[b].cls}"></span>${api.BOOK[b].label}</th><td class="st"><i class="dot"></i>${esc(f === 'live' ? 'connected' : f)}</td><td class="xd">${esc(mode)}</td>
       <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td class="big xd" title="${esc(f === 'live' ? T.title : '')}">${esc(lat)}${f === 'live' ? `<small class="lat-n">${esc(latBits(api, T.L))}</small>` : ''}</td><td>${snap}</td><td class="num xd">${prices[b]}</td><td class="num xd">${moves[b] ?? 0}</td><td class="num xd">${s.reconnects ?? 0}</td>
       <td class="fr"><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
@@ -307,24 +308,30 @@ function renderBanner() {
   b.hidden = true;
 }
 function renderWire() {
-  const moves = api.state.moves.slice(0, 6);
+  const keys = api.viewKeys(); const moves = api.state.moves.filter((m) => keys.has(m.gameKey)).slice(0, 6);
   el.wire.innerHTML = moves.length ? `<table class="g-pt">${moves.map((m) => {
     const lm = m.prevLine != null && m.prevLine !== m.line;
     const fmt = (l, o) => `${lm ? `${api.fmtLine(m.market, m.side, l)} ` : ''}${api.fmtOdds(o)}`;
     return `<tr><td class="mut" data-age-local="${m.at}">${esc(api.ago(m.at, Date.now()))}</td><th>${esc(m.game.replace(' @ ', '@'))}</th><td>${esc(m.sideName)} ${SHORT[m.market]}</td><td class="mono">${esc(fmt(m.prevLine, m.prevOdds))} → <b>${esc(fmt(m.line, m.odds))}</b></td><td>${api.BOOK[m.book].short}</td></tr>`;
-  }).join('')}</table>` : `<p class="g-note">${api.state.everConnected ? 'No price moves since this page opened. Pregame lines can sit still for minutes; live games move constantly.' : 'Waiting for the first prices…'}</p>`;
+  }).join('')}</table>` : `<p class="g-note">${api.state.everConnected ? (api.filtering() && api.state.moves.length ? 'No price moves in the games shown since this page opened.' : 'No price moves since this page opened. Pregame lines can sit still for minutes; live games move constantly.') : 'Waiting for the first prices…'}</p>`;
 }
+const MARKET_NAME = { moneyline: 'Moneyline', spread: 'Spread', total: 'Total', 'alt-spread': 'Alt spread', 'alt-total': 'Alt total' };
 function renderHolds() {
+  const keys = api.viewKeys();
   const main = api.tightest(9).map((t) => ({ ...t, alt: null }));
-  const alt = (api.state.extrasHolds || []).slice(0, 9).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: { ...t.a, side: t.a.subject }, b: { ...t.b, side: t.b.subject }, alt: t.kind })).filter((t) => t.game);
+  const alt = (api.state.extrasHolds || []).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: { ...t.a, side: t.a.subject }, b: { ...t.b, side: t.b.subject }, alt: t.kind })).filter((t) => t.game && keys.has(t.game.key));
   // three by default; "more" opens up to nine, "fewer" goes back to three (the same choice as the other design)
   const all = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, 9);
   const more = !!api.state.holdsMore; const items = all.slice(0, more ? 9 : 3);
   const toggle = all.length > 3 ? `<button type="button" class="g-link g-holds-more" data-holds-more aria-expanded="${more}">${more ? '▴ fewer' : `▾ ${all.length - 3} more`}</button>` : '';
-  const leg = (g, m, o) => `${m === 'total' ? `${o.side === 'over' ? 'o' : 'u'}${o.line}` : `${g[o.side]?.abbr ?? ''}${m === 'spread' ? ` ${api.fmtLine('spread', o.side, o.line)}` : ''}`} <b>${esc(api.fmtOdds(o.odds))}</b> <span class="mut">${api.BOOK[o.book].short}</span>`;
-  const html = items.length ? `<table class="g-pt g-holdt">${items.map((t) => `<tr class="${t.hold < 0 ? 'arb' : ''}" data-goto="${esc(t.game.key)}"${t.alt ? ` data-alt="${t.alt}"` : ''} title="Jump to the game"><th>${esc(t.game.away.abbr)}@${esc(t.game.home.abbr)}</th><td>${t.alt ? (t.alt === 'alt-spread' ? 'alt SP' : 'alt TOT') : SHORT[t.market]}</td><td class="mono">${leg(t.game, t.market, t.a)} / ${leg(t.game, t.market, t.b)}</td><td class="h">${t.hold < 0 ? 'ARB ' : ''}${pct(t.hold)}</td></tr>`).join('')}</table>` : '<p class="g-note">Waiting for prices.</p>';
+  const team = (g, side) => esc(g[side]?.abbr ?? '');
+  const leg = (g, m, o) => `<span class="g-leg-name">${m === 'total' ? (o.side === 'over' ? 'Over' : 'Under') + ' ' + o.line : `${team(g, o.side)}${m === 'spread' ? ` ${api.fmtLine('spread', o.side, o.line)}` : ''}`}</span> <b>${esc(api.fmtOdds(o.odds))}</b> <span class="mut">${api.BOOK[o.book].short}</span>`;
+  const head = '<thead><tr><th>Game</th><th>Market</th><th colspan="2">Best price on each side</th><th class="h" title="What the books keep if you bet both sides at these prices">Margin</th></tr></thead>';
+  const html = items.length ? `<table class="g-pt g-holdt">${head}<tbody>${items.map((t) => `<tr class="${t.hold < 0 ? 'arb' : ''}" data-goto="${esc(t.game.key)}"${t.alt ? ` data-alt="${t.alt}"` : ''} title="Jump to the game"><th>${team(t.game, 'away')} @ ${team(t.game, 'home')}</th><td>${MARKET_NAME[t.alt || t.market]}</td><td class="mono">${leg(t.game, t.market, t.a)}</td><td class="mono">${leg(t.game, t.market, t.b)}</td><td class="h">${pct(t.hold)}${t.hold < 0 ? ' <em>arbitrage</em>' : ''}</td></tr>`).join('')}</tbody></table>`
+    : `<p class="g-note">${!api.state.everConnected ? 'Waiting for prices.' : api.filtering() ? 'No market with both books in the games shown.' : 'No market with both books on the same line yet.'}</p>`;
   const out = html + toggle;
   if (out !== renderHolds.last) { renderHolds.last = out; el.holds.innerHTML = out; }
+  const scope = api.filtering() ? 'in the games shown' : ''; const sc = root.querySelector('#g-holds-scope'); if (sc && sc.textContent !== scope) sc.textContent = scope;
 }
 function tick() {
   for (const n of root.querySelectorAll('[data-age-ts]')) n.textContent = api.ago(Number(n.dataset.ageTs) || null);

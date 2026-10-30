@@ -609,7 +609,6 @@ html[data-scheme=dark] .ld-bar b { color:#0e1319; }
 .x-more:hover { border-color:var(--accent); background:var(--accent-soft); }
 @media(max-width:700px) {
   .holds-list { grid-template-columns:1fr; grid-auto-columns:auto; overflow:visible; }
-  .holds-list > li:nth-child(n+4) { display:none; }
   .x-tabs { flex-wrap:wrap; overflow:visible; }
   .x-table { table-layout:fixed; } .x-table th, .x-table td { white-space:normal; overflow-wrap:anywhere; }
 }
@@ -662,3 +661,6 @@ body, button, input, select, table { font-variant-numeric: tabular-nums; }
 .bc-note b { color:var(--text); font-weight:600; }
 .bc-tips { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:2px 10px; font-size:var(--text-xs); color:var(--text-muted); }
 .bc-tips li:not(:first-child)::before { content:"·"; margin-right:10px; }
+
+/* the narrowest phones (320 px): split prices a little tighter so nothing pokes past the edge */
+@media (max-width:340px) { .split-row { gap:4px; grid-template-columns:24px minmax(44px, auto) auto auto; } }

@@ -315,9 +315,13 @@ function holds(g) {
   };
 }
 /** The tightest markets across the board (game lines), lowest hold first. Negative hold = arbitrage. */
+/** Keys of the games the board shows right now (league, Show, search, the one-book rule). The side panels (tightest
+ *  markets, recent moves) follow the same set, so an empty board never sits next to markets from games it hides. */
+function viewKeys() { return new Set(visibleGames().map((g) => g.key)); }
+const filtering = () => settings.phase !== 'all' || !!settings.search.trim();
 function tightest(n = 6) {
-  const out = [];
-  for (const g of state.games.values()) for (const [market, h] of Object.entries(holds(g))) if (h && !h.a?.stale && !h.b?.stale) out.push({ game: g, market, ...h });
+  const out = []; const keys = viewKeys();
+  for (const g of state.games.values()) if (keys.has(g.key)) for (const [market, h] of Object.entries(holds(g))) if (h && !h.a?.stale && !h.b?.stale) out.push({ game: g, market, ...h });
   return out.sort((a, b) => a.hold - b.hold).slice(0, n);
 }
 /** Games priced by only one book. In college football FanDuel also lists ~50 small-school (FCS) games DraftKings does not,
@@ -391,6 +395,15 @@ function latency(book) {
   return { beatMs: beat, freshMs: s.freshP50Ms ?? beat, serverMaxAgeMs, interleave: !!s.interleave, push, server, page: null, drawn: null, hop, syncPm };
 }
 /** The same figures as words, for the feed panels of both designs. */
+/** How often FanDuel is asked, for the league on screen. NFL markets and live college/CFL games are polled every beat;
+ *  the other leagues' pregame markets take turns, one batch per beat (FanDuel's push, when live, can still be sooner). */
+function fanduelCadence(L = latency('fanduel')) {
+  const n = Number(/1 of (\d+) chunks/.exec(state.sources.fanduel?.detail || '')?.[1]) || 1;
+  const beat = secs(L.beatMs), turn = secs(L.beatMs * n);
+  const nflOnly = settings.league === 'nfl' || n <= 1;
+  const long = `${L.push ? 'push, and ' : ''}polled every ${beat}${nflOnly ? '' : ` for NFL and live games; other pregame markets in turn, each about every ${turn}`}`;
+  return { long, short: nflOnly ? `polled every ${beat}` : `polled ${beat}–${turn}`, nflOnly, beat, turn };
+}
 function latencyText(book) {
   const L = latency(book); const B = book === 'draftkings' ? 'DraftKings' : 'FanDuel';
   const pm = (x) => (x.pm != null ? `, clocks ±${x.pm} ms` : book === 'fanduel' && x === L.server ? ", FanDuel's clock (not synced)" : ', clocks not synced yet');
@@ -398,13 +411,13 @@ function latencyText(book) {
   const lines = [];
   if (L.server) lines.push(`${B} → our server ${fig(L.server)}`);
   else if (book === 'draftkings' || L.push) lines.push(`${B} → our server: no samples yet`);
-  if (book === 'fanduel' && !L.push) lines.push(`polled every ${secs(L.beatMs)}: a change reaches our server at most ${secs(L.serverMaxAgeMs)} later`);
+  if (book === 'fanduel') lines.push(fanduelCadence(L).long);
   if (L.page) lines.push(`${B} → this page ${fig(L.page)}`);
   else if (L.hop) lines.push(`our server → this page ${fig(L.hop)}`);
   else lines.push('this page: measured on the next price move');
   if (L.drawn) lines.push(`drawn on screen ${fig(L.drawn)}`);
   // compact: the best figure we have, labelled with where it ends
-  const short = L.page ? `${secs(L.page.p50)} to page` : L.server ? `${secs(L.server.p50)} to server` : book === 'fanduel' && !L.push ? `≤ ${secs(L.serverMaxAgeMs)} to server` : 'measuring';
+  const short = L.page ? `${secs(L.page.p50)} to page` : L.server ? `${secs(L.server.p50)} to server` : book === 'fanduel' && !L.push ? fanduelCadence(L).short : 'measuring';
   return { L, lines, short, title: lines.join('\n') };
 }
 function freshness(book, now = serverNow()) {
@@ -415,6 +428,7 @@ function freshness(book, now = serverNow()) {
 
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf, latencyText,
   connectionLost, feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
+  viewKeys, filtering, fanduelCadence,
   gameHref: (g) => gamePath(g) + queryString({ range: false }), boardHref: () => boardPath() + queryString({ range: false }),
   openGame, closeGame, game: () => (settings.game ? state.games.get(settings.game) || null : null),
   setRange(r) { settings.range = r; writeUrl(); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
@@ -456,7 +470,7 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
     if (c <= 30) return { text: `+${c}¢`, title: `${c} cents better (${fmtOdds(a)} vs ${fmtOdds(b)})` };
     // −650 vs −800 is "150 cents", which means nothing to most people: say how much more it pays instead
     const pa = decimalOdds(a) - 1, pb = decimalOdds(b) - 1; const p = Math.round(((pa - pb) / pb) * 100);
-    return { text: `+${p}% payout`, title: `wins ${p}% more than ${fmtOdds(b)} for the same stake` };
+    return { text: `+${p}% profit`, title: `${p}% more profit than ${fmtOdds(b)} if it wins, for the same stake` };
   },
 };
 

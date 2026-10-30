@@ -26,12 +26,14 @@ What is on the page, beyond the board itself:
 * **Who wins, at a glance** — the winning cell takes the winning book's colour (DraftKings purple, FanDuel teal) and
   shows the edge in cents (`+8¢`: −192 vs −200).
 * **Hold and arbitrage** — every game shows the hold per market at the best price on each side (either book), and a
-  *Tightest markets* strip shows the **3** lowest holds across the board (*Show more* opens up to 9, *Show fewer* goes
-  back to 3), game lines and alt lines. A negative hold means
-  backing both sides at those two prices guarantees a profit; the strip flags it as an arbitrage. Click a card to jump
+  *Tightest markets* strip shows the **3** lowest holds (*Show more* opens up to 9, *Show fewer* goes back to 3), game
+  lines and alt lines, in the same games the board shows (league, *Show*, search; the recent moves follow the same set).
+  On the page it is called **margin**: what the books keep if you bet both sides at the best prices. Below 0% the two
+  prices together pay back more than the stakes, a possible arbitrage at the prices shown (flagged). Click one to jump
   to the game. (`bestHold()` in `src/model.js`, tested.)
-* **Star games** to pin them to the top (kept in this browser). **Dark mode** follows the system. The feed status
-  shows each book's state, last message, last full snapshot and freshness bar at first sight; *Details* opens the rest (how it is read,
+* **Star games** to pin them to the top (kept in this browser). **Dark mode** is a switch (☾, or `d`); the page always opens light unless the link
+  says `?theme=dark`. The feed status shows each book's state (*Connected* / stale / reconnecting), last message and
+  freshness bar at first sight (Engineering also shows the last full snapshot); *Details* opens the rest (how it is read,
   measured latency, last price move). Kickoff countdowns on every slot.
 * **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `d` dark · `s` star the focused
   game · `Enter` chart the focused price · `?` help.
@@ -179,7 +181,11 @@ it. **Why both — measured, not assumed:** on Thursday afternoon (pregame) the 
 FanDuel's price changes first; polling caught the rest (`byLeague` in `/api/metrics` counts which channel delivered
 each change first, per league). So polling is not just a safety net: it is half the feed, and it stays at **1 s** for
 every NFL market and for every *live* college or CFL game; the push adds speed wherever FanDuel fires it. Every market remembers the time of the newest answer applied to it (a push counts
-from when it arrived, a poll from when it *started*), so an older answer can never overwrite a newer one.
+from when it arrived, a poll from when it *started*), so an older answer can never overwrite a newer one. The full page
+(step 1, re-read every few minutes) only discovers games and markets and seeds prices: it never overwrites a price the
+poll or push answered after the page was requested or in the last 30 s, and a market FanDuel marks `SUSPENDED` greys
+every price in it even when its runners still say `ACTIVE` (both tested). Outside the NFL, pregame markets are polled
+in turn, one batch per beat (each about every 8 s); the feed panel says so for the league on screen.
 **FanDuel answers at most 80 markets per request and silently drops the rest** — with 87 game-line markets, one
 request left 7 markets un-refreshed. Polling now splits them into the fewest requests of ≤ 50 (`FD_CHUNK`), sent in
 parallel, each applied the moment it lands; the page reports `returned/requested` so a cap can't hide again
@@ -232,8 +238,8 @@ one page per league and puts every market on the push. `LEAGUES=nfl,ncaaf,cfl` (
 * **Checked live** (`tools/check-leagues.mjs`, Thu Oct 29): every college and CFL price on the board against what each
   book's own API served at that moment, matched by the book's own event id: college **DraftKings 390/390, FanDuel
   713/713** identical; CFL **12/12** and **12/12**; 0 different, 0 missing. 126 college games and 2 CFL games on the board.
-* **Small schools.** FanDuel also lists ~50 FCS games DraftKings does not; with nothing to compare they are hidden by
-  default in college, and one click shows them ("only available offer"). Alt lines and player props stay NFL-only.
+* **Small schools.** Our DraftKings college collector covers its FBS league; FanDuel's college page also lists ~50 FCS
+  games, so those have one book only. With nothing to compare they are hidden by default in college, and one click shows them ("only available offer"). Alt lines and player props stay NFL-only.
 
 ### Same jurisdiction for both books: Ontario
 Both books run a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
@@ -412,7 +418,7 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 
 ## 9. Tests and health checks
 
-`npm test` (also on every push, GitHub Actions) — 85 tests, ~20 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 87 tests, ~20 s, no network needed:
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per

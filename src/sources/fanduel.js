@@ -19,6 +19,10 @@ import { FanDuelPush } from './fanduel-push.js';
 const BOOK = 'fanduel';
 const APP_KEY = 'FhMFpcPWXMeyZxOx'; // public key embedded in the FanDuel web app
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+// A full page never overwrites a price the live price endpoint (poll or push) answered within this long: the page is a
+// slower, possibly cached copy. NFL markets are polled every second and the rest every few seconds, so 30 s is generous;
+// a market FanDuel stops answering for gets its price from the page again after that.
+const SNAPSHOT_DEFER_MS = 30_000;
 const MARKET_MAP = { MONEY_LINE: 'moneyline', 'MATCH_HANDICAP_(2-WAY)': 'spread', 'TOTAL_POINTS_(OVER/UNDER)': 'total' };
 // FanDuel runs one site per jurisdiction. Ontario is a separate .ca site; US states share the .com API with a state code.
 // Same API shape everywhere; only hosts, region code and referer change. Default ON = same jurisdiction as our DraftKings feed.
@@ -134,13 +138,19 @@ export class FanDuelSource {
     const now = Date.now(); let games = 0, markets = 0;
     results.forEach((r, i) => {
       if (r.status === 'rejected') return this.log('fd', `snapshot ${this.leagues[i].id} failed: ${r.reason?.message}`);
-      const n = this.applySnapshot(r.value, now, this.leagues[i].id); games += n.games; markets += n.markets;
+      const n = this.applySnapshot(r.value, now, this.leagues[i].id, t0); games += n.games; markets += n.markets;
     });
     this.metrics.fd.snapshots++;
     this.store.setSource(BOOK, { lastSnapshotAt: now, lastDataAt: now, lastError: null, detail: `${games} games, ${markets} markets (${this.leagues.map((l) => l.label).join(' + ')}), snapshot ${now - t0} ms, poll every ${this.pollMs} ms` });
   }
 
-  applySnapshot(data, now = Date.now(), leagueId = 'nfl') {
+  /**
+   * One league's full page: which games and markets exist (discovery), and prices for any market the live price
+   * endpoint has not answered for lately. requestedAt = when this page was asked for. The page is a slower, possibly
+   * cached copy, so it never overwrites a price that the poll or the push delivered after it was requested, or in the
+   * last SNAPSHOT_DEFER_MS (an older page arriving late can never roll a newer price back).
+   */
+  applySnapshot(data, now = Date.now(), leagueId = 'nfl', requestedAt = now) {
     const league = LEAGUES[leagueId] || LEAGUES.nfl;
     const events = data.attachments?.events || {};
     const all = Object.values(data.attachments?.markets || {}).filter((m) => MARKET_MAP[m.marketType]);
@@ -163,13 +173,20 @@ export class FanDuelSource {
       if (m.inPlay) game.books[BOOK].live = true;
       this.marketIndex.set(m.marketId, { gameKey: game.key, market });
       ids.push(m.marketId);
+      const answered = this.marketPolledAt.get(m.marketId);
+      const newer = answered != null && (answered >= requestedAt || now - answered < SNAPSHOT_DEFER_MS); // the price endpoint is fresher
+      const marketClosed = !!m.marketStatus && m.marketStatus !== 'OPEN'; // SUSPENDED / CLOSED: nothing in it can be bet
       for (const r of m.runners || []) {
         const side = this.sideOf(market, r, game); if (!side) continue;
         const ref = { gameKey: game.key, market, side };
         this.selIndex.set(`${m.marketId}:${r.selectionId}`, ref);
         seen.add(`${ref.gameKey}|${ref.market}|${ref.side}`);
-        this.store.upsertQuote({ ...ref, book: BOOK, line: market === 'moneyline' ? null : r.handicap ?? null,
-          odds: parseAmerican(r.winRunnerOdds?.americanDisplayOdds?.americanOdds), suspended: !!r.runnerStatus && r.runnerStatus !== 'ACTIVE', sourceTs: null }, now);
+        const id = `${ref.gameKey}|${ref.market}|${ref.side}|${BOOK}`;
+        if (newer && this.store.quotes.has(id)) { this.metrics.fd.snapshotDeferred = (this.metrics.fd.snapshotDeferred || 0) + 1; continue; }
+        const suspended = marketClosed || (!!r.runnerStatus && r.runnerStatus !== 'ACTIVE');
+        let odds = parseAmerican(r.winRunnerOdds?.americanDisplayOdds?.americanOdds);
+        if (odds == null && suspended) odds = this.store.quotes.get(id)?.odds ?? null; // greyed, last known price
+        this.store.upsertQuote({ ...ref, book: BOOK, line: market === 'moneyline' ? null : r.handicap ?? null, odds, suspended, sourceTs: null }, now);
       }
     }
     for (const g of gameByEvent.values()) this.store.upsertGame(g);

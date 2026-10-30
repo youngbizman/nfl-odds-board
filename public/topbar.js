@@ -29,8 +29,8 @@ export function topbarHtml(api, repo) {
 export function footerHtml(repo, { winEv = false } = {}) {
   const items = [
     ['Best price', 'The higher odds on the same line, with both books open and fresh. Equal odds are a tie; different lines are never ranked.'],
-    winEv && ['Win % and EV', 'Worked out from the fair (no-vig) price, using both books on the same line.'],
-    ['Hold', "The books' combined margin at the best price on each side. Below 0% is an arbitrage: both sides together guarantee a profit."],
+    winEv && ['Win % and EV', "The no-vig win chance implied by both books' prices on the same line, and the estimated value of the best price against it. Derived from the books' prices, not a prediction."],
+    ['Margin (hold)', "What the books keep if you bet both sides at the best prices. Lower is better for you; below 0% the two prices together pay back more than the stakes, a possible arbitrage at the prices shown."],
     ['Prices', 'Ontario DraftKings and FanDuel, live. Every number updates on its own; nothing is simulated.'],
   ].filter(Boolean);
   return `<footer class="tb-foot"><div class="tb-foot-head"><h2>How to read this board</h2><a href="${repo}">How it works ↗</a></div>

@@ -42,6 +42,36 @@ test('a suspended runner is shown as suspended, not removed', () => {
   assert.equal(quotesOf(store, 'fanduel').filter((q) => q.suspended).length, 1);
 });
 
+test('an older full page arriving late never rolls back a newer price', () => {
+  const { store, fd } = source();
+  fd.applySnapshot(SNAP, 1000);                                   // page: BAL +3 at +100
+  const id = 'BAL@BUF:2026-11-01|spread|away|fanduel';
+  const moved = structuredClone(PRICES); const spread = moved.find((m) => m.marketId === '734.192676410');
+  for (const r of spread.runnerDetails) r.winRunnerOdds.americanDisplayOdds.americanOdds = -105;
+  fd.applyPrices(moved, 5000, 5000);                             // the price endpoint: −105 (newer)
+  assert.equal(store.quotes.get(id).odds, -105);
+  fd.applySnapshot(SNAP, 6000, 'nfl', 4000);                     // a page requested BEFORE that answer, landing after it
+  assert.equal(store.quotes.get(id).odds, -105, 'the older page must not roll the price back');
+  fd.applySnapshot(SNAP, 7000, 'nfl', 6500);                     // requested after, but the endpoint answered 2 s ago: still deferred
+  assert.equal(store.quotes.get(id).odds, -105);
+  fd.applySnapshot(SNAP, 60_000, 'nfl', 59_000);                  // the endpoint has said nothing for a minute: the page applies again
+  assert.equal(store.quotes.get(id).odds, 100);
+});
+
+test('a suspended market in the full page is suspended even when its runners say ACTIVE', () => {
+  const { store, fd } = source();
+  const snap = structuredClone(SNAP);
+  const m = Object.values(snap.attachments.markets).find((x) => x.marketId === '734.192676410');
+  m.marketStatus = 'SUSPENDED'; for (const r of m.runners) r.runnerStatus = 'ACTIVE';
+  fd.applySnapshot(snap, 1000);
+  const away = store.quotes.get('BAL@BUF:2026-11-01|spread|away|fanduel'), home = store.quotes.get('BAL@BUF:2026-11-01|spread|home|fanduel');
+  assert.equal(away.suspended, true); assert.equal(home.suspended, true);
+  assert.equal(away.odds, 100, 'the last price stays visible, greyed');
+  // reopened in the next page
+  m.marketStatus = 'OPEN'; fd.applySnapshot(snap, 2000);
+  assert.equal(store.quotes.get('BAL@BUF:2026-11-01|spread|away|fanduel').suspended, false);
+});
+
 // ---------- against a fake FanDuel ----------
 async function fakeFanDuel() {
   const state = { mode: 'ok', polls: 0, bodies: [] };

@@ -222,19 +222,20 @@ const HOLDS_MIN = 3, HOLDS_MAX = 9;
 function renderHolds() {
   if (!el.holds) return;
   const main = api.tightest(HOLDS_MAX).map((t) => ({ ...t, alt: null }));
-  const alt = (api.state.extrasHolds || []).slice(0, HOLDS_MAX).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: t.a, b: t.b, alt: t.kind })).filter((t) => t.game);
+  const keys = api.viewKeys(); // the same games the board shows (league, Show, search)
+  const alt = (api.state.extrasHolds || []).map((t) => ({ game: api.state.games.get(t.gameKey), market: t.kind === 'alt-spread' ? 'spread' : 'total', hold: t.hold, a: t.a, b: t.b, alt: t.kind })).filter((t) => t.game && keys.has(t.game.key));
   // three by default (one row); "Show more" opens up to nine, "Show fewer" goes back to three
   const all = [...main, ...alt].sort((a, b) => a.hold - b.hold).slice(0, HOLDS_MAX);
   const more = !!api.state.holdsMore; const items = all.slice(0, more ? HOLDS_MAX : HOLDS_MIN);
   const toggle = all.length > HOLDS_MIN ? `<button type="button" class="link-btn holds-more" data-holds-more aria-expanded="${more}">${more ? 'Show fewer' : `Show ${all.length - HOLDS_MIN} more`}</button>` : '';
   if (!items.length) { el.holds.innerHTML = ''; renderHolds.last = ''; return; }
   const arbs = items.filter((t) => t.hold < 0).length;
-  const html = `<div class="holds-head"><h2>Tightest markets.</h2><span>${arbs ? `<b class="arb-flag">${arbs} arbitrage${arbs > 1 ? 's' : ''} right now</b>` : 'Best price on each side, either book · lower hold = better for you'}</span>${toggle}</div>
+  const html = `<div class="holds-head"><h2>Tightest markets.</h2><span>${arbs ? `<b class="arb-flag">${arbs} arbitrage${arbs > 1 ? 's' : ''} right now</b>` : `Margin = what the books keep if you bet both sides at the best prices. Lower is better for you; below 0% is a possible arbitrage${api.filtering() ? ' · in the games shown' : ''}.`}</span>${toggle}</div>
     <ul class="holds-list">${items.map((t) => {
       const g = t.game; const name = t.alt ? (t.alt === 'alt-spread' ? 'Alt spread' : 'Alt total') : { spread: 'Spread', total: 'Total', moneyline: 'Moneyline' }[t.market];
       const side = (o, fallback) => ({ ...o, side: o.subject || o.side || fallback });
       return `<li><button type="button" class="hold-card${t.hold < 0 ? ' is-arb' : ''}" data-goto="${esc(g.key)}" ${t.alt ? `data-alt="${t.alt}"` : `data-market="${t.market}" data-side="${t.market === 'total' ? 'over' : 'home'}"`}>
-        <span class="hc-top"><span>${esc(g.away.abbr)} @ ${esc(g.home.abbr)} · ${name}</span><span class="hc-hold">${t.hold < 0 ? 'ARB ' : ''}${pctTxt(t.hold)}</span></span>
+        <span class="hc-top"><span>${esc(g.away.abbr)} @ ${esc(g.home.abbr)} · ${name}</span><span class="hc-hold">${pctTxt(t.hold)} ${t.hold < 0 ? 'arbitrage' : 'margin'}</span></span>
         <span class="hc-legs">${legTxt(g, t.market, side(t.a, t.market === 'total' ? 'over' : 'away'))}${legTxt(g, t.market, side(t.b, t.market === 'total' ? 'under' : 'home'))}</span></button></li>`;
     }).join('')}</ul>`;
   if (html !== renderHolds.last) { renderHolds.last = html; el.holds.innerHTML = html; } // no flicker while nothing changed
@@ -353,9 +354,10 @@ function renderFeeds() {
   const more = `<button type="button" class="feed-more" aria-expanded="${open}">${open ? 'Less ▴' : 'Details ▾'}</button>`;
   el.feeds.innerHTML = ['draftkings', 'fanduel'].map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
-    const status = { live: '● Live', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
+    const status = { live: '● Connected', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
     const cls = f === 'stale' ? ' is-stale' : f === 'reconnecting' || f === 'lost' ? ' is-reconnecting' : f === 'connecting' ? ' is-connecting' : '';
-    const how = b === 'draftkings' ? 'push over WebSocket' : L.push ? `push over WebSocket, checked by polling every ${api.secs(L.beatMs)}` : `polled every ${api.secs(L.beatMs)}${L.interleave ? ' from 2 IPs' : ''}`;
+    const C = api.fanduelCadence(L);
+    const how = b === 'draftkings' ? 'push over WebSocket' : `${L.push ? 'push over WebSocket, checked by polling' : 'polled'} every ${C.beat}${C.nflOnly ? '' : ` (NFL and live games; other pregame markets in turn, each about every ${C.turn})`}${!L.push && L.interleave ? ' from 2 IPs' : ''}`;
     const T = api.latencyText(b);
     const timing = f === 'connecting' ? '<li>waiting for the first data</li>' : f !== 'live' ? '<li>timing unavailable while the feed is down</li>' : T.lines.map((l) => `<li>${esc(l)}</li>`).join('');
     return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-right"><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span>${more}</span></div>
@@ -380,8 +382,8 @@ function renderBanner() {
   b.hidden = true;
 }
 function renderWire() {
-  const moves = api.state.moves.slice(0, 6);
-  if (!moves.length) { el.wire.innerHTML = !api.state.everConnected ? '<div class="empty"><strong>Waiting for the first prices…</strong></div>' : '<div class="empty"><strong>No price moves since this page opened.</strong>Pregame lines can sit still for minutes; live games move constantly.</div>'; return; }
+  const keys = api.viewKeys(); const moves = api.state.moves.filter((m) => keys.has(m.gameKey)).slice(0, 6);
+  if (!moves.length) { el.wire.innerHTML = !api.state.everConnected ? '<div class="empty"><strong>Waiting for the first prices…</strong></div>' : (api.filtering() && api.state.moves.length ? '<div class="empty"><strong>No price moves in the games shown since this page opened.</strong></div>' : '<div class="empty"><strong>No price moves since this page opened.</strong>Pregame lines can sit still for minutes; live games move constantly.</div>'); return; }
   el.wire.innerHTML = `<ul class="wire-list">${moves.map(moveHtml).join('')}</ul>`;
 }
 function moveHtml(m) {

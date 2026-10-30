@@ -501,3 +501,13 @@ body, button, input, select, table { font-variant-numeric: tabular-nums; }
 .bc-note b { color:var(--text); font-weight:600; }
 .bc-tips { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:2px 10px; font-size:11px; color:var(--muted); }
 .bc-tips li:not(:first-child)::before { content:"·"; margin-right:10px; }
+
+/* tightest markets: a header row, the market in words, each side in its own column, margin explained above */
+.g-explain { margin:-4px 0 8px; font-size:11.5px; line-height:1.45; color:var(--muted); max-width:72ch; }
+.g-holdt thead th { font-family:var(--font); font-weight:600; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); padding-bottom:4px; border-bottom:1px solid var(--line); }
+.g-holdt tbody th, .g-holdt tbody td { padding-top:4px; padding-bottom:4px; }
+.g-holdt .h em { font-style:normal; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; margin-left:4px; }
+@media (max-width:700px) { .g-holdt thead th:nth-child(3) { white-space:normal; } }
+
+/* the narrowest phones (320 px): a little tighter so the grid fits without sideways scrolling */
+@media (max-width:340px) { .g-table { font-size:11px; } .g-table td[data-market] { padding:3px 2px; } .g-time { width:40px; } .g-team.is-school b { max-width:70px; } .g-grp, .g-mk { padding-left:2px; padding-right:2px; } }
