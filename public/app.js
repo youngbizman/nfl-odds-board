@@ -17,7 +17,7 @@ const settings = {
   league: LEAGUE_IDS.includes(qs.get('league')) ? qs.get('league') : 'nfl', // nfl | ncaaf | cfl (?league= is shareable)
   singleBook: false,                                                // college: also show games only one book prices
   game: qs.get('game') || null,                                     // a game's own page (?game=KEY)
-  range: ['10m', '1h', '6h', '1d', '1w'].includes(qs.get('range')) ? qs.get('range') : '1d', // its chart window
+  range: ['10m', '1h', '6h', '1d', '1w', 'all'].includes(qs.get('range')) ? qs.get('range') : null, // its chart window (null = automatic)
   view: qs.get('view') || 'best',                                   // best | draftkings | fanduel (?view= is shareable)
   phase: 'all',                                                     // all | live | pregame
   search: '',
@@ -124,6 +124,7 @@ async function loadGameHistory(key) {
 function openGame(key, { push = true } = {}) {
   if (!key) return closeGame({ push });
   settings.game = key; state.gameHistory = null;
+  if (push) { settings.range = null; setParam('range', null, null); } // each game opens on its own default window
   if (push) { const u = new URL(location.href); u.searchParams.set('game', key); history.pushState({ game: key }, '', u); }
   // its alt lines and props open by themselves on its page (NFL)
   if (state.extrasSummary[key] && !state.extras.has(key)) toggleExtras(key);
@@ -281,7 +282,13 @@ function freshness(book, now = serverNow()) {
 const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf,
   connectionLost, feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
   openGame, closeGame, game: () => (settings.game ? state.games.get(settings.game) || null : null),
-  setRange(r) { settings.range = r; setParam('range', r, '1d'); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
+  setRange(r) { settings.range = r; setParam('range', r, null); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
+  /** When the board's price history for this game begins (its first recorded price, any market, either book). */
+  gameRecordedFrom(g) {
+    const src = state.gameHistory?.key === g.key ? state.gameHistory.map : state.history; let first = null;
+    for (const [id, pts] of src) if (pts.length && id.startsWith(`${g.key}|`) && (first == null || pts[0][0] < first)) first = pts[0][0];
+    return first;
+  },
   league: () => state.leagues.find((l) => l.id === settings.league) || state.leagues[0],
   setLeague(id) {
     if (!LEAGUE_IDS.includes(id) || id === settings.league) return;

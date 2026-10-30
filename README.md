@@ -31,9 +31,12 @@ What is on the page, beyond the board itself:
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price stands out** — a strong green/red flash, then for 8 s a thick green (odds up) or red (odds down) bar,
   a tint, and the old price on a pill beside the new one, in both designs and both colour schemes.
-* **Every game has its own page** — click the matchup, or click its chart ("enlarge"): a big chart of each book's
-  implied chance with **10 min / 1 hour / 6 hours / 1 day / 1 week** windows and any of the six prices, its alt lines and
-  props, and the moves in that game. It has its own link (`?game=…`), so it can be shared; Esc or Back returns.
+* **Every game has its own page** — click the matchup, or click its chart ("Open full chart"): a big chart of each
+  book's implied chance with **10 min / 1 hour / 6 hours / 1 day / 1 week / All** windows (only windows the board has
+  history for can be picked; a live game opens on the last hour, a game not started on the last day), any of the six
+  prices, **point at the chart to read both books' exact prices at that moment**, a strip showing which spread/total line
+  each book had up, its alt lines and props, and the moves in that game. Busy live charts drop the per-change dots so
+  the lines stay readable. It has its own link (`?game=…`), so it can be shared; Esc or Back returns.
 * **More lines has a chart beside the table** — each book's chance at every alt spread / total / yardage threshold
   (ringed where that book pays more), or a bar per player for anytime touchdowns.
 * **Per-book feed cards** — how the book is read (push, poll, or both); **book to screen**, the latency *this browser*

@@ -18,7 +18,7 @@ const KIT = { ARI: ['#97233f', '#f0e9df'], ATL: ['#a6323e', '#f0e9df'], BAL: ['#
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const etTime = (d, opts) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
 
-import { bigChart, ladderChart } from '/charts.js';
+import { bigChart, ladderChart, chartHover } from '/charts.js';
 
 let api, root, el = {};
 
@@ -97,6 +97,7 @@ function mount(r, a) {
   root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
   const pickFrom = (t) => { const c = t.closest('.price[data-market]'); const gEl = c?.closest('[data-game]'); if (c && gEl) { api.pickChart(gEl.dataset.game, c.dataset.market, c.dataset.side); gEl.querySelector(`.price[data-market="${c.dataset.market}"][data-side="${c.dataset.side}"]`)?.focus({ preventScroll: true }); } };
+  chartHover(el.board, api);
   el.board.addEventListener('click', (e) => {
     const og = e.target.closest('[data-open-game]'); if (og) { if (og.tagName === 'A' && (e.metaKey || e.ctrlKey || e.shiftKey)) return; e.preventDefault(); return api.openGame(og.dataset.openGame); }
     if (e.target.closest('[data-back]')) { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); return api.closeGame(); }

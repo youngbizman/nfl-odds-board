@@ -6,7 +6,7 @@ const MK = [['spread', 'Spread'], ['total', 'Total'], ['moneyline', 'ML']];
 const BOOKS = ['draftkings', 'fanduel'];
 const SIDES = { spread: ['away', 'home'], total: ['over', 'under'], moneyline: ['away', 'home'] };
 const SHORT = { moneyline: 'ML', spread: 'SP', total: 'TOT' };
-import { bigChart, ladderChart } from '/charts.js';
+import { bigChart, ladderChart, chartHover } from '/charts.js';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const et = (d, o) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...o });
 const pct = (x, d = 1) => (x == null ? '—' : `${(x * 100).toFixed(d)}%`);
@@ -56,6 +56,7 @@ function mount(r, a) {
   root.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => api.set('format', b.dataset.format)));
   root.querySelectorAll('[data-theme-switch]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSwitch)));
   el.page.addEventListener('click', (e) => { if (e.target.closest('[data-back]') && !(e.metaKey || e.ctrlKey)) { e.preventDefault(); api.closeGame(); } });
+  chartHover(el.big, api);
   el.big.addEventListener('click', (e) => {
     const rg = e.target.closest('[data-range]'); if (rg) return api.setRange(rg.dataset.range);
     const pk = e.target.closest('[data-pick]'); if (pk && api.settings.game) { const [m, sd] = pk.dataset.pick.split('|'); api.pickChart(api.settings.game, m, sd); }
