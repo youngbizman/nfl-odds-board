@@ -216,7 +216,7 @@ function closeGame({ push = true } = {}) {
 window.addEventListener('popstate', () => {
   const [first, second] = location.pathname.split('/').filter(Boolean); const slug = second || null;
   const league = (first && PATH_LEAGUE[first]) || 'nfl';
-  if (league !== settings.league && !(slug && settings.league === 'all')) return api.setLeague(league, { slug });
+  if (league !== settings.league && !(slug && settings.league === 'all')) return api.setLeague(league, { slug, fromHistory: true });
   if (!slug) { if (settings.game) closeGame({ push: false }); else writeUrl(); return; }
   let key = null; for (const g of state.games.values()) if (gameSlug(g) === slug) { key = g.key; break; }
   const r = new URLSearchParams(location.search).get('range'); settings.range = RANGES.includes(r) ? r : null;
@@ -411,7 +411,6 @@ function latencyText(book) {
   const lines = [];
   if (L.server) lines.push(`${B} → our server ${fig(L.server)}`);
   else if (book === 'draftkings' || L.push) lines.push(`${B} → our server: no samples yet`);
-  if (book === 'fanduel') lines.push(fanduelCadence(L).long);
   if (L.page) lines.push(`${B} → this page ${fig(L.page)}`);
   else if (L.hop) lines.push(`our server → this page ${fig(L.hop)}`);
   else lines.push('this page: measured on the next price move');
@@ -443,9 +442,9 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   leagueOptions: () => [{ id: 'all', label: 'All', title: 'Every league', games: state.leagues.some((l) => l.games != null) ? state.leagues.reduce((n, l) => n + (l.games || 0), 0) : null }, ...state.leagues],
   emptyMessage,
   leagueOfKey,
-  setLeague(id, { slug = null } = {}) { // slug: back/forward to a game page of another league
+  setLeague(id, { slug = null, fromHistory = false } = {}) { // a league is a page of its own: Back returns to the one before
     if (![...LEAGUE_IDS, 'all'].includes(id) || id === settings.league) return;
-    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = slug; pendingSlug = slug; state.gameHistory = null; writeUrl();
+    settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = slug; pendingSlug = slug; state.gameHistory = null; writeUrl({ push: !fromHistory });
     for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
     state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = { draftkings: 0, fanduel: 0 }; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
     state.switching = true; mountTheme(theme); reconnect('league changed', 0);
@@ -467,7 +466,8 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
   edge(a, b) {
     if (a == null || b == null) return null;
     const c = cents(a, b);
-    if (c <= 30) return { text: `+${c}¢`, title: `${c} cents better (${fmtOdds(a)} vs ${fmtOdds(b)})` };
+    // cents are American-odds points: with decimal odds on screen, every edge is said as extra profit instead
+    if (c <= 30 && settings.format !== 'decimal') return { text: `+${c}¢`, title: `${c} cents better (${fmtOdds(a)} vs ${fmtOdds(b)})` };
     // −650 vs −800 is "150 cents", which means nothing to most people: say how much more it pays instead
     const pa = decimalOdds(a) - 1, pb = decimalOdds(b) - 1; const p = Math.round(((pa - pb) / pb) * 100);
     return { text: `+${p}% profit`, title: `${p}% more profit than ${fmtOdds(b)} if it wins, for the same stake` };

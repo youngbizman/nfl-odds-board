@@ -23,9 +23,9 @@
   },
   "dependencies": {
     "@msgpack/msgpack": "3.0.0-beta2",
-    "express": "^4.21.2",
+    "express": "^4.22.3",
     "redis": "^4.7.0",
-    "ws": "8.18.0"
+    "ws": "8.22.0"
   },
   "private": true,
   "engines": {

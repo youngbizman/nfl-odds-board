@@ -243,7 +243,7 @@ function render() {
   const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="g-link" data-singles>+${hidden} priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="g-link" data-singles>hide single-book games</button>' : '';
-  el.meta.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book<span class="g-ed-key"> · ¢ = edge over the other book</span></span>`;
+  el.meta.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book${api.settings.format === 'decimal' ? '' : '<span class="g-ed-key"> · ¢ = edge over the other book</span>'}</span>`;
   const thead = el.table.querySelector('thead'); thead.innerHTML = head();
   // the alt-lines table's header sticks just under this one
   if (!theadObs) { try { theadObs = new ResizeObserver(() => document.documentElement.style.setProperty('--g-head-h', `${thead.offsetHeight}px`)); theadObs.observe(thead); } catch {} }
