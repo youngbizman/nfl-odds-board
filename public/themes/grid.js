@@ -1,9 +1,10 @@
-// Theme: Grid — the engineering view. One dense table: every game is two rows (away / home); best price, DraftKings
-// and FanDuel side by side; fair (no-vig) win chance, hold, EV and a 48 h sparkline per game; feed health, tightest
+// Theme: Grid — the engineering view. One dense table: every game is two rows (away / home); best price, DraftKings,
+// FanDuel and BetMGM side by side; fair (no-vig) win chance, hold, EV and a 48 h sparkline per game; feed health, tightest
 // markets and the wire in compact panels above. Like every theme it only draws: data and rules come from `api`.
 const REPO = 'https://github.com/youngbizman/nfl-odds-board';
 const MK = [['spread', 'Spread'], ['total', 'Total'], ['moneyline', 'ML']];
-const BOOKS = ['draftkings', 'fanduel'];
+const BOOKS = ['draftkings', 'fanduel', 'betmgm'];
+const listJoin = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
 const SIDES = { spread: ['away', 'home'], total: ['over', 'under'], moneyline: ['away', 'home'] };
 const SHORT = { moneyline: 'ML', spread: 'SP', total: 'TOT' };
 import { bigChart, ladderChart, chartHover } from '/charts.js';
@@ -21,9 +22,9 @@ function mount(r, a) {
   <div class="g-app">
     ${topbarHtml(api, REPO)}
     <div class="g-help" id="g-help" hidden role="dialog" aria-label="Keyboard shortcuts"><b>Keyboard</b>
-      <dl><dt>/</dt><dd>search</dd><dt>1 2 3</dt><dd>best · DraftKings · FanDuel</dd><dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the focused game</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl></div>
+      <dl><dt>/</dt><dd>search</dd><dt>1 2 3 4</dt><dd>best · DraftKings · FanDuel · BetMGM</dd><dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the focused game</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl></div>
     <div id="g-banner" class="g-banner" hidden></div>
-    <section class="g-feeds-panel" aria-label="Feeds"><h2>Feeds <span class="g-hint">live health of both books and of this page's stream</span><button type="button" class="g-link g-feeds-more" id="g-feeds-more" aria-expanded="false">▾ details</button></h2><div id="g-feeds"></div></section>
+    <section class="g-feeds-panel" aria-label="Feeds"><h2>Feeds <span class="g-hint">live health of every book and of this page's stream</span><button type="button" class="g-link g-feeds-more" id="g-feeds-more" aria-expanded="false">▾ details</button></h2><div id="g-feeds"></div></section>
     <section class="g-panels" aria-label="Status">
       <div class="g-panel"><h2>Tightest markets <span class="g-hint" id="g-holds-scope"></span></h2><p class="g-explain">Margin = what the books keep if you bet both sides at the best prices. Lower is better for you; below 0% the two prices together pay back more than you stake (a possible arbitrage).</p><div id="g-holds"></div></div>
       <div class="g-panel"><h2>Wire <span class="g-hint">latest moves</span></h2><div id="g-wire"></div></div>
@@ -87,20 +88,20 @@ function goTo(gk, alt) {
 
 // ---------- header ----------
 const view = () => api.settings.view;
-function colCount() { return 4 + (view() === 'best' ? 9 : 3) + 3; }
+function colCount() { return 4 + (view() === 'best' ? 3 + 3 * BOOKS.length : 3) + 3; }
 function head() {
   const V = view(); const B = api.BOOK;
   const bookHead = (b) => {
     const f = api.feedState(b); const L = api.latency(b);
-    const st = f === 'live' ? (b === 'draftkings' || L.push ? `push${L.page ? ` ${api.secs(L.page.p50)}` : ''}` : `poll ${api.secs(L.beatMs)}`) : f;
+    const st = f === 'live' ? (b === 'draftkings' || L.push ? `push${L.page ? ` ${api.secs(L.page.p50)}` : ''}` : `poll ${api.secs(L.beatMs)}${L.via === 'edge' ? ' · edge' : ''}`) : f;
     return `<th colspan="3" class="g-grp g-${B[b].cls}${f !== 'live' ? ' is-down' : ''}">${B[b].label} <span class="g-st"><i></i>${esc(st)}</span></th>`;
   };
-  const groups = V === 'best' ? `<th colspan="3" class="g-grp g-best">Best available</th>${bookHead('draftkings')}${bookHead('fanduel')}` : bookHead(V);
-  const n = V === 'best' ? 3 : 1;
-  const grp = V === 'best' ? ['best', 'bk', 'bk'] : ['bk'];
+  const groups = V === 'best' ? `<th colspan="3" class="g-grp g-best">Best available</th>${BOOKS.map(bookHead).join('')}` : bookHead(V);
+  const grp = V === 'best' ? ['best', ...BOOKS.map(() => 'bk')] : ['bk'];
+  const n = grp.length;
   const sub = Array.from({ length: n }, (_, gi) => MK.map(([, l], i) => `<th class="g-mk gs-${grp[gi]}${i === 0 ? ' g-first' : ''}">${l}</th>`).join('')).join('');
   const sortBtn = (id, label, title) => `<button type="button" data-sort="${id}" class="g-sort${sort === id ? ' on' : ''}" title="${title}">${label}${sort === id && id !== 'time' ? ' ▼' : ''}</button>`;
-  return `<tr class="g-h1"><th rowspan="2" class="g-star-h"><span class="sr">Star</span></th><th rowspan="2" class="g-time-h">${sortBtn('time', 'Time', 'Sort by kickoff')}</th><th rowspan="2" class="g-team-h">Team</th><th rowspan="2" class="g-win-h" title="No-vig fair chance to win, from both books">Win%</th>
+  return `<tr class="g-h1"><th rowspan="2" class="g-star-h"><span class="sr">Star</span></th><th rowspan="2" class="g-time-h">${sortBtn('time', 'Time', 'Sort by kickoff')}</th><th rowspan="2" class="g-team-h">Team</th><th rowspan="2" class="g-win-h" title="No-vig fair chance to win, from every book pricing both sides">Win%</th>
     ${groups}<th rowspan="2" class="g-hold-h">${sortBtn('hold', 'Hold', 'Tightest market first')}</th><th rowspan="2" class="g-ev-h">${sortBtn('ev', 'EV', 'Best expected value vs the no-vig price first')}</th><th rowspan="2" class="g-spark-h">48 h</th></tr>
     <tr class="g-h2">${sub}</tr>`;
 }
@@ -119,11 +120,13 @@ function bestCell(g, market, side) {
   const { cmp } = api.both(g, market, side);
   const a = tdAttrs(g, market, side);
   if (cmp.kind === 'best' || cmp.kind === 'tie') {
+    // the edge is measured against the next-best book on the same line; a book on another line is never ranked
     const q = cmp.best; const m = moveMark(q); const other = cmp.offers.find((o) => o.book !== q.book);
     const who = cmp.kind === 'tie' ? 'tie' : api.BOOK[q.book].short;
     const ed = cmp.kind === 'best' && other ? api.edge(q.odds, other.odds) : null;
     const edge = ed ? `<span class="ed" title="${esc(ed.title)}">${esc(ed.text)}</span>` : '';
-    return `<td class="c-best ${cmp.kind === 'tie' ? 'tie' : `win-${api.BOOK[q.book].cls}`}${m.cls}" ${a}>${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b>${m.mark}<span class="bk">${who}</span>${edge}</td>`;
+    const odd = cmp.oddLine?.length ? `<span class="odd" title="${esc(cmp.oddLine.map((o) => `${api.BOOK[o.book].label} posts ${api.fmtLine(market, side, o.line)}: another number, not ranked`).join('; '))}">≠${cmp.oddLine.map((o) => api.BOOK[o.book].short).join('/')}</span>` : '';
+    return `<td class="c-best ${cmp.kind === 'tie' ? 'tie' : `win-${api.BOOK[q.book].cls}`}${m.cls}" ${a}>${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b>${m.mark}<span class="bk">${who}</span>${edge}${odd}</td>`;
   }
   if (cmp.kind === 'partial') { const q = cmp.best; return `<td class="c-best partial" ${a} title="the only open, fresh offer">${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b><span class="bk">${api.BOOK[q.book].short}<span class="bk-only"> only</span></span></td>`; }
   if (cmp.kind === 'different') return `<td class="c-best diff" ${a} title="the books post different lines: see their columns; never ranked">≠ lines</td>`;
@@ -135,10 +138,11 @@ function bookCell(g, market, side, book) {
   if (!q) return `<td class="c-bk none" ${a}>—</td>`;
   const down = api.bookDown(book);
   const win = view() === 'best' && ((cmp.kind === 'best' && cmp.best.book === book) || (cmp.kind === 'tie' && cmp.books.includes(book)));
+  const odd = view() === 'best' && cmp.oddLine?.some((o) => o.book === book);
   const m = moveMark(q);
-  const cls = ['c-bk', q.suspended ? 'susp' : '', down ? 'stale' : '', win ? (cmp.kind === 'tie' ? 'tie' : 'win') : ''].filter(Boolean).join(' ');
-  const tag = q.suspended ? '<span class="tag">susp</span>' : win && cmp.kind === 'best' ? '<span class="star">★</span>' : '';
-  return `<td class="${cls}${m.cls}" ${a}>${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b>${m.mark}${tag}</td>`;
+  const cls = ['c-bk', q.suspended ? 'susp' : '', down ? 'stale' : '', win ? (cmp.kind === 'tie' ? 'tie' : 'win') : '', odd ? 'odd' : ''].filter(Boolean).join(' ');
+  const tag = q.suspended ? '<span class="tag">susp</span>' : win && cmp.kind === 'best' ? '<span class="star">★</span>' : odd ? '<span class="tag">≠ line</span>' : '';
+  return `<td class="${cls}${m.cls}" ${a}${odd ? ' title="another number than the other books: shown, not ranked"' : ''}>${lineTxt(market, side, q)}<b class="od">${esc(api.fmtOdds(q.odds))}</b>${m.mark}${tag}</td>`;
 }
 function spark(g) {
   const pick = api.chartPick(g.key); const S = api.series(g, pick.market, pick.side); const books = view() === 'best' ? BOOKS : [view()];
@@ -186,7 +190,7 @@ function gameRows(g) {
     const cells = (fn) => MK.map(([m]) => fn(m, SIDES[m][idx])).join('');
     const marketCells = V === 'best' ? cells((m, s) => bestCell(g, m, s)) + BOOKS.map((b) => cells((m, s) => bookCell(g, m, s, b))).join('') : cells((m, s) => bookCell(g, m, s, V));
     const lead = idx === 0 ? `<td rowspan="2" class="g-star"><button type="button" data-star="${esc(g.key)}" aria-pressed="${star}" title="${star ? 'Unstar' : 'Star'} (s)">${star ? '★' : '☆'}</button></td>
-      <td rowspan="2" class="g-time">${time}${x || open ? `<button type="button" class="g-more" data-extras-toggle="${esc(g.key)}" aria-expanded="${open}" title="${open ? 'Hide the alt lines and props' : 'Alt lines and player props from both books'}">${open ? '▾ hide lines' : `▸ ${x ? `${x.both} more` : 'more'}`}</button>` : ''}</td>` : '';
+      <td rowspan="2" class="g-time">${time}${x || open ? `<button type="button" class="g-more" data-extras-toggle="${esc(g.key)}" aria-expanded="${open}" title="${open ? 'Hide the alt lines and props' : 'Alt lines and player props (DraftKings and FanDuel)'}">${open ? '▾ hide lines' : `▸ ${x ? `${x.both} more` : 'more'}`}</button>` : ''}</td>` : '';
     const holdCell = idx === 0 ? `<td rowspan="2" class="g-hold">${hs.map(([m]) => `<span class="${holds[m].hold < 0 ? 'arb' : holds[m].hold < 0.02 ? 'low' : ''}"><em>${SHORT[m]}</em>${pct(holds[m].hold)}</span>`).join('')}</td>` : '';
     const evCell = `<td class="g-ev${e && e.ev > 0 ? ' pos' : ''}" title="Best expected value on this row against the no-vig fair price">${e ? `${sgnPct(e.ev)}<em>${SHORT[e.m]}</em>` : '—'}</td>`;
     const sparkCell = idx === 0 ? `<td rowspan="2" class="g-spark"${api.settings.game ? '' : ` data-open-game="${esc(g.key)}" tabindex="0" title="Click to enlarge: this game's page, 10 min to 1 week"`}>${spark(g)}</td>` : '';
@@ -243,14 +247,14 @@ function render() {
   const groups = api.groups(); const total = groups.reduce((n, g) => n + g.games.length, 0); const live = groups.filter((g) => g.live).reduce((n, g) => n + g.games.length, 0);
   const hidden = api.hiddenSingles();
   const singles = hidden ? ` · <button type="button" class="g-link" data-singles>+${hidden} priced by one book only</button>` : api.settings.league !== 'nfl' && api.settings.singleBook ? ' · <button type="button" class="g-link" data-singles>hide single-book games</button>' : '';
-  el.meta.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book${api.settings.format === 'decimal' ? '' : '<span class="g-ed-key"> · ¢ = edge over the other book</span>'}</span>`;
+  el.meta.innerHTML = `<span>${total} ${total === 1 ? 'game' : 'games'} · ${live} live · ${api.settings.format === 'decimal' ? 'decimal' : 'American'} odds${sort !== 'time' ? ` · sorted by ${sort === 'ev' ? 'EV' : 'hold'}` : ''}${singles}</span><span>click a price to chart it · ★ = best book${api.settings.format === 'decimal' ? '' : '<span class="g-ed-key"> · ¢ = edge over the next-best book · ≠ = a book on another line, not ranked</span>'}</span>`;
   const thead = el.table.querySelector('thead'); thead.innerHTML = head();
   // the alt-lines table's header sticks just under this one
   if (!theadObs) { try { theadObs = new ResizeObserver(() => document.documentElement.style.setProperty('--g-head-h', `${thead.offsetHeight}px`)); theadObs.observe(thead); } catch {} }
   document.documentElement.style.setProperty('--g-head-h', `${thead.offsetHeight}px`);
   for (const tb of [...el.table.querySelectorAll('tbody')]) tb.remove();
   let html;
-  if (!api.state.everConnected) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">Connecting to both books…</td></tr></tbody>`;
+  if (!api.state.everConnected) html = `<tbody><tr><td colspan="${colCount()}" class="g-empty">Connecting to the books…</td></tr></tbody>`;
   else if (!total) { const m = api.emptyMessage(); html = `<tbody><tr><td colspan="${colCount()}" class="g-empty"><b>${esc(m.title)}</b> ${esc(m.detail)}${m.clear ? ' <button type="button" class="g-link" data-clear-search>clear search</button>' : ''}</td></tr></tbody>`; }
   else {
     const flat = sortedGames();
@@ -280,31 +284,31 @@ function latBits(api, L) {
   return out.join(' · ') || 'no samples yet';
 }
 function renderFeeds() {
-  const prices = { draftkings: 0, fanduel: 0 }; const moves = api.state.moveCount || {};
+  const prices = Object.fromEntries(BOOKS.map((b) => [b, 0])); const moves = api.state.moveCount || {};
   for (const q of api.state.quotes.values()) if (q.book in prices) prices[q.book]++;
   const rows = BOOKS.map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
     const T = api.latencyText(b);
     const lat = f !== 'live' ? '—' : T.short;
     const C = api.fanduelCadence(L);
-    const mode = b === 'draftkings' ? 'ws push' : `${L.push ? 'ws push + ' : ''}poll ${C.nflOnly ? C.beat : `${C.beat}–${C.turn}`}${L.interleave ? ' · 2 IPs' : ''}`;
+    const mode = b === 'draftkings' ? 'ws push' : b === 'betmgm' ? `poll ${api.secs(L.beatMs)} · ${L.via === 'edge' ? 'edge browser' : 'browser'}` : `${L.push ? 'ws push + ' : ''}poll ${C.nflOnly ? C.beat : `${C.beat}–${C.turn}`}${L.interleave ? ' · 2 IPs' : ''}`;
     const snap = s.lastSnapshotAt ? `${s.snapshotVia || 'direct'} · <span data-age-ts="${s.lastSnapshotAt}">${esc(api.ago(s.lastSnapshotAt))}</span>` : '—';
     return `<tr class="f-${f}"><th><span class="g-bk g-${api.BOOK[b].cls}"></span>${api.BOOK[b].label}</th><td class="st"><i class="dot"></i>${esc(f === 'live' ? 'connected' : f)}</td><td class="xd">${esc(mode)}</td>
       <td data-age-ts="${s.lastDataAt || ''}">${esc(api.ago(s.lastDataAt))}</td><td class="big xd" title="${esc(f === 'live' ? T.title : '')}">${esc(lat)}${f === 'live' ? `<small class="lat-n">${esc(latBits(api, T.L))}</small>` : ''}</td><td>${snap}</td><td class="num xd">${prices[b]}</td><td class="num xd">${moves[b] ?? 0}</td><td class="num xd">${s.reconnects ?? 0}</td>
       <td class="fr"><span class="bar"><i data-fresh="${b}" style="width:${(fr.fill * 100).toFixed(0)}%"></i></span></td></tr>`;
   }).join('');
-  el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th class="xd">Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second. Not a delay: see latency.">Heard</th><th class="xd" title="Medians of measured samples only: book → our server, and book → this page (DraftKings stamps every change). Point at a cell for sample counts, age and clock error.">Latency</th><th title="Last full re-download that double-checks the stream">Snapshot</th><th class="num xd">Prices</th><th class="num xd" title="Price moves seen since this page opened">Moves</th><th class="num xd">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
+  el.feeds.innerHTML = `<table class="g-feedt"><thead><tr><th>Book</th><th>State</th><th class="xd">Mode</th><th title="Last message from the book. DraftKings only sends when a price changes (plus a check every 10 s); FanDuel answers every second; BetMGM every 2 s. Not a delay: see latency.">Heard</th><th class="xd" title="Medians of measured samples only: book → our server, and book → this page (DraftKings stamps every change). Point at a cell for sample counts, age and clock error.">Latency</th><th title="Last full re-download that double-checks the stream">Snapshot</th><th class="num xd">Prices</th><th class="num xd" title="Price moves seen since this page opened">Moves</th><th class="num xd">Reconnects</th><th>Freshness</th></tr></thead><tbody>${rows}
     <tr class="xd f-${api.state.connected ? 'live' : api.connectionLost() ? 'lost' : 'connecting'}"><th><span class="g-bk"></span>This page</th><td class="st"><i class="dot"></i>${api.state.connected ? 'open' : api.state.everConnected ? 'reconnecting' : 'connecting'}</td><td>SSE stream</td><td colspan="7">${esc(api.state.sources.draftkings?.region || 'Ontario')} · clock ±${api.state.rtt != null ? Math.round(api.state.rtt / 2) : '—'} ms · ${esc(api.league().title)}</td></tr></tbody></table>`;
 }
 function renderBanner() {
   const st = api.state; const b = el.banner;
   const set = (cls, txt) => { b.hidden = false; b.className = `g-banner ${cls}`; b.setAttribute('role', cls === 'info' ? 'status' : 'alert'); b.innerHTML = txt; };
   if (!st.everConnected) return set('info', '<b>Connecting…</b> waiting for the first snapshot.');
-  if (st.switching) return set('info', `<b>Loading ${esc(api.league().title)}…</b> getting both books' prices.`);
+  if (st.switching) return set('info', `<b>Loading ${esc(api.league().title)}…</b> getting every book's prices.`);
   if (api.connectionLost()) return set('bad', '<b>Connection lost · reconnecting.</b> Prices shown are from before the drop and are greyed out.');
   if (!st.connected) return set('info', '<b>Reconnecting…</b> prices stay on screen and refresh in a moment.');
-  const down = BOOKS.filter((x) => !['live', 'connecting'].includes(api.feedState(x)));
-  if (down.length) return set('warn', `<b>${down.map((x) => api.BOOK[x].label).join(' and ')} ${down.length > 1 ? 'are' : 'is'} stale.</b> Those prices are greyed and cannot win.`);
+  const down = BOOKS.filter((x) => !['live', 'connecting', 'off'].includes(api.feedState(x)));
+  if (down.length) return set('warn', `<b>${listJoin(down.map((x) => api.BOOK[x].label))} ${down.length > 1 ? 'are' : 'is'} stale.</b> Those prices are greyed and cannot win.`);
   b.hidden = true;
 }
 function renderWire() {
@@ -328,7 +332,7 @@ function renderHolds() {
   const leg = (g, m, o) => `<span class="g-leg-name">${m === 'total' ? (o.side === 'over' ? 'Over' : 'Under') + ' ' + o.line : `${team(g, o.side)}${m === 'spread' ? ` ${api.fmtLine('spread', o.side, o.line)}` : ''}`}</span> <b>${esc(api.fmtOdds(o.odds))}</b> <span class="mut">${api.BOOK[o.book].short}</span>`;
   const head = '<thead><tr><th>Game</th><th>Market</th><th colspan="2">Best price on each side</th><th class="h" title="What the books keep if you bet both sides at these prices">Margin</th></tr></thead>';
   const html = items.length ? `<table class="g-pt g-holdt">${head}<tbody>${items.map((t) => `<tr class="${t.hold < 0 ? 'arb' : ''}" data-goto="${esc(t.game.key)}"${t.alt ? ` data-alt="${t.alt}"` : ''} title="Jump to the game"><th>${team(t.game, 'away')} @ ${team(t.game, 'home')}</th><td>${MARKET_NAME[t.alt || t.market]}</td><td class="mono">${leg(t.game, t.market, t.a)}</td><td class="mono">${leg(t.game, t.market, t.b)}</td><td class="h">${pct(t.hold)}${t.hold < 0 ? ' <em>arbitrage</em>' : ''}</td></tr>`).join('')}</tbody></table>`
-    : `<p class="g-note">${!api.state.everConnected ? 'Waiting for prices.' : api.filtering() ? 'No market with both books in the games shown.' : 'No market with both books on the same line yet.'}</p>`;
+    : `<p class="g-note">${!api.state.everConnected ? 'Waiting for prices.' : api.filtering() ? 'No market priced on both sides in the games shown.' : 'No market priced on both sides at the same line yet.'}</p>`;
   const out = html + toggle;
   if (out !== renderHolds.last) { renderHolds.last = out; el.holds.innerHTML = out; }
   const scope = api.filtering() ? 'in the games shown' : ''; const sc = root.querySelector('#g-holds-scope'); if (sc && sc.textContent !== scope) sc.textContent = scope;

@@ -14,6 +14,7 @@ import { BoardStore } from './store.js';
 import { Metrics } from './metrics.js';
 import { DraftKingsSource, ONTARIO } from './sources/draftkings.js';
 import { FanDuelSource } from './sources/fanduel.js';
+import { BetMGMSource } from './sources/betmgm.js';
 import { BOOKS } from './model.js';
 import { makeCheckpoint } from './checkpoint.js';
 import { ExtrasStore, KINDS } from './extras.js';
@@ -27,9 +28,12 @@ const PORT = Number(process.env.PORT || 3000);
 // 0 = no waiting: flush once the current upstream message has been fully applied (setImmediate). Everything one
 // DK frame or one FD poll changed still leaves in ONE event, because those changes are applied synchronously.
 const BATCH_MS = Number(process.env.SSE_BATCH_MS || 0);
-// Stale = no proof of life for this long. DK proves life with data or a ping/pong every 30 s; FD with every poll (1 s).
-const STALE_MS = { draftkings: Number(process.env.DK_STALE_MS || 75_000), fanduel: Number(process.env.FD_STALE_MS || 10_000) };
-const SOURCES = (process.env.SOURCES ?? 'draftkings,fanduel').split(',').map((s) => s.trim()).filter(Boolean);
+// Stale = no proof of life for this long. DK proves life with data or a ping/pong every 30 s; FD with every poll (1 s);
+// BetMGM with every poll (2 s, through a browser session): 15 s ≈ 7 missed polls.
+const STALE_MS = { draftkings: Number(process.env.DK_STALE_MS || 75_000), fanduel: Number(process.env.FD_STALE_MS || 10_000), betmgm: Number(process.env.MGM_STALE_MS || 15_000) };
+// Books that must be fresh for /api/health to say ok. BetMGM is reported but not required yet (new, browser-based).
+const HEALTH_BOOKS = (process.env.HEALTH_BOOKS ?? 'draftkings,fanduel').split(',').map((s) => s.trim()).filter((b) => BOOKS.includes(b));
+const SOURCES = (process.env.SOURCES ?? 'draftkings,fanduel,betmgm').split(',').map((s) => s.trim()).filter(Boolean);
 const INGEST_TOKEN = process.env.INGEST_TOKEN || '';
 const VERSION = (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'dev').slice(0, 7);
 
@@ -47,8 +51,13 @@ const checkpoint = SOURCES.includes('draftkings') ? await makeCheckpoint(log) : 
 const dkHttp = makeHttp({ log });
 const dk = SOURCES.includes('draftkings') ? new DraftKingsSource(store, metrics, log, { onNeedSnapshot: askEdgeForSnapshot, checkpoint, http: dkHttp }) : null;
 const fd = SOURCES.includes('fanduel') ? new FanDuelSource(store, metrics, log, { onMidBeat: askEdgeToPollFanDuel }) : null;
+// BetMGM: polled through a headless browser on this server; the edge (EDGE_MGM=1) fills in while that does not work.
+const tellEdgesMgm = (on, why) => { for (const ws of edges) if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'mgm-need', on, why })); };
+const mgm = SOURCES.includes('betmgm') ? new BetMGMSource(store, metrics, log, { onNeedEdge: tellEdgesMgm }) : null;
 if (dk) sources.push(dk);
 if (fd) sources.push(fd);
+if (mgm) sources.push(mgm);
+for (const b of BOOKS) if (!SOURCES.includes(b)) store.setSource(b, { state: 'off', detail: 'not enabled on this server' });
 // "More lines" (alt lines + player props): separate store, workers and per-game streams, so they never slow the board.
 const extras = new ExtrasStore();
 const extraStreams = new Map(); // gameKey -> Set(res): viewers with that game's drop-down open
@@ -101,6 +110,8 @@ setInterval(() => { // live latency figures for the feed cards (ride the heartbe
   store.sources.fanduel.freshP50Ms = metrics.fd.freshInterval.stats().p50 ?? null;
   const fdPush = metrics.fd.pushLag.stats();
   Object.assign(store.sources.fanduel, { pushLagP50Ms: fdPush.p50 ?? null, pushLagCount: fdPush.count, pushLagAt: metrics.fd.lastPushLagAt ?? null });
+  // BetMGM sends no change timestamps: what we can say is how often a fresh answer arrives and how long one takes
+  Object.assign(store.sources.betmgm, { freshP50Ms: metrics.mgm.pollInterval.stats().p50 ?? null, requestP50Ms: metrics.mgm.pollDuration.stats().p50 ?? null });
 }, 5_000);
 setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps proxies from closing idle streams
   const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources, version: VERSION })}\n\n`;
@@ -226,6 +237,7 @@ app.get('/api/history', (req, res) => {
 });
 app.get('/api/metrics', (req, res) => res.json({ version: VERSION, ...metrics.toJSON(), sources: store.sources, staleThresholdsMs: STALE_MS, sseBatchMs: BATCH_MS,
   keepalive: { url: SELF_URL || null, ...keepalive },
+  betmgmSession: mgm ? { via: store.sources.betmgm.via, edgeWanted: mgm.edgeWanted, browser: mgm.session ? { ...mgm.session.stats, api: mgm.session.api, open: !!mgm.session.page } : null } : null,
   transport: { draftkings: dkHttp.stats, fanduelPush: fd?.push ? { state: fd.push.state, ...fd.push.counts, subscribed: fd.push.subscribedCount() } : null }, edgeConnected: edges.size > 0, edgeIgnored, edgeRefused,
   extras: { rows: extras.rows.size, status: extras.status, draftkings: dkx?.counts, fanduel: fdx?.counts, watched: [...watchedGames()] } }));
 // Liveness for the host (never fails because a BOOK is down — restarting us would not fix DraftKings).
@@ -240,8 +252,8 @@ app.get('/api/health', (req, res) => {
   const nflGames = [...store.games.keys()].filter((k) => leagueOf(k) === 'nfl').length;
   const leagues = Object.fromEntries(LEAGUES_ON.map((id) => [id, { games: [...store.games.keys()].filter((k) => leagueOf(k) === id).length,
     quotes: Object.fromEntries(BOOKS.map((b) => [b, [...store.quotes.values()].filter((q) => q.book === b && leagueOf(q.gameKey) === id).length])) }]));
-  const ok = nflGames > 0 && BOOKS.every((b) => !books[b].stale && books[b].quotes > 0);
-  res.status(ok ? 200 : 503).json({ ok, version: VERSION, games: nflGames, books, leagues, clients: clients.size });
+  const ok = nflGames > 0 && HEALTH_BOOKS.every((b) => !books[b].stale && books[b].quotes > 0);
+  res.status(ok ? 200 : 503).json({ ok, version: VERSION, games: nflGames, required: HEALTH_BOOKS, books, leagues, clients: clients.size });
 });
 
 app.get('/api/stream', (req, res) => {
@@ -310,6 +322,16 @@ app.get('/api/diag/draftkings', async (req, res) => {
   res.json(out);
 });
 
+// Diagnostics: can THIS server read BetMGM? (plain request status, our IP/geo, and the browser session's state)
+app.get('/api/diag/betmgm', async (req, res) => {
+  const out = { serverTs: Date.now(), source: mgm ? { state: store.sources.betmgm.state, via: store.sources.betmgm.via, lastError: store.sources.betmgm.lastError, detail: store.sources.betmgm.detail, edgeWanted: mgm.edgeWanted } : 'disabled' };
+  try { out.ip = await (await fetch('https://ipinfo.io/json', { signal: AbortSignal.timeout(5000) })).json(); } catch (e) { out.ip = String(e); }
+  try { const r = await fetch('https://www.betmgm.ca/en/sports/football-11/betting/usa-9/nfl-35', { headers: { 'user-agent': 'Mozilla/5.0' }, redirect: 'manual', signal: AbortSignal.timeout(8000) }); out.page = { status: r.status, location: r.headers.get('location') }; r.body?.cancel(); } catch (e) { out.page = String(e); }
+  out.browser = mgm?.session ? { ...mgm.session.stats, api: mgm.session.api, open: !!mgm.session.page } : null;
+  out.metrics = metrics.toJSON().betmgm;
+  res.json(out);
+});
+
 // Render's free plan stops an instance after 15 minutes without inbound requests, and a stopped instance takes ~1 min
 // to wake for the next viewer. Open viewer streams and the edge's relay socket used to keep it awake; with neither, the
 // server calls its own public address every 4 minutes. That request goes out through Render's front door, so it counts.
@@ -329,7 +351,7 @@ const NOT_FOUND = `<!doctype html><html lang="en"><head><meta charset="utf-8"><m
 <a href="/" style="display:inline-block;background:#2555cb;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:9px 16px;border-radius:4px">Back to the odds board</a></main></body></html>`;
 app.use((req, res) => (req.path.startsWith('/api/') ? res.status(404).json({ error: 'not found' }) : res.status(404).type('html').send(NOT_FOUND)));
 
-const server = app.listen(PORT, () => log('http', `listening on :${PORT} · sources=${SOURCES.join('+') || 'none'} · batch=${BATCH_MS || 'immediate'} · stale dk=${STALE_MS.draftkings} fd=${STALE_MS.fanduel} · v${VERSION}`));
+const server = app.listen(PORT, () => log('http', `listening on :${PORT} · sources=${SOURCES.join('+') || 'none'} · batch=${BATCH_MS || 'immediate'} · stale dk=${STALE_MS.draftkings} fd=${STALE_MS.fanduel} mgm=${STALE_MS.betmgm} · v${VERSION}`));
 
 // Relay over ONE long-lived WebSocket (no per-batch HTTP request). Edge sends {type:'batch',…} and {type:'ping',t}.
 const relay = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 8 * 1024 * 1024 });
@@ -342,12 +364,14 @@ relay.on('connection', (ws, req) => {
   ws._socket?.setNoDelay(true); edges.add(ws);
   log('relay', `edge connected from ${req.headers['x-forwarded-for'] || req.socket.remoteAddress}`);
   if (dk?.restBlocked) ws.send(JSON.stringify({ type: 'need-snapshot', why: 'edge connected' }));
+  if (mgm?.edgeWanted) ws.send(JSON.stringify({ type: 'mgm-need', on: true, why: 'edge connected' }));
   ws.on('message', (data) => {
     let msg; try { msg = JSON.parse(data); } catch { return; }
     if (msg.type === 'ping') return ws.send(JSON.stringify({ type: 'pong', t: msg.t }));
     if (msg.type === 'snapshot') ingestSnapshot(msg);
     if (msg.type === 'dk-extras' && dkx && msg.data && msg.site !== ONTARIO) edgeRefused++;
     else if (msg.type === 'dk-extras' && dkx && msg.data) { if (dkx.restBlocked) dkx.applySnapshot(String(msg.sub), msg.data, Date.now(), 'edge'); else edgeIgnored++; }
+    if (msg.type === 'mgm-fixtures' && mgm && msg.data) { const n = mgm.applyEdge(String(msg.league), msg.data); if (n.ignored) edgeIgnored++; }
     if (msg.type === 'fd-prices' && fd && Array.isArray(msg.markets)) {
       // the edge started its request ~RTT/2 after we sent the trigger
       const rtt = Number.isFinite(msg.rttMs) ? msg.rttMs : 0;

@@ -1,4 +1,4 @@
-// Shared model: both books are normalized into these shapes.
+// Shared model: every book is normalized into these shapes.
 //
 //  Game  = one NFL matchup (home/away/start time/status) with the id each book uses for it
 //  Quote = one price: game + market (moneyline|spread|total) + side (home|away|over|under)
@@ -8,8 +8,8 @@
 
 export const MARKETS = ['spread', 'total', 'moneyline'];
 export const SIDES = { moneyline: ['away', 'home'], spread: ['away', 'home'], total: ['over', 'under'] };
-export const BOOKS = ['draftkings', 'fanduel'];
-export const BOOK_LABEL = { draftkings: 'DraftKings', fanduel: 'FanDuel' };
+export const BOOKS = ['draftkings', 'fanduel', 'betmgm'];
+export const BOOK_LABEL = { draftkings: 'DraftKings', fanduel: 'FanDuel', betmgm: 'BetMGM' };
 
 // Canonical NFL teams. Both books use different names ("GB Packers" vs "Green Bay Packers"),
 // but nicknames are unique in the NFL, so we match on the nickname.
@@ -104,26 +104,36 @@ export function bestPrice(quotes) {
 }
 
 /**
- * Compare the two books' offers for one game/market/side, the way the board shows it.
+ * Compare the books' offers for one game/market/side, the way the board shows it.
  * offer = { book, line, odds, suspended?, stale? }  (stale = the book's feed is stale/down)
  * Eligible = exists, has odds, not suspended, book live.
- * Returns { kind, best?, books?, eligible, offers } with kind:
- *   'best'      both eligible, same line, one has higher odds
- *   'tie'       both eligible, same line, same odds
- *   'different' both eligible, different lines → shown side by side, nobody crowned
- *   'partial'   exactly one eligible ("only available offer"); the other is shown with its reason
- *   'none'      nothing eligible (both stale/suspended/missing)
+ * Returns { kind, best?, books?, eligible, offers, oddLine } with kind:
+ *   'best'      two or more eligible on the same line, one pays most
+ *   'tie'       two or more eligible on the same line, the top price shared
+ *   'different' eligible books disagree on the line and no line has a clear majority (1 vs 1, 1 vs 1 vs 1)
+ *               → shown side by side, nobody crowned
+ *   'partial'   exactly one eligible ("only available offer"); the others are shown with their reason
+ *   'none'      nothing eligible (all stale/suspended/missing)
+ * Three books, two lines (−3 −110, −3 −105, −3.5 +100): the line most books post is ranked ('best'/'tie' among those)
+ * and the other book comes back in `oddLine`, shown unranked as "different line" — a price on another number is not
+ * comparable. With two books this is the same rule as before (1 vs 1 → 'different').
  * Shared by the server tests and the browser (served at /lib/model.js), so the page can never drift from the tested rule.
  */
 export function compare(offers) {
   const present = offers.filter((o) => o && o.odds != null);
   const eligible = present.filter((o) => !o.suspended && !o.stale);
-  if (eligible.length === 0) return { kind: 'none', eligible, offers: present };
-  if (eligible.length === 1) return { kind: 'partial', best: eligible[0], eligible, offers: present };
-  if (new Set(eligible.map((o) => o.line ?? 'ml')).size > 1) return { kind: 'different', eligible, offers: eligible };
-  const sorted = eligible.slice().sort((a, b) => pays(b.odds) - pays(a.odds));
+  if (eligible.length === 0) return { kind: 'none', eligible, offers: present, oddLine: [] };
+  if (eligible.length === 1) return { kind: 'partial', best: eligible[0], eligible, offers: present, oddLine: [] };
+  const byLine = new Map(); for (const o of eligible) { const k = o.line ?? 'ml'; if (!byLine.has(k)) byLine.set(k, []); byLine.get(k).push(o); }
+  let ranked = eligible, oddLine = [];
+  if (byLine.size > 1) {
+    const groups = [...byLine.values()].sort((a, b) => b.length - a.length);
+    if (groups[0].length < 2 || groups[0].length === groups[1].length) return { kind: 'different', eligible, offers: eligible, oddLine: [] };
+    ranked = groups[0]; oddLine = eligible.filter((o) => !ranked.includes(o));
+  }
+  const sorted = ranked.slice().sort((a, b) => pays(b.odds) - pays(a.odds));
   const books = sorted.filter((o) => samePay(o.odds, sorted[0].odds)).map((o) => o.book);
-  return books.length > 1 ? { kind: 'tie', best: sorted[0], books, eligible, offers: sorted } : { kind: 'best', best: sorted[0], books, eligible, offers: sorted };
+  return { kind: books.length > 1 ? 'tie' : 'best', best: sorted[0], books, eligible, offers: sorted, oddLine };
 }
 
 export function decimalOdds(a) { return a == null ? null : a > 0 ? 1 + a / 100 : 1 + 100 / Math.abs(a); }

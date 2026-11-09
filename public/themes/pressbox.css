@@ -664,3 +664,17 @@ body, button, input, select, table { font-variant-numeric: tabular-nums; }
 
 /* the narrowest phones (320 px): split prices a little tighter so nothing pokes past the edge */
 @media (max-width:340px) { .split-row { gap:4px; grid-template-columns:24px minmax(44px, auto) auto auto; } }
+
+/* ================= BetMGM, the third book: gold (apart from DraftKings purple, FanDuel teal and the blue accent) ================= */
+:root { --book-mgm:#7d6420; --chart-mgm:#a37400; }
+html[data-scheme=dark] { --book-mgm:#dcc06a; --chart-mgm:#f2cc60; }
+.book.mgm, .chart-now .book.mgm { color:var(--book-mgm); }
+.chart-now .book.mgm, .bc-now.mgm, .ld-key.mgm, .bh-row.mgm, .bc-lane-name.mgm { color:var(--chart-mgm); }
+.plot .s-mgm, .bc-line.mgm, .ld-line.mgm { stroke:var(--chart-mgm); } .ld-pt.mgm { fill:var(--chart-mgm); }
+.plot .dot.mgm { border-color:var(--chart-mgm); }
+.bc-dot.mgm, .ld-bar.mgm, .bc-end.mgm, .bh-dot.mgm, .ld-win.mgm, .ld-win-key.mgm { background:var(--chart-mgm); }
+.price.is-best.win-mgm { border-left-color:var(--book-mgm); background:color-mix(in srgb, var(--book-mgm) 7%, transparent); }
+.feeds { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .feeds { grid-template-columns:1fr; } }
+.offers { grid-template-columns:repeat(auto-fit, minmax(0, 1fr)); }
+.price .odd-line { display:block; margin-top:2px; font-size:11px; color:var(--text-muted); }

@@ -75,3 +75,17 @@ test('kickoff time does not flip between books: DraftKings\' time wins, FanDuel\
   s.upsertGame({ key, books: { fanduel: { eventId: 'f1', live: true } } });      // a live flag without a time keeps it
   assert.equal(s.games.get(key).start, '2026-11-01T18:00:00.000Z');
 });
+
+test('BetMGM has its own stale threshold (15 s by default on the server) and kicks off after the other books', () => {
+  const s = new BoardStore(); const t = { draftkings: 75_000, fanduel: 10_000, betmgm: 15_000 };
+  assert.ok(s.sources.betmgm, 'the store knows the third book');
+  s.setSource('betmgm', { state: 'polling', lastDataAt: 100_000 });
+  s.refreshStaleness(t, 114_000); assert.equal(s.sources.betmgm.stale, false);
+  s.refreshStaleness(t, 116_000); assert.equal(s.sources.betmgm.stale, true);
+  // kickoff: DraftKings' time wins, then FanDuel's, then BetMGM's
+  s.upsertGame({ key: 'X@Y:2026-11-09', start: '2026-11-10T01:16:00Z', books: { betmgm: { live: false } } });
+  assert.equal(s.games.get('X@Y:2026-11-09').start, '2026-11-10T01:16:00Z');
+  s.upsertGame({ key: 'X@Y:2026-11-09', start: '2026-11-10T01:15:00Z', books: { draftkings: { live: false } } });
+  s.upsertGame({ key: 'X@Y:2026-11-09', start: '2026-11-10T01:16:00Z', books: { betmgm: { live: false } } });
+  assert.equal(s.games.get('X@Y:2026-11-09').start, '2026-11-10T01:15:00Z');
+});

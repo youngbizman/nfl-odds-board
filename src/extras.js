@@ -104,7 +104,7 @@ export class ExtrasStore extends EventEmitter {
     if (prev && prev.odds === r.odds && prev.suspended === suspended) { prev.seenAt = now; return false; }
     // prevOdds describes the last PRICE move: an open/suspended-only change keeps it
     row.offers[book] = { odds: r.odds, suspended, updatedAt: now, seenAt: now, prevOdds: prev ? (prev.odds !== r.odds ? prev.odds : prev.prevOdds ?? null) : null };
-    this.status[book].lastDataAt = now;
+    if (this.status[book]) this.status[book].lastDataAt = now; // "more lines" come from DraftKings and FanDuel only
     this.emit('row', row);
     return true;
   }

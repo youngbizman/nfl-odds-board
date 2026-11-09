@@ -144,3 +144,41 @@ test('impossible American odds (0, between −100 and +100) are rejected, not ra
   for (const v of [0, '0', 50, '-99', '+99', 99.4]) assert.equal(parseAmerican(v), null, String(v));
   assert.equal(parseAmerican(-100), -100); assert.equal(parseAmerican('−110'), -110); assert.equal(parseAmerican(150), 150);
 });
+
+test('three books: the line most books post is ranked; the odd one out is shown, never ranked', async () => {
+  const { compare } = await import('../src/model.js');
+  const o = (book, line, odds, x = {}) => ({ book, line, odds, ...x });
+  // −3 −110 (DK), −3 −105 (FD), −3.5 +100 (MGM): FD is best on −3, MGM is set aside
+  let c = compare([o('draftkings', -3, -110), o('fanduel', -3, -105), o('betmgm', -3.5, 100)]);
+  assert.equal(c.kind, 'best'); assert.equal(c.best.book, 'fanduel');
+  assert.deepEqual(c.offers.map((x) => x.book), ['fanduel', 'draftkings']);
+  assert.deepEqual(c.oddLine.map((x) => x.book), ['betmgm']);
+  // a tie inside the majority line
+  c = compare([o('draftkings', 47.5, -110), o('fanduel', 46.5, -120), o('betmgm', 47.5, -110)]);
+  assert.equal(c.kind, 'tie'); assert.deepEqual(c.books, ['draftkings', 'betmgm']); assert.deepEqual(c.oddLine.map((x) => x.book), ['fanduel']);
+  // three different lines: no majority, nobody crowned
+  assert.equal(compare([o('draftkings', -3, -110), o('fanduel', -3.5, -105), o('betmgm', -4, 100)]).kind, 'different');
+  // all three on one line: the best of three, the edge measured against the next best
+  c = compare([o('draftkings', null, 150), o('fanduel', null, 155), o('betmgm', null, 160)]);
+  assert.equal(c.best.book, 'betmgm'); assert.equal(c.offers[1].book, 'fanduel'); assert.deepEqual(c.oddLine, []);
+  // only one of three eligible → partial; the majority is counted among eligible offers only
+  assert.equal(compare([o('draftkings', -3, -110, { stale: true }), o('fanduel', -3, -105, { suspended: true }), o('betmgm', -3.5, 100)]).kind, 'partial');
+  c = compare([o('draftkings', -3, -110, { stale: true }), o('fanduel', -3, -105), o('betmgm', -3.5, 100)]);
+  assert.equal(c.kind, 'different', 'one fresh book per line: not comparable');
+  // a book with no price at all (null) is simply absent
+  assert.equal(compare([o('draftkings', -3, -110), null, o('betmgm', -3, -108)]).best.book, 'betmgm');
+});
+
+test('two books: the rule is unchanged (different lines → nobody ranked)', async () => {
+  const { compare } = await import('../src/model.js');
+  const c = compare([{ book: 'draftkings', line: -3, odds: -110 }, { book: 'fanduel', line: -3.5, odds: 100 }]);
+  assert.equal(c.kind, 'different'); assert.deepEqual(c.oddLine, []);
+});
+
+test('hold and fair line take the third book into account', async () => {
+  const { bestHold, fairProb, impliedProb } = await import('../src/model.js');
+  const h = bestHold([{ book: 'draftkings', odds: -120, line: null }, { book: 'betmgm', odds: -105, line: null }], [{ book: 'fanduel', odds: 100, line: null }, { book: 'betmgm', odds: -115, line: null }]);
+  assert.equal(h.a.book, 'betmgm'); assert.equal(h.b.book, 'fanduel');
+  assert.ok(Math.abs(h.hold - (impliedProb(-105) + impliedProb(100) - 1)) < 1e-9);
+  assert.ok(fairProb([[-110, -110], [-120, 100], [-105, -115]]) > 0.5);
+});

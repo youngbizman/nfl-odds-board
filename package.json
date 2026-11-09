@@ -1,7 +1,7 @@
 {
   "name": "nfl-odds-board",
   "version": "0.1.0",
-  "description": "Betstamp take-home: live NFL odds board comparing DraftKings and FanDuel (moneyline, spread, total) with push updates to the browser.",
+  "description": "Betstamp take-home: live NFL odds board comparing DraftKings, FanDuel and BetMGM (moneyline, spread, total) with push updates to the browser.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -12,18 +12,17 @@
     "test": "node --test --test-reporter=spec test/*.test.js",
     "smoke": "node tools/smoke.mjs",
     "fixtures": "node tools/record-fixtures.mjs",
-    "postinstall": "node tools/install-transport.mjs"
+    "postinstall": "node tools/install-transport.mjs",
+    "fixtures:mgm": "node tools/record-mgm-fixtures.mjs"
   },
   "keywords": [],
   "author": "Alireza Moradian",
   "license": "ISC",
   "type": "module",
-  "devDependencies": {
-    "playwright": "1.49.1"
-  },
   "dependencies": {
     "@msgpack/msgpack": "3.0.0-beta2",
     "express": "^4.22.3",
+    "playwright": "1.49.1",
     "redis": "^4.7.0",
     "ws": "8.22.0"
   },

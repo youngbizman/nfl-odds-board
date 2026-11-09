@@ -5,13 +5,25 @@ services:
     runtime: node
     region: ohio
     plan: free
-    # npm ci also runs tools/install-transport.mjs (RENDER=true): a .venv with curl_cffi for DraftKings' snapshot host
-    buildCommand: npm ci --omit=dev
+    # npm ci also runs tools/install-transport.mjs (RENDER=true): a .venv with curl_cffi for DraftKings' snapshot host.
+    # BetMGM: its odds API only answers a real browser page, so a headless Chromium shell is installed next to
+    # node_modules (PLAYWRIGHT_BROWSERS_PATH=0). If it cannot start here, BetMGM comes from the edge (EDGE_MGM=1).
+    buildCommand: npm ci --omit=dev && npx playwright install chromium-headless-shell
     startCommand: npm start
     healthCheckPath: /healthz
     envVars:
       - key: NODE_VERSION
         value: 22.12.0
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
+      - key: SOURCES
+        value: draftkings,fanduel,betmgm
+      - key: MGM_POLL_MS
+        value: "2000"
+      - key: MGM_STALE_MS
+        value: "15000"
+      - key: MGM_BROWSER
+        value: "1"
       - key: FD_POLL_MS
         value: "1000"
       - key: FD_REGION

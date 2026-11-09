@@ -1,11 +1,11 @@
-# NFL Odds Board — DraftKings vs FanDuel
+# NFL Odds Board — DraftKings vs FanDuel vs BetMGM
 
 **Live:** https://nfl-odds-board-hgim.onrender.com · **Code:** https://github.com/youngbizman/nfl-odds-board · **By:** Alireza Moradian ([@ali-reza-moradian](https://github.com/ali-reza-moradian))
 
-A side-by-side NFL board (moneyline, spread, total; pregame and in-game) that pulls from DraftKings and FanDuel,
-normalizes both into one model, shows the best price with the book underneath, and pushes every line move to the
-browser without a refresh. Toggle at the top: **Best price / DraftKings only / FanDuel only**.
-Also **college football and the CFL** from the same two books: *League* switch on the page.
+A side-by-side NFL board (moneyline, spread, total; pregame and in-game) that pulls from DraftKings, FanDuel and
+BetMGM (Ontario), normalizes all three into one model, shows the best price with the book underneath, and pushes every
+line move to the browser without a refresh. Toggle at the top: **Best price / DraftKings only / FanDuel only / BetMGM only**.
+Also **college football and the CFL** from the same three books: *League* switch on the page.
 
 **Plain addresses**, like any well-made site: `/` (NFL), `/college-football`, `/cfl`, `/all`, and each game at its own
 page, e.g. `/nfl/cardinals-at-cowboys-2026-11-01` (league, the two teams, the day in Toronto). Back and Forward work;
@@ -23,7 +23,7 @@ What is on the page, beyond the board itself:
   price only where both books offer the exact same line and player (§3, "More lines").
 * **A movement chart** per game in the space beside the prices: each book's implied chance over the last 48 h (a live
   game: since kickoff). Click any price to chart it. History is one point per real change, kept in Redis across restarts.
-* **Who wins, at a glance** — the winning cell takes the winning book's colour (DraftKings purple, FanDuel teal) and
+* **Who wins, at a glance** — the winning cell takes the winning book's colour (DraftKings purple, FanDuel teal, BetMGM gold) and
   shows the edge in cents (`+8¢`: −192 vs −200).
 * **Hold and arbitrage** — every game shows the hold per market at the best price on each side (either book), and a
   *Tightest markets* strip shows the **3** lowest holds (*Show more* opens up to 9, *Show fewer* goes back to 3), game
@@ -35,7 +35,7 @@ What is on the page, beyond the board itself:
   says `?theme=dark`. The feed status shows each book's state (*Connected* / stale / reconnecting), last message and
   freshness bar at first sight (Engineering also shows the last full snapshot); *Details* opens the rest (how it is read,
   measured latency, last price move). Kickoff countdowns on every slot.
-* **Keyboard:** `/` find a team · `1 2 3` best / DraftKings / FanDuel · `d` dark · `s` star the focused
+* **Keyboard:** `/` find a team · `1 2 3 4` best / DraftKings / FanDuel / BetMGM · `d` dark · `s` star the focused
   game · `Enter` chart the focused price · `?` help.
 * **The wire** — the latest price and line changes as they happen (old → new, which book, how long ago).
 * **A moved price stands out** — a strong green/red flash, then for 8 s a thick green (odds up) or red (odds down) bar,
@@ -110,10 +110,12 @@ flowchart LR
   subgraph books
     DK[(DraftKings)]
     FD[(FanDuel)]
+    MGM[(BetMGM)]
   end
   subgraph ingestion["one worker per book"]
     DKW["DraftKings worker<br/>snapshot (REST, browser-compatible client) + deltas (WebSocket, JSON)"]
     FDW["FanDuel worker<br/>push (AppSync WebSocket) + poll getMarketPrices every 1 s<br/>(≤ 50 markets per request, in parallel)"]
+    MGMW["BetMGM worker<br/>headless browser session, fixtures polled every 2 s<br/>(answers slimmed inside the page)"]
   end
   STORE["BoardStore (in memory)<br/>games · quotes · per-book status<br/>emits only real changes"]
   REDIS[("Redis<br/>dk:state checkpoint<br/>dk:frames stream")]
@@ -124,16 +126,20 @@ flowchart LR
   B3[browser …]:::b
   DK -- "wss (push)" --> DKW
   FD -- "wss (push) + https (pull)" --> FDW
+  MGM -- "https (pull, from inside a BetMGM page)" --> MGMW
   DKW --> STORE
   FDW --> STORE
+  MGMW --> STORE
   STORE --> SSE
   SSE --> B1 & B2 & B3
   EDGE["optional edge (src/edge.js), another IP<br/>fallback DK snapshots · FanDuel poll half a beat after ours"] -. "only if DK refuses the cloud" .-> DKW
   EDGE -. "FanDuel markets that changed" .-> FDW
+  EDGE -. "BetMGM fixtures, only while the cloud's own browser fails (temporary)" .-> MGMW
   classDef b fill:#223,stroke:#669
 ```
 
-* `src/sources/draftkings.js`, `src/sources/fanduel.js` (+ `fanduel-push.js`) — one ingestion per book, never per viewer.
+* `src/sources/draftkings.js`, `src/sources/fanduel.js` (+ `fanduel-push.js`), `src/sources/betmgm.js`
+  (+ `betmgm-browser.js`) — one ingestion per book, never per viewer.
 * `src/transport/` — HTTPS for DraftKings' snapshot host: Node first, then one long-lived browser-compatible worker
   (`curl_worker.py`, curl_cffi with Chrome's TLS/HTTP2 handshake) after the first 403.
 * `src/store.js` — the single normalized board. `upsertQuote` only emits when price/line actually changed, so idle
@@ -146,9 +152,9 @@ flowchart LR
 * `tools/` — the research tooling: `capture-network.mjs` (records what each book's page really does),
   `probe-*.mjs`, `measure-latency.mjs`. Findings in [`research/findings.md`](research/findings.md).
 
-A third book = one more file in `src/sources/` that writes `Game`/`Quote` objects into the store; the store, matching,
-best price and the SSE stream are already book-agnostic. The book list, the page's columns and the latency panels
-still name the two books, so those need the new one added too. See §11.
+BetMGM was added exactly that way: one more worker in `src/sources/` that writes `Game`/`Quote` objects into the
+store; the store, matching, best price and the SSE stream did not change. The book list, the page's columns, the
+feed panels and the colours name each book, so those got the third one added. See §11.
 
 ## 3. How I get data from each book, and why
 
@@ -199,7 +205,32 @@ push drops, it reconnects with backoff (1 → 30 s) and re-subscribes, while pol
 With the optional edge machine (§6) running, a second poller on another IP polls half a beat after ours, so a fresh
 polled answer lands every ~0.5 s even at one request per second per IP.
 
-### More lines: alternate lines and player props, both books
+### BetMGM — browser session + polling (push next)
+
+| Step | What BetMGM's site does (captured Nov 9 2026 with `tools/capture-network.mjs`) |
+| --- | --- |
+| Snapshot | `GET www.betmgm.ca/cds-api/bettingoffer/fixtures?x-bwin-accessid=…&subdivision=CA-Ontario&sportIds=11&competitionIds=<league>&offerCategories=Gridable…` → `fixtures[]` with participants and the three game lines. NFL 15 games ≈ 206 KB, 60–150 ms. League ids: NFL 35, college 103495, CFL 3845. |
+| Live updates | `wss://cds-push.betmgm.ca/ws-1-0` — SignalR (JSON), `Subscribe` to topics like `v2\|en-us\|<fixtureId>_101_any\|grd`, heartbeats every 15 s. The page loads the snapshot once and then only listens. |
+| Two shapes | v1 fixtures: `games[] → results[]` (`attr` = line, `playerId` = team); v2 ("PairGame", NFL and college): `optionMarkets[] → options[]` (`fixtureParticipant` = team, line in the option name / `DecimalValue`). One normalizer reads both. |
+| Protection | The API answers **403 to plain HTTP clients**, even from a home IP in Ontario; it answers a real browser page. |
+
+So the worker is a **real headless Chromium session** (`src/sources/betmgm-browser.js`): it opens BetMGM's NFL page,
+reads the public access key from the page's own first API request (never hard-coded), then swaps the heavy page for a
+tiny one of the same site (Chromium ≈ 470 MB → ≈ 230–290 MB) and calls the same `fixtures` endpoint from inside it,
+**slimming each answer in the page** (206 KB → 29 KB for the NFL). It polls on a 2 s beat: NFL every beat, college and
+CFL in turn (live games every beat), with ×2 backoff (max 30 s, Retry-After honoured) on 403/429/5xx.
+**Stale after 15 s** without an answer (≈ 7 missed polls; FanDuel is 10 s at 1 s, DraftKings 75 s on a socket).
+BetMGM's answers carry no change timestamp, so its latency is a cadence (fresh every 2 s, a change reaches the server
+within ~2.2 s), not a measured delay — until the push socket is wired in.
+
+**Cloud first, Mac fallback (temporary).** The cloud runs the browser itself. If it cannot (no Chromium on the host,
+or BetMGM refuses its IP), it sends `mgm-need` over the existing edge relay and an edge started with `EDGE_MGM=1`
+polls BetMGM through its own headless browser and relays the fixtures; while the cloud's own session works, anything
+the edge sends is counted and ignored. The goal is cloud-only: next steps are BetMGM's push socket and, if the free
+instance's 512 MB is too small for Chromium, Render's Docker runtime (Playwright image) or a bigger instance.
+`/api/diag/betmgm` shows what the server sees (IP, page status, session state).
+
+### More lines: alternate lines and player props (DraftKings and FanDuel)
 Found the same way (recording each book's game pages tab by tab):
 
 | | DraftKings | FanDuel |
@@ -245,10 +276,10 @@ one page per league and puts every market on the push. `LEAGUES=nfl,ncaaf,cfl` (
 * **Small schools.** Our DraftKings college collector covers its FBS league; FanDuel's college page also lists ~50 FCS
   games, so those have one book only. With nothing to compare they are hidden by default in college, and one click shows them ("only available offer"). Alt lines and player props stay NFL-only.
 
-### Same jurisdiction for both books: Ontario
-Both books run a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
-Ontario (§6), so the board uses **Ontario for both books**: DraftKings `CA-ON-SB` and FanDuel Ontario
-(`on.sportsbook.fanduel.ca`, region `ON`). I found this the hard way: the brief's FanDuel link
+### Same jurisdiction for every book: Ontario
+Each book runs a separate site per jurisdiction, and prices can differ between them. DraftKings only lets us in from
+Ontario (§6), so the board uses **Ontario for every book**: DraftKings `CA-ON-SB`, FanDuel Ontario
+(`on.sportsbook.fanduel.ca`, region `ON`) and BetMGM Ontario (`www.betmgm.ca`, `subdivision=CA-Ontario` on every request). I found this the hard way: the brief's FanDuel link
 (`sportsbook.fanduel.com`) opened from Toronto serves **New Jersey** prices, so my first version compared DK Ontario
 with FD New Jersey. On Oct 28 FanDuel NJ and ON happened to be identical (174/174), but they are separate markets with
 separate ids and can diverge. Each book's region is shown on the page.
@@ -331,7 +362,9 @@ the restored board is then re-confirmed by the server's own snapshot.
   number**; if both books post the same line the better odds wins (equal odds show "Tie" with both books). If they post
   different lines (−3 −110 vs −3.5 +100) the board shows **both offers side by side, "Different lines · no best price",
   and crowns neither**. A suspended or stale offer stays visible with its reason but can never win; if only one book is
-  open the cell says "only available offer". I
+  open the cell says "only available offer". **With three books** the line most of them post is ranked (best / tie
+  among those) and the book on another number is shown under it, *"other line, not ranked"* (`≠MGM` in the
+  engineering grid); if no line has a majority (all three differ) nobody is crowned. I
   would rather show the trade-off than silently call unlike markets equal. A fairer next step is a push chart
   (value of the half point by key number) so unlike lines can be ranked; that needs calibrated numbers, so it is a
   "with more time" item.
@@ -347,6 +380,7 @@ Measured = timed from a timestamp the book put on the change. Medians (p50) and 
 | DraftKings · pregame | p50 44 ms (measured) | ≈ 30 ms | ≈ 75 ms (measured) | Wed Oct 28 evening, few moves (pregame lines rarely move) |
 | FanDuel · live | push: **p50 ≈ 0.6 s, p90 ≈ 1.0 s** (measured from FanDuel's own stamp, which includes FanDuel's internal delay; its clock can't be corrected) | p50 ≈ 30 ms | **not measured** | Thu Oct 29, 15,000+ changes; about half came first by push, half by the 1 s poll |
 | FanDuel · pregame | not measured separately (few pushes) | ≈ 30 ms | **not measured** | polled prices carry no FanDuel timestamp, so book → browser cannot be timed; the poll beat (1 s NFL, rotating for other leagues) is a cadence, not a measured delay |
+| BetMGM · pregame | **not measured** (no change timestamp); a fresh answer every 2.0 s (p50), request p50 145 ms | ≈ 30 ms | **not measured** | Mon Nov 9, local run from Ontario, 24 polls, 0 errors; push (SignalR) not wired in yet |
 
 ### How I measured
 * **DraftKings, book → our server:** every WS frame carries DK's own `publishedTime`; lag = time the cloud server
@@ -433,11 +467,17 @@ poll faster where there is no push, keep connections open, don't wait to batch, 
 ## 9. Tests and health checks
 
 **Dependencies** (`npm audit`, Fri Oct 30): the server's packages (express 4.22, ws 8.22) have no known advisory.
-One remains in `playwright`, a dev-only tool for the check scripts (its browser downloader); it is not installed on the
-server. The browser-compatible DraftKings transport test runs where Python's `curl_cffi` is installed and is skipped
+One remains in `playwright` (its browser downloader). Since BetMGM, `playwright` is a runtime dependency: the server
+uses it to run BetMGM's browser session, and the build installs only Chromium's headless shell. The browser-compatible DraftKings transport test runs where Python's `curl_cffi` is installed and is skipped
 in CI, which does not install it.
 
-`npm test` (also on every push, GitHub Actions) — 89 tests, ~20 s, no network needed:
+`npm test` (also on every push, GitHub Actions) — 104 tests, ~20 s, no network needed:
+* **BetMGM** (real answers recorded from BetMGM's API, no browser needed): both fixture shapes slimmed and
+  normalized, every NFL / college / CFL game matched to the same key as DraftKings and FanDuel, six prices per game,
+  hidden price = suspended with its last price, a line move, a market taken down, live; polling backs off on 403 and
+  asks the edge; edge fixtures count only while the cloud's own session fails; the server asks a connecting edge and
+  fills the board from its fixtures; `/api/health` does not depend on BetMGM yet. Three-book `compare()` (majority
+  line ranked, the odd book set aside, all-different = nobody crowned, two-book rule unchanged).
 * **Model:** team-name matching across books, game date for late kickoffs, unicode-minus odds, best price (higher odds,
   tie, different lines = no winner, suspended excluded) and `compare()` — the exact function the page uses (best, tie,
   different lines, only-available, nothing eligible), the edge in cents, and the hold / arbitrage math (best price per
@@ -523,9 +563,10 @@ under a restart-on-exit supervisor.)
 * Browser `EventSource` reconnects on its own and receives a fresh snapshot.
 
 ## 11. A third book, or ten — and where AI helps
-* Add `src/sources/<book>.js` with `start/stop` that writes `Game`/`Quote` into the store. Matching, best price, the
-  store and SSE need no change; the book list (`BOOKS`), the page's per-book columns and the latency/metrics panels
-  name the books explicitly and need the new one added.
+* Add `src/sources/<book>.js` with `start/stop` that writes `Game`/`Quote` into the store. Matching, the store and SSE
+  need no change; the book list (`BOOKS`), the page's per-book columns, colours and the latency/metrics panels name
+  the books explicitly and need the new one added. BetMGM (the third book) took exactly that, plus one rule change:
+  with three books, line disagreements are settled by the majority line instead of crowning nobody.
 * At ten books the in-memory store becomes a Redis Stream / pub-sub (the DraftKings frame log already is one) so
   ingestion workers scale independently of the web tier, and each worker runs where its book allows (some will need residential egress, as DK does).
 * AI tooling helped most in the *discovery* loop here: recording a site's traffic and asking a model to explain

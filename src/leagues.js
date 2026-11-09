@@ -1,4 +1,4 @@
-// Leagues: NFL, college football (NCAAF) and the CFL, all from the same two books.
+// Leagues: NFL, college football (NCAAF) and the CFL, all from the same three books (BetMGM: competition ids 35 / 103495 / 3845).
 //
 // Every league uses the same endpoints and market shapes (DraftKings "Game Lines" subcategory 4518; FanDuel's
 // MONEY_LINE / MATCH_HANDICAP_(2-WAY) / TOTAL_POINTS_(OVER/UNDER)); only the league id and the team matching differ:
@@ -45,9 +45,9 @@ export function resolveCollegeTeam(raw) {
 // ---------- the leagues ----------
 const nflTeam = (raw) => { const t = resolveTeam(raw); return t ? { ...t, key: t.abbr } : null; };
 export const LEAGUES = {
-  nfl: { id: 'nfl', label: 'NFL', title: 'NFL', dk: '88808', fd: 'nfl', resolve: nflTeam },
-  ncaaf: { id: 'ncaaf', label: 'College', title: 'College football', dk: '87637', fd: 'ncaaf', resolve: resolveCollegeTeam },
-  cfl: { id: 'cfl', label: 'CFL', title: 'CFL', dk: '33567', fd: 'cfl', resolve: resolveCflTeam },
+  nfl: { id: 'nfl', label: 'NFL', title: 'NFL', dk: '88808', fd: 'nfl', mgm: '35', resolve: nflTeam },
+  ncaaf: { id: 'ncaaf', label: 'College', title: 'College football', dk: '87637', fd: 'ncaaf', mgm: '103495', resolve: resolveCollegeTeam },
+  cfl: { id: 'cfl', label: 'CFL', title: 'CFL', dk: '33567', fd: 'cfl', mgm: '3845', resolve: resolveCflTeam },
 };
 export const LEAGUE_IDS = Object.keys(LEAGUES);
 export const DK_LEAGUE = Object.fromEntries(Object.values(LEAGUES).map((l) => [l.dk, l]));

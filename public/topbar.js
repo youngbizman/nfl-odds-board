@@ -8,13 +8,13 @@ export function topbarHtml(api, repo) {
   return `<header class="tb">
     <div class="tb-mast">
       <div class="tb-mast-left"><span class="tb-wordmark">PRESSBOX / ODDS</span>${design}</div>
-      <div class="tb-links"><span class="tb-demo">Ontario · DraftKings + FanDuel · live</span><a href="${repo}">How it works</a>
+      <div class="tb-links"><span class="tb-demo">Ontario · DraftKings + FanDuel + BetMGM · live</span><a href="${repo}">How it works</a>
         <button type="button" class="tb-icon" id="tb-scheme" title="Light / dark (d)" aria-label="Switch light or dark"></button>
         <button type="button" class="tb-icon" id="tb-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-expanded="false">?</button></div>
     </div>
     <section class="tb-heading">
-      <div><h1 id="tb-title"></h1><p class="tb-subtitle">Best price across DraftKings and FanDuel, live. Kickoffs in ET.</p></div>
-      <div class="tb-view" role="group" aria-label="Prices from"><button type="button" data-view="best">Best price</button><button type="button" data-view="draftkings">DraftKings only</button><button type="button" data-view="fanduel">FanDuel only</button></div>
+      <div><h1 id="tb-title"></h1><p class="tb-subtitle">Best price across DraftKings, FanDuel and BetMGM, live. Kickoffs in ET.</p></div>
+      <div class="tb-view" role="group" aria-label="Prices from"><button type="button" data-view="best">Best price</button><button type="button" data-view="draftkings">DraftKings only</button><button type="button" data-view="fanduel">FanDuel only</button><button type="button" data-view="betmgm">BetMGM only</button></div>
     </section>
     <div class="tb-toolbar" aria-label="Board controls">
       <div class="tb-field tb-league"><span id="tb-league-l">League</span><div class="tb-seg" role="group" aria-labelledby="tb-league-l" id="tb-leagues"></div></div>
@@ -28,10 +28,10 @@ export function topbarHtml(api, repo) {
 /** The footer, shared too: what the board's words mean, one short entry each, and where to read more. */
 export function footerHtml(repo, { winEv = false } = {}) {
   const items = [
-    ['Best price', 'The higher odds on the same line, with both books open and fresh. Equal odds are a tie; different lines are never ranked.'],
-    winEv && ['Win % and EV', "The no-vig win chance implied by both books' prices on the same line, and the estimated value of the best price against it. Derived from the books' prices, not a prediction."],
+    ['Best price', 'The higher odds on the same line, among books that are open and fresh. Equal odds are a tie. A book on another line is shown but never ranked; if no line has a majority, nobody is.'],
+    winEv && ['Win % and EV', "The no-vig win chance implied by the books' prices on the same line, and the estimated value of the best price against it. Derived from the books' prices, not a prediction."],
     ['Margin (hold)', "What the books keep if you bet both sides at the best prices. Lower is better for you; below 0% the two prices together pay back more than the stakes, a possible arbitrage at the prices shown."],
-    ['Prices', 'Ontario DraftKings and FanDuel, live. Every number updates on its own; nothing is simulated.'],
+    ['Prices', 'Ontario DraftKings, FanDuel and BetMGM, live. Every number updates on its own; nothing is simulated.'],
   ].filter(Boolean);
   return `<footer class="tb-foot"><div class="tb-foot-head"><h2>How to read this board</h2><a href="${repo}">How it works ↗</a></div>
     <dl class="tb-foot-list" style="--n:${items.length}">${items.map(([t, d]) => `<div><dt>${t}</dt><dd>${d}</dd></div>`).join('')}</dl></footer>`;

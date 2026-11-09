@@ -2,7 +2,9 @@
 // theme's CSS (classes .bc-* for the big movement chart, .ld-* for the "more lines" ladder).
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const chance = (api, odds) => { const d = api.decimalOdds(odds); return d ? 100 / d : null; };
-const BOOKS = ['draftkings', 'fanduel'];
+const BOOKS = ['draftkings', 'fanduel', 'betmgm'];
+// "More lines" (the ladder chart) come from DraftKings and FanDuel only; their cells are in this order
+const LADDER_BOOKS = ['draftkings', 'fanduel'];
 export const RANGES = [['10m', '10 min', 10 * 60_000], ['1h', '1 hour', 3600_000], ['6h', '6 hours', 6 * 3600_000], ['1d', '1 day', 24 * 3600_000], ['1w', '1 week', 7 * 24 * 3600_000], ['all', 'All', null]];
 const RMS = Object.fromEntries(RANGES.map(([id, , ms]) => [id, ms]));
 const etFmt = (t, opts) => new Date(t).toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
@@ -147,12 +149,12 @@ export function ladderChart(api, gk, v) {
   if (!v?.rows?.length) return '<aside class="ld"><p class="ld-empty">Nothing to chart yet.</p></aside>';
   const x = api.state.extras.get(gk) || {}; const g = api.state.games.get(gk);
   const B = api.BOOK;
-  const legend = `<div class="ld-legend">${BOOKS.map((b) => `<span class="ld-key ${B[b].cls}"><i></i>${B[b].label}</span>`).join('')}</div>`;
+  const legend = `<div class="ld-legend">${LADDER_BOOKS.map((b) => `<span class="ld-key ${B[b].cls}"><i></i>${B[b].label}</span>`).join('')}</div>`;
   if (v.kind === 'td') {
     const rows = v.rows.filter((r) => r.cells.some(Boolean)).map((r) => ({ r, best: Math.max(...r.cells.filter(Boolean).map((o) => chance(api, o.odds))) })).sort((a, b) => b.best - a.best).slice(0, 12);
     const max = Math.max(...rows.map((x) => x.best), 1);
     return `<aside class="ld" aria-label="Anytime touchdown chances by book"><h4>Most likely scorers <span>· implied chance</span></h4>${legend}
-      <ul class="ld-bars">${rows.map(({ r }) => `<li><span class="ld-name">${esc(r.name)}</span><span class="ld-pair">${r.cells.map((o, i) => o ? `<span class="ld-bar ${B[BOOKS[i]].cls}${r.cmp.best?.book === BOOKS[i] && r.cmp.kind === 'best' ? ' is-best' : ''}" style="width:${((chance(api, o.odds) / max) * 100).toFixed(1)}%" title="${B[BOOKS[i]].label} ${esc(api.fmtOdds(o.odds))}"><b>${chance(api, o.odds).toFixed(0)}%</b></span>` : '<span class="ld-bar is-none"></span>').join('')}</span></li>`).join('')}</ul>
+      <ul class="ld-bars">${rows.map(({ r }) => `<li><span class="ld-name">${esc(r.name)}</span><span class="ld-pair">${r.cells.map((o, i) => o ? `<span class="ld-bar ${B[LADDER_BOOKS[i]].cls}${r.cmp.best?.book === BOOKS[i] && r.cmp.kind === 'best' ? ' is-best' : ''}" style="width:${((chance(api, o.odds) / max) * 100).toFixed(1)}%" title="${B[BOOKS[i]].label} ${esc(api.fmtOdds(o.odds))}"><b>${chance(api, o.odds).toFixed(0)}%</b></span>` : '<span class="ld-bar is-none"></span>').join('')}</span></li>`).join('')}</ul>
       <p class="ld-note">Shorter bar at the same player = that book pays more.</p></aside>`;
   }
   // ladders: alt spread (one team), alt total (over/under), yardage / receptions (one player)
@@ -177,7 +179,7 @@ export function ladderChart(api, gk, v) {
   // same rules as the big chart: lines only (a dot per number only when there are few), point at it for the prices,
   // and a strip underneath says which book pays more at each number
   let paths = '', marks = ''; const few = n <= 12;
-  BOOKS.forEach((b, bi) => {
+  LADDER_BOOKS.forEach((b, bi) => {
     let d = ''; rows.forEach((r, i) => {
       const o = r.cells[bi]; if (!o) return; const p = chance(api, o.odds);
       d += `${d ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p).toFixed(1)}`;
@@ -209,8 +211,8 @@ function ladderOverlay(api, d, fx) {
   if (!d) return '';
   const i = d.n === 1 ? 0 : Math.min(d.n - 1, Math.max(0, Math.round(((fx * d.W) - 24) / ((d.W - 48) / (d.n - 1)))));
   const r = d.rows[i]; const left = (d.X(i) / d.W) * 100;
-  const cells = BOOKS.map((b, bi) => { const o = r.cells[bi]; if (!o) return null; const c = chance(api, o.odds); return { b, o, c, y: (d.Y(c) / d.H) * 100 }; }).filter(Boolean);
-  const verdict = r.win === 'draftkings' || r.win === 'fanduel' ? `${api.BOOK[r.win].label} pays more` : r.win === 'tie' ? 'same price' : 'only one book';
+  const cells = LADDER_BOOKS.map((b, bi) => { const o = r.cells[bi]; if (!o) return null; const c = chance(api, o.odds); return { b, o, c, y: (d.Y(c) / d.H) * 100 }; }).filter(Boolean);
+  const verdict = api.BOOK[r.win] ? `${api.BOOK[r.win].label} pays more` : r.win === 'tie' ? 'same price' : 'only one book';
   const side = left > 55 ? `right:${(100 - left).toFixed(2)}%;margin-right:12px` : `left:${left.toFixed(2)}%;margin-left:12px`;
   return `<span class="bh-line" style="left:${left.toFixed(2)}%"></span>${cells.map((x) => `<i class="bh-dot ${api.BOOK[x.b].cls}" style="left:${left.toFixed(2)}%;top:${x.y.toFixed(2)}%"></i>`).join('')}
     <div class="bh-box" style="${side}"><b>${esc(r.name)}</b>${cells.map((x) => `<span class="bh-row ${api.BOOK[x.b].cls}"><i></i>${api.BOOK[x.b].label} <strong>${esc(api.fmtOdds(x.o.odds))}</strong> · ${x.c.toFixed(1)}%</span>`).join('')}<em class="bh-verdict">${verdict}</em></div>`;

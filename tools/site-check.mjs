@@ -35,7 +35,7 @@ async function check(path, view, label) {
   // prices on screen = a price cell (either design) or the "no games" message for a league without games this week
   // polled with evaluate (Playwright's waitForFunction evaluates a string in the page, which the site's CSP rightly forbids)
   let shown = false;
-  for (const end = Date.now() + 30_000; !shown && Date.now() < end;) { shown = await page.evaluate(() => !!(document.querySelector('.odds, .g-table td[data-market]') || /No games|Neither book/.test(document.body.innerText))).catch(() => false); if (!shown) await page.waitForTimeout(150); }
+  for (const end = Date.now() + 30_000; !shown && Date.now() < end;) { shown = await page.evaluate(() => !!(document.querySelector('.odds, .g-table td[data-market]') || /No games|No book has/.test(document.body.innerText))).catch(() => false); if (!shown) await page.waitForTimeout(150); }
   const firstPrices = Date.now() - t0;
   await page.waitForTimeout(2500);
   const info = await page.evaluate(() => ({

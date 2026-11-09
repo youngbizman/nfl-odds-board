@@ -7,7 +7,10 @@ import grid from '/themes/grid.js';
 
 const THEMES = [pressbox, grid]; // each design is one file; with two or more, a "Design" picker appears in every theme
 
-const BOOK = { draftkings: { label: 'DraftKings', short: 'DK', cls: 'dk' }, fanduel: { label: 'FanDuel', short: 'FD', cls: 'fd' } };
+// Book order is the order on screen: DraftKings, FanDuel, BetMGM. "More lines" (alt lines, props) come from the first two.
+const BOOK = { draftkings: { label: 'DraftKings', short: 'DK', cls: 'dk' }, fanduel: { label: 'FanDuel', short: 'FD', cls: 'fd' }, betmgm: { label: 'BetMGM', short: 'MGM', cls: 'mgm' } };
+const BOOKS = Object.keys(BOOK);
+const EXTRAS_BOOKS = ['draftkings', 'fanduel'];
 const MARKETS = [['spread', ['away', 'home']], ['total', ['over', 'under']], ['moneyline', ['away', 'home']]];
 const keep = { get(k, d) { try { return localStorage.getItem(`board.${k}`) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(`board.${k}`, v); } catch {} } };
 const qs = new URLSearchParams(location.search);
@@ -39,7 +42,7 @@ const settings = {
   singleBook: false,                                                // college: also show games only one book prices
   game: route.slug || qs.get('game') || null,                       // a game's own page: its key once the board has arrived
   range: RANGES.includes(qs.get('range')) ? qs.get('range') : null, // its chart window (null = automatic)
-  view: ['draftkings', 'fanduel'].includes(qs.get('view')) ? qs.get('view') : 'best', // best | draftkings | fanduel
+  view: BOOKS.includes(qs.get('view')) ? qs.get('view') : 'best', // best | draftkings | fanduel | betmgm
   phase: 'all',                                                     // all | live | pregame
   search: '',
   format: keep.get('format', 'american'),                           // american | decimal
@@ -87,8 +90,8 @@ function resolveGameLink() {
   return false;
 }
 const starred = new Set((() => { try { return JSON.parse(keep.get('starred', '[]')); } catch { return []; } })());
-const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000 } },
-  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], moveCount: { draftkings: 0, fanduel: 0 }, changedAt: new Map(),
+const state = { games: new Map(), quotes: new Map(), sources: {}, config: { staleMs: { draftkings: 75000, fanduel: 10000, betmgm: 15000 } },
+  offset: 0, rtt: null, connected: false, everConnected: false, moves: [], moveCount: Object.fromEntries(BOOKS.map((b) => [b, 0])), changedAt: new Map(),
   history: new Map(), histFrom: null, chartPick: new Map(), // movement charts: quote id -> [[t, odds, line]]
   extrasSummary: {}, extrasKinds: {}, extras: new Map(), extrasHolds: [],
   gameHistory: null, // the open game's page: { key, map: quote id -> [[t, odds, line]] } at full resolution, up to a week
@@ -97,8 +100,8 @@ const state = { games: new Map(), quotes: new Map(), sources: {}, config: { stal
 //   hop   server stamped the quote → this page received it        (per book)
 //   e2e   DraftKings published it  → this page received it        (DraftKings stamps every change)
 //   drawn DraftKings published it  → the next frame on this screen after it was drawn
-const lat = { pushLag: { draftkings: [], fanduel: [] }, endToEnd: { draftkings: { pregame: [], live: [] } }, drawn: [],
-  recent: { draftkings: [], fanduel: [], e2e: [], drawn: [] }, at: {} };
+const lat = { pushLag: Object.fromEntries(BOOKS.map((b) => [b, []])), endToEnd: { draftkings: { pregame: [], live: [] } }, drawn: [],
+  recent: { ...Object.fromEntries(BOOKS.map((b) => [b, []])), e2e: [], drawn: [] }, at: {} };
 
 // ---------- helpers given to themes ----------
 const serverNow = () => Date.now() + state.offset;
@@ -128,7 +131,7 @@ function emptyMessage() {
     return { title: 'Nothing is live right now.', detail: next ? `Next kickoff: ${new Date(next.start).toLocaleString('en-US', { timeZone: 'America/Toronto', weekday: 'short', hour: 'numeric', minute: '2-digit' })} ET, ${next.away.abbr} @ ${next.home.abbr}.` : 'Live games appear here as soon as they start.' };
   }
   if (settings.phase === 'pregame') return { title: 'No upcoming games.', detail: 'Every game on the board has started.' };
-  return { title: 'No games yet.', detail: `Neither book has ${api.league().title} game lines up right now; the board fills itself as soon as one does.` };
+  return { title: 'No games yet.', detail: `No book has ${api.league().title} game lines up right now; the board fills itself as soon as one does.` };
 }
 const pct = (arr, q) => { if (!arr.length) return null; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
 const quote = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book}`);
@@ -137,7 +140,7 @@ const quote = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book
 const LOST_GRACE_MS = 4000;
 const connectionLost = () => !state.connected && state.everConnected && !state.switching && state.lostSince != null && Date.now() - state.lostSince > LOST_GRACE_MS;
 const bookDown = (book) => { const s = state.sources[book]; return !s || s.stale || s.state === 'down' || connectionLost(); };
-const feedState = (book) => { const s = state.sources[book] || {}; if (connectionLost()) return 'lost'; if (!state.connected) return 'connecting'; if (s.state === 'down') return 'reconnecting'; if (s.stale) return 'stale'; if (s.state === 'connecting' || !s.lastDataAt) return 'connecting'; return 'live'; };
+const feedState = (book) => { const s = state.sources[book] || {}; if (s.state === 'off') return 'off'; if (connectionLost()) return 'lost'; if (!state.connected) return 'connecting'; if (s.state === 'down') return 'reconnecting'; if (s.stale) return 'stale'; if (s.state === 'connecting' || !s.lastDataAt) return 'connecting'; return 'live'; };
 
 /** How a quote moved recently: for flashes (≤ 0.7 s) and the struck-through previous value (≤ 8 s). */
 function change(q, now = Date.now()) {
@@ -147,12 +150,16 @@ function change(q, now = Date.now()) {
   return { at, dir, lineMoved, prevOdds: q.prevOdds, prevLine: q.prevLine, flash: now - at < 700 };
 }
 
+/** Every book's offer for one side of one market: { by: { book: offer|null }, list: [offer|null] in BOOKS order }. */
+function offersFor(g, market, side) {
+  const by = {}; for (const b of BOOKS) { const q = quote(g.key, market, side, b); by[b] = q ? { ...q, book: b, stale: bookDown(b) } : null; }
+  return { by, list: BOOKS.map((b) => by[b]) };
+}
 /** Everything a theme needs to draw one side of one market. */
 function cell(g, market, side) {
-  const offer = (book) => { const q = quote(g.key, market, side, book); return q ? { ...q, book, stale: bookDown(book) } : null; };
-  const dk = offer('draftkings'), fd = offer('fanduel');
-  if (settings.view !== 'best') return { view: settings.view, single: settings.view === 'draftkings' ? dk : fd };
-  return { view: 'best', dk, fd, cmp: compare([dk, fd]) };
+  const { by, list } = offersFor(g, market, side);
+  if (settings.view !== 'best') return { view: settings.view, single: by[settings.view] };
+  return { view: 'best', by, list, dk: by.draftkings, fd: by.fanduel, cmp: compare(list) };
 }
 
 /** Movement chart data for one side of one market of a game: each book's [t, odds, line] points in the window. */
@@ -251,10 +258,10 @@ function toggleExtras(gk) {
   for (const ev of ['snapshot', 'rows', 'status']) x.es.addEventListener(ev, () => { x.lastAt = Date.now(); });
   x.watch = setInterval(() => { if (state.extras.get(gk) !== x) return clearInterval(x.watch); if (Date.now() - x.lastAt > 10_000) { clearInterval(x.watch); x.es.close(); state.extras.delete(gk); toggleExtras(gk); } }, 2000);
   x.es.addEventListener('status', (e) => {
-    const before = JSON.stringify(Object.keys(BOOK).map((b) => !!x.status?.[b]?.stale));
+    const before = JSON.stringify(EXTRAS_BOOKS.map((b) => !!x.status?.[b]?.stale));
     x.status = JSON.parse(e.data);
-    if (JSON.stringify(Object.keys(BOOK).map((b) => !!x.status?.[b]?.stale)) !== before) theme.renderExtras(gk); // a book went stale / came back
-    for (const b of Object.keys(BOOK)) document.querySelectorAll(`[data-x-age="${b}"]`).forEach((n) => { n.dataset.ageTs = x.status[b]?.lastDataAt || ''; }); });
+    if (JSON.stringify(EXTRAS_BOOKS.map((b) => !!x.status?.[b]?.stale)) !== before) theme.renderExtras(gk); // a book went stale / came back
+    for (const b of EXTRAS_BOOKS) document.querySelectorAll(`[data-x-age="${b}"]`).forEach((n) => { n.dataset.ageTs = x.status[b]?.lastDataAt || ''; }); });
   x.es.addEventListener('rows', (e) => {
     const local = Date.now();
     for (const r of JSON.parse(e.data).rows) {
@@ -276,7 +283,7 @@ function extrasView(gk) {
   const now = Date.now();
   const rows = all.filter((r) => r.kind === x.kind && (!x.bothOnly || (r.offers.draftkings && r.offers.fanduel))).map((r) => {
     // a book whose feed is down, or whose more-lines data went quiet (server says stale), cannot be best here either
-    const offers = Object.keys(BOOK).map((b) => r.offers[b] ? { ...r.offers[b], book: b, line: r.line, stale: bookDown(b) || !!x.status?.[b]?.stale, moved: r.changedAt?.[b] && now - r.changedAt[b] < 8000 ? (r.offers[b].odds > (r.offers[b].prevOdds ?? r.offers[b].odds) ? 'up' : 'down') : null } : null);
+    const offers = EXTRAS_BOOKS.map((b) => r.offers[b] ? { ...r.offers[b], book: b, line: r.line, stale: bookDown(b) || !!x.status?.[b]?.stale, moved: r.changedAt?.[b] && now - r.changedAt[b] < 8000 ? (r.offers[b].odds > (r.offers[b].prevOdds ?? r.offers[b].odds) ? 'up' : 'down') : null } : null);
     const label = r.kind === 'alt-spread' ? `${g?.[r.subject]?.abbr ?? r.subject} ${fmtLine('spread', r.subject, r.line)}` : r.kind === 'alt-total' ? `${r.subject === 'over' ? 'Over' : 'Under'} ${r.line}` : r.kind === 'td' ? r.name : `${r.name} · ${r.line}+`;
     return { ...r, label, cells: offers, cmp: compare(offers) };
   });
@@ -290,16 +297,15 @@ function extrasView(gk) {
   return { kind: x.kind, bothOnly: x.bothOnly, loaded: x.loaded, status: x.status, rows, counts, kinds: KIND_ORDER.filter((k) => counts[k]).map((k) => ({ id: k, label: state.extrasKinds[k] || k, ...counts[k] })) };
 }
 
-/** Both books' offers for one side of one market, whatever the view (the grid design shows all columns at once). */
+/** Every book's offers for one side of one market, whatever the view (the grid design shows all columns at once). */
 function both(g, market, side) {
-  const offer = (book) => { const q = quote(g.key, market, side, book); return q ? { ...q, book, stale: bookDown(book) } : null; };
-  const dk = offer('draftkings'), fd = offer('fanduel');
-  return { dk, fd, cmp: compare([dk, fd]) };
+  const { by, list } = offersFor(g, market, side);
+  return { by, list, dk: by.draftkings, fd: by.fanduel, cmp: compare(list) };
 }
 const OTHER = { away: 'home', home: 'away', over: 'under', under: 'over' };
 /** Fair (no-vig) chance of one side at the best line, from every book pricing both sides there; and the best price's EV. */
 function fair(g, market, side) {
-  const c = both(g, market, side); const line = c.cmp.best?.line ?? c.dk?.line ?? c.fd?.line ?? null;
+  const c = both(g, market, side); const line = c.cmp.best?.line ?? c.list.find(Boolean)?.line ?? null;
   const pair = market === 'spread' ? oppositeLine : (l) => l;
   const pairs = Object.keys(BOOK).map((b) => {
     const a = quote(g.key, market, side, b), o = quote(g.key, market, OTHER[side], b);
@@ -311,7 +317,7 @@ function fair(g, market, side) {
 }
 
 function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
-/** Lowest hold per market for one game: best open price on each side from either book, matching lines only. */
+/** Lowest hold per market for one game: best open price on each side from any book, matching lines only. */
 function holds(g) {
   const offers = (market, side) => Object.keys(BOOK).map((b) => { const q = quote(g.key, market, side, b); return q ? { ...q, book: b, stale: bookDown(b) } : null; }).filter(Boolean);
   return {
@@ -393,6 +399,10 @@ function latency(book) {
     const server = s.lagP50Ms != null && s.lagCount ? { p50: s.lagP50Ms, n: s.lagCount, at: s.lagAt ?? null, pm: dkPm, phase: s.lagPhase || null } : null;
     return { push: true, server, page: sample('e2e', both), drawn: sample('drawn', both), hop, syncPm };
   }
+  if (book === 'betmgm') { // polled through a browser session; BetMGM stamps nothing, so only the cadence is known
+    const beat = s.pollMs || 2000;
+    return { beatMs: beat, freshMs: s.freshP50Ms ?? beat, serverMaxAgeMs: beat + (s.lastPollMs || s.requestP50Ms || 0), interleave: false, push: false, via: s.via || null, server: null, page: null, drawn: null, hop, syncPm };
+  }
   const beat = (s.pollMs || 1000) / (s.interleave ? 2 : 1);
   const push = s.push === 'live';
   // FanDuel stamps pushed markets with its own clock, which we cannot sync: pm stays null (unknown), never 0
@@ -411,18 +421,19 @@ function fanduelCadence(L = latency('fanduel')) {
   return { long, short: nflOnly ? `polled every ${beat}` : `polled ${beat}–${turn}`, nflOnly, beat, turn };
 }
 function latencyText(book) {
-  const L = latency(book); const B = book === 'draftkings' ? 'DraftKings' : 'FanDuel';
+  const L = latency(book); const B = BOOK[book]?.label || book;
   const pm = (x) => (x.pm != null ? `, clocks ±${x.pm} ms` : book === 'fanduel' && x === L.server ? ", FanDuel's clock (not synced)" : ', clocks not synced yet');
   const fig = (x) => `${secs(x.p50)} (median of ${x.n}${pm(x)}${x.at ? `, last ${ago(x.at)}` : ''})`;
   const lines = [];
   if (L.server) lines.push(`${B} → our server ${fig(L.server)}`);
   else if (book === 'draftkings' || L.push) lines.push(`${B} → our server: no samples yet`);
+  if (book === 'betmgm') lines.push(`polled every ${secs(L.beatMs)}${L.via === 'edge' ? ' by the edge machine (fallback)' : ' through a browser session'}; a change reaches our server within ~${secs(L.serverMaxAgeMs)}`);
   if (L.page) lines.push(`${B} → this page ${fig(L.page)}`);
   else if (L.hop) lines.push(`our server → this page ${fig(L.hop)}`);
   else lines.push('this page: measured on the next price move');
   if (L.drawn) lines.push(`drawn on screen ${fig(L.drawn)}`);
   // compact: the best figure we have, labelled with where it ends
-  const short = L.page ? `${secs(L.page.p50)} to page` : L.server ? `${secs(L.server.p50)} to server` : book === 'fanduel' && !L.push ? fanduelCadence(L).short : 'measuring';
+  const short = L.page ? `${secs(L.page.p50)} to page` : L.server ? `${secs(L.server.p50)} to server` : book === 'fanduel' && !L.push ? fanduelCadence(L).short : book === 'betmgm' ? `polled every ${secs(L.beatMs)}${L.via === 'edge' ? ' (edge)' : ''}` : 'measuring';
   return { L, lines, short, title: lines.join('\n') };
 }
 function freshness(book, now = serverNow()) {
@@ -431,13 +442,13 @@ function freshness(book, now = serverNow()) {
   return { age, fill: Math.max(0, Math.min(1, 1 - age / limit)) };
 }
 
-const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf, latencyText,
+const api = { BOOK, BOOKS, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, ago, secs, serverNow, quote, cell, change, groups, visibleGames, phaseOf, latencyText,
   connectionLost, feedState, latency, freshness, bookDown, series, seriesRange, chartPick, decimalOdds, cents, impliedProb, holds, tightest, both, fair, hiddenSingles,
   viewKeys, filtering, fanduelCadence,
   gameHref: (g) => gamePath(g) + queryString({ range: false }), boardHref: () => boardPath() + queryString({ range: false }),
   openGame, closeGame, game: () => (settings.game ? state.games.get(settings.game) || null : null),
   setRange(r) { settings.range = r; writeUrl(); if (settings.game) theme.renderGame(settings.game); else theme.render(); },
-  /** When the board's price history for this game begins (its first recorded price, any market, either book). */
+  /** When the board's price history for this game begins (its first recorded price, any market, any book). */
   gameRecordedFrom(g) {
     const src = state.gameHistory?.key === g.key ? state.gameHistory.map : state.history; let first = null;
     for (const [id, pts] of src) if (pts.length && id.startsWith(`${g.key}|`) && (first == null || pts[0][0] < first)) first = pts[0][0];
@@ -452,7 +463,7 @@ const api = { BOOK, MARKETS, state, settings, themes: THEMES, fmtOdds, fmtLine, 
     if (![...LEAGUE_IDS, 'all'].includes(id) || id === settings.league) return;
     settings.league = id; settings.search = ''; settings.phase = 'all'; settings.singleBook = false; settings.game = slug; pendingSlug = slug; state.gameHistory = null; writeUrl({ push: !fromHistory });
     for (const x of state.extras.values()) { x.es.close(); clearInterval(x.watch); } state.extras.clear();
-    state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = { draftkings: 0, fanduel: 0 }; state.history = new Map(); state.histFrom = null; state.changedAt.clear();
+    state.games = new Map(); state.quotes = new Map(); state.moves = []; state.moveCount = Object.fromEntries(BOOKS.map((b) => [b, 0])); state.history = new Map(); state.histFrom = null; state.changedAt.clear();
     state.switching = true; mountTheme(theme); reconnect('league changed', 0);
   },
   isStarred: (gk) => starred.has(gk),
@@ -495,7 +506,7 @@ document.addEventListener('click', (e) => {
   e.preventDefault(); if (!t.hasAttribute('tabindex')) t.setAttribute('tabindex', '-1'); t.focus({ preventScroll: true }); t.scrollIntoView({ block: 'start' });
 });
 
-// ---------- keyboard: / search · 1 2 3 views · c compact · d dark · s star · ? help ----------
+// ---------- keyboard: / search · 1 2 3 4 views · c compact · d dark · s star · ? help ----------
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
@@ -503,7 +514,7 @@ document.addEventListener('keydown', (e) => {
   if (typing) return;
   const act = {
     '/': () => theme.focusSearch?.(),
-    1: () => api.set('view', 'best'), 2: () => api.set('view', 'draftkings'), 3: () => api.set('view', 'fanduel'),
+    1: () => api.set('view', 'best'), 2: () => api.set('view', 'draftkings'), 3: () => api.set('view', 'fanduel'), 4: () => api.set('view', 'betmgm'),
     d: () => api.set('scheme', document.documentElement.dataset.scheme === 'dark' ? 'light' : 'dark'),
     s: () => { const gk = document.activeElement?.closest?.('[data-game]')?.dataset.game; if (gk) api.toggleStar(gk); },
     '?': () => theme.toggleHelp?.(),
@@ -639,9 +650,9 @@ function recordMove(q, at) {
 // ---------- timers ----------
 setInterval(() => theme.tick(), 250); // age labels and freshness bars
 setInterval(async () => { // measured samples go to the server so /api/metrics holds true end-to-end numbers
-  const body = { pushLag: { draftkings: lat.pushLag.draftkings.splice(0), fanduel: lat.pushLag.fanduel.splice(0) }, endToEnd: { draftkings: { pregame: lat.endToEnd.draftkings.pregame.splice(0), live: lat.endToEnd.draftkings.live.splice(0) } }, drawn: { draftkings: lat.drawn.splice(0) } };
+  const body = { pushLag: Object.fromEntries(BOOKS.map((b) => [b, lat.pushLag[b].splice(0)])), endToEnd: { draftkings: { pregame: lat.endToEnd.draftkings.pregame.splice(0), live: lat.endToEnd.draftkings.live.splice(0) } }, drawn: { draftkings: lat.drawn.splice(0) } };
   if (Object.values(body.pushLag).some((a) => a.length) || Object.values(body.endToEnd.draftkings).some((a) => a.length) || body.drawn.draftkings.length) fetch('/api/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
-  for (const k of ['draftkings', 'fanduel', 'e2e', 'drawn']) if (lat.recent[k].length > 500) lat.recent[k].splice(0, lat.recent[k].length - 500);
+  for (const k of [...BOOKS, 'e2e', 'drawn']) if (lat.recent[k].length > 500) lat.recent[k].splice(0, lat.recent[k].length - 500);
 }, 30000);
 
 mountTheme(THEMES.find((t) => t.id === settings.theme) || THEMES[0]);

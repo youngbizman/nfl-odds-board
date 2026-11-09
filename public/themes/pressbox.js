@@ -15,6 +15,8 @@ const KIT = { ARI: ['#97233f', '#f0e9df'], ATL: ['#a6323e', '#f0e9df'], BAL: ['#
   // CFL
   BC: ['#f15a22', '#1d1d1d'], CGY: ['#c8102e', '#f0f0f0'], EDM: ['#2b5134', '#f2b134'], SSK: ['#006341', '#f0f0f0'], WPG: ['#041e42', '#b9975b'],
   HAM: ['#1d1d1d', '#ffb81c'], TOR: ['#6cace4', '#13294b'], OTT: ['#1d1d1d', '#a6192e'], MTL: ['#0b2240', '#a6192e'] };
+const BOOKS = ['draftkings', 'fanduel', 'betmgm'];
+const listJoin = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const etTime = (d, opts) => d.toLocaleString('en-US', { timeZone: 'America/Toronto', ...opts });
 
@@ -31,7 +33,7 @@ function mount(r, a) {
     ${topbarHtml(api, REPO)}
     <div class="help" id="help" hidden role="dialog" aria-label="Keyboard shortcuts">
       <strong>Keyboard</strong>
-      <dl><dt>/</dt><dd>find a team</dd><dt>1 2 3</dt><dd>best price · DraftKings · FanDuel</dd>
+      <dl><dt>/</dt><dd>find a team</dd><dt>1 2 3 4</dt><dd>best price · DraftKings · FanDuel · BetMGM</dd>
       <dt>d</dt><dd>dark / light</dd><dt>s</dt><dd>star the game you are on</dd><dt>Enter</dt><dd>chart the focused price</dd><dt>Esc</dt><dd>close</dd></dl>
     </div>
     <section class="holds" id="holds" aria-label="Tightest markets right now"></section>
@@ -140,34 +142,39 @@ function priceCell(g, market, side, idx) {
       <div class="price-age" data-age-ts="${q.updatedAt}" data-age-prefix="price last changed ">price last changed ${esc(api.ago(q.updatedAt))}</div></div>`;
   }
 
-  const { cmp, dk, fd } = c;
+  const { cmp, list } = c;
+  // a book on another number than the ranked ones: shown under the price, never ranked
+  const oddHtml = cmp.oddLine?.length ? cmp.oddLine.map((o) => `<span class="odd-line" title="Another number than the other books, so not comparable"><span class="book ${B[o.book].cls}">${B[o.book].short}</span> ${esc(api.fmtLine(market, side, o.line))} ${esc(api.fmtOdds(o.odds))} · other line, not ranked</span>`).join('') : '';
   const lineHtml = (q) => market === 'moneyline' ? '' : `<span class="line">${esc(api.fmtLine(market, side, q.line))}</span>`;
   if (cmp.kind === 'best' || cmp.kind === 'tie') {
     const q = cmp.best; const ch = api.change(q);
     if (cmp.kind === 'tie') {
       return `${head(`is-tie ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong><span class="badge">Tie</span></div>
-        <div class="compare"><span class="book dk">DraftKings</span> + <span class="book fd">FanDuel</span></div>${lineNotice(q, ch)}</div>`;
+        <div class="compare">${cmp.books.map((b) => `<span class="book ${B[b].cls}">${B[b].label}</span>`).join(' + ')}</div>${oddHtml}${lineNotice(q, ch)}</div>`;
     }
     const other = cmp.offers.find((o) => o.book !== q.book);
     const edge = api.edge(q.odds, other.odds);
     return `${head(`is-best win-${B[q.book].cls} ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong>${changeHtml(q, ch)}</div>
-      <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span> <span class="edge" title="${esc(edge.title)} at ${B[other.book].label}">${esc(edge.text)}</span><span class="separator">·</span><span class="other"><span class="book ${B[other.book].cls}">${B[other.book].short}</span> ${esc(api.fmtOdds(other.odds))}</span></div>${lineNotice(q, ch)}</div>`;
+      <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span> <span class="edge" title="${esc(edge.title)} at ${B[other.book].label}">${esc(edge.text)}</span><span class="separator">·</span><span class="other"><span class="book ${B[other.book].cls}">${B[other.book].short}</span> ${esc(api.fmtOdds(other.odds))}</span>${cmp.offers.slice(2).map((o) => `<span class="separator">·</span><span class="other"><span class="book ${B[o.book].cls}">${B[o.book].short}</span> ${esc(api.fmtOdds(o.odds))}</span>`).join('')}</div>${oddHtml}${lineNotice(q, ch)}</div>`;
   }
   if (cmp.kind === 'different') {
     // one compact row per book: book · its line · its price. Same height as a best-price cell, nothing wraps.
     const row = (q) => { const ch = api.change(q); return `<div class="split-row"${tag(q)}><span class="book ${B[q.book].cls}">${B[q.book].short}</span><span class="line">${esc(api.fmtLine(market, side, q.line))}</span><b class="split-odds">${esc(api.fmtOdds(q.odds))}</b>${changeHtml(q, ch)}</div>`; };
     const moved = cmp.offers.map((q) => api.change(q)).find((ch) => ch);
-    return `${head(`is-different ${stateClass(moved)}`, null)}<div class="split">${[dk, fd].map(row).join('')}</div><div class="notice" title="The books post different numbers, so the prices are not comparable">≠ different lines · not ranked</div></div>`;
+    return `${head(`is-different ${stateClass(moved)}`, null)}<div class="split">${list.filter((o) => o && cmp.eligible.includes(o)).map(row).join('')}</div><div class="notice" title="The books post different numbers, so the prices are not comparable">≠ different lines · not ranked</div></div>`;
   }
   if (cmp.kind === 'partial') {
-    const q = cmp.best; const ch = api.change(q); const otherBook = q.book === 'draftkings' ? 'fanduel' : 'draftkings'; const o = otherBook === 'draftkings' ? dk : fd;
-    const otherHtml = o ? `<span class="other${o.suspended ? ' is-suspended' : ' is-stale'}"><span class="book ${B[otherBook].cls}">${B[otherBook].short}</span> ${market === 'moneyline' ? '' : esc(api.fmtLine(market, side, o.line)) + ' '}${esc(api.fmtOdds(o.odds))}${otherBadge(o)}</span>` : `<span class="other">${B[otherBook].label} · not offered</span>`;
+    const q = cmp.best; const ch = api.change(q);
+    // the other books: their (unavailable) price and why, or "not offered"
+    const others = BOOKS.filter((b) => b !== q.book);
+    const otherHtml = others.map((b) => { const o = c.by[b]; return o ? `<span class="other${o.suspended ? ' is-suspended' : ' is-stale'}"><span class="book ${B[b].cls}">${B[b].short}</span> ${market === 'moneyline' ? '' : esc(api.fmtLine(market, side, o.line)) + ' '}${esc(api.fmtOdds(o.odds))}${otherBadge(o)}</span>` : null; }).filter(Boolean).join('<span class="separator">·</span>')
+      || `<span class="other">${listJoin(others.map((b) => B[b].short))} · not offered</span>`;
     return `${head(`is-partial ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong>${changeHtml(q, ch)}</div>
       <div class="compare"><span class="book ${B[q.book].cls}">${B[q.book].label}</span> · only available offer<span class="separator">·</span>${otherHtml}</div>${lineNotice(q, ch)}</div>`;
   }
   // none eligible
-  const offs = [dk, fd].filter(Boolean);
-  if (!offs.length) return `${head('is-unavailable', null)}<div class="quote"><strong class="odds">—</strong></div><div class="compare">Not offered by either book</div></div>`;
+  const offs = list.filter(Boolean);
+  if (!offs.length) return `${head('is-unavailable', null)}<div class="quote"><strong class="odds">—</strong></div><div class="compare">Not offered by any book</div></div>`;
   const lost = api.feedState('draftkings') === 'lost';
   return `${head('is-unavailable', null)}<div class="offers">${offs.map((q) => `<div class="offer is-stale" aria-disabled="true"${tag(q)}><div class="offer-value">${market === 'moneyline' ? '' : `<span class="line">${esc(api.fmtLine(market, side, q.line))}</span>`}<span class="offer-odds">${esc(api.fmtOdds(q.odds))}</span></div><span class="book ${B[q.book].cls}">${B[q.book].label}</span>${otherBadge(q)}</div>`).join('')}</div>
     <div class="notice">${lost ? 'Before disconnect · unavailable' : 'No live, open price right now'}</div></div>`;
@@ -210,7 +217,7 @@ const pctTxt = (h) => `${(h * 100).toFixed(1)}%`;
 function holdsLine(g) {
   const h = api.holds(g); const parts = [['spread', 'Spread'], ['total', 'Total'], ['moneyline', 'ML']].filter(([m]) => h[m]);
   if (!parts.length) return '';
-  return `<span class="hold-line" title="Hold at the best price on each side (either book). Lower is better for you; below 0% is an arbitrage.">Hold ${parts.map(([m, n]) => `<span class="hold${h[m].hold < 0 ? ' is-arb' : h[m].hold < 0.02 ? ' is-low' : ''}">${n} ${pctTxt(h[m].hold)}</span>`).join(' ')}</span>`;
+  return `<span class="hold-line" title="Hold at the best price on each side (any book). Lower is better for you; below 0% is an arbitrage.">Hold ${parts.map(([m, n]) => `<span class="hold${h[m].hold < 0 ? ' is-arb' : h[m].hold < 0.02 ? ' is-low' : ''}">${n} ${pctTxt(h[m].hold)}</span>`).join(' ')}</span>`;
 }
 function legTxt(g, market, o) {
   const B = api.BOOK[o.book];
@@ -293,7 +300,7 @@ function renderExtrasToggles() {
 const chance = (odds) => { const d = api.decimalOdds(odds); return d ? 100 / d : null; };
 function chartHtml(g) {
   const pick = api.chartPick(g.key); const S = api.series(g, pick.market, pick.side);
-  const books = api.settings.view === 'best' ? ['draftkings', 'fanduel'] : [api.settings.view];
+  const books = api.settings.view === 'best' ? BOOKS : [api.settings.view];
   const sideName = pick.market === 'total' ? (pick.side === 'over' ? 'Over' : 'Under') : g[pick.side].abbr;
   const what = pick.market === 'moneyline' ? `${sideName} to win` : pick.market === 'spread' ? `${sideName} spread` : `Total · ${sideName}`;
   let lo = Infinity, hi = -Infinity, moves = 0;
@@ -352,15 +359,15 @@ function renderFeeds() {
   // at first sight: each book's state, last heard and its freshness bar; "Details" opens the rest (both cards)
   const open = el.feeds.classList.contains('is-open');
   const more = `<button type="button" class="feed-more" aria-expanded="${open}">${open ? 'Less ▴' : 'Details ▾'}</button>`;
-  el.feeds.innerHTML = ['draftkings', 'fanduel'].map((b) => {
+  el.feeds.innerHTML = BOOKS.map((b) => {
     const s = api.state.sources[b] || {}; const f = api.feedState(b); const L = api.latency(b); const fr = api.freshness(b);
-    const status = { live: '● Connected', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting' }[f];
+    const status = { live: '● Connected', stale: '! Stale', reconnecting: '↻ Reconnecting', lost: '↻ Reconnecting', connecting: '… Connecting', off: '○ Off' }[f];
     const cls = f === 'stale' ? ' is-stale' : f === 'reconnecting' || f === 'lost' ? ' is-reconnecting' : f === 'connecting' ? ' is-connecting' : '';
     const C = api.fanduelCadence(L);
-    const how = b === 'draftkings' ? 'push over WebSocket' : `${L.push ? 'push over WebSocket, checked by polling' : 'polled'} every ${C.beat}${C.nflOnly ? '' : ` (NFL and live games; other pregame markets in turn, each about every ${C.turn})`}${!L.push && L.interleave ? ' from 2 IPs' : ''}`;
+    const how = b === 'draftkings' ? 'push over WebSocket' : b === 'betmgm' ? `polled every ${api.secs(L.beatMs)} ${L.via === 'edge' ? 'by the edge machine (fallback)' : 'through a browser session'}` : `${L.push ? 'push over WebSocket, checked by polling' : 'polled'} every ${C.beat}${C.nflOnly ? '' : ` (NFL and live games; other pregame markets in turn, each about every ${C.turn})`}${!L.push && L.interleave ? ' from 2 IPs' : ''}`;
     const T = api.latencyText(b);
     const timing = f === 'connecting' ? '<li>waiting for the first data</li>' : f !== 'live' ? '<li>timing unavailable while the feed is down</li>' : T.lines.map((l) => `<li>${esc(l)}</li>`).join('');
-    return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-right"><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span>${more}</span></div>
+    return `<article class="feed${cls}" id="feed-${b}"><div class="feed-head"><span><strong class="feed-name">${api.BOOK[b].label}</strong><span class="status">${status}</span></span><span class="feed-right"><span class="feed-age" title="${esc(b === 'draftkings' ? 'Last message from DraftKings. It only sends when a price changes, plus a connection check every 10 s, so this counts up to ~10 s when nothing is moving. It is not a delay: see book to screen.' : b === 'betmgm' ? 'Last answer from BetMGM. We ask every 2 s, so this resets every 2 s.' : 'Last answer from FanDuel. We ask every second, so this resets every second.')}" data-age-ts="${s.lastDataAt || ''}" data-age-prefix="last heard ">last heard ${esc(api.ago(s.lastDataAt))}</span>${more}</span></div>
       <p>${esc(s.region || 'Ontario')} · ${esc(how)}</p>
       <ul class="latency" aria-label="${api.BOOK[b].label} latency, medians of measured samples">${timing}</ul>
       <p class="last-move" data-age-ts="${s.lastChangeAt || ''}" data-age-prefix="Prices last changed ">Prices last changed ${esc(api.ago(s.lastChangeAt))}</p>
@@ -371,14 +378,19 @@ function renderBanner() {
   const st = api.state; const b = el.banner;
   const set = (cls, html) => { b.hidden = false; b.className = `banner${cls ? ' ' + cls : ''}`; b.setAttribute('role', cls === 'loading' ? 'status' : 'alert'); b.innerHTML = html; };
   if (!st.everConnected) return set('loading', '<strong>Connecting to sportsbooks…</strong> Waiting for the first complete snapshot.');
-  if (st.switching) return set('loading', `<strong>Loading ${esc(api.league().title)}…</strong> Getting both books' prices.`);
+  if (st.switching) return set('loading', `<strong>Loading ${esc(api.league().title)}…</strong> Getting every book's prices.`);
   if (api.connectionLost()) return set('lost', '<strong>Connection lost · reconnecting.</strong> All displayed prices are from before the drop and unavailable.');
   if (!st.connected) return set('loading', '<strong>Reconnecting…</strong> Prices stay on screen; they refresh in a moment.');
-  const down = ['draftkings', 'fanduel'].filter((x) => api.feedState(x) !== 'live' && api.feedState(x) !== 'connecting');
-  if (down.length === 2) return set('lost', '<strong>Both books unavailable.</strong> Prices shown may be old; none of them can win.');
-  if (down.length === 1) { const d = api.BOOK[down[0]].label, ok = api.BOOK[down[0] === 'draftkings' ? 'fanduel' : 'draftkings'].label; return set('', `<strong>${d} ${api.feedState(down[0]) === 'stale' ? 'stale' : 'reconnecting'}.</strong> Its prices may be old. ${ok} is still live; unavailable offers cannot win.`); }
-  const r = ['draftkings', 'fanduel'].map((x) => st.sources[x]?.region).filter(Boolean);
-  if (r.length === 2 && r[0] !== r[1]) return set('', `<strong>Different jurisdictions.</strong> DraftKings prices are from ${esc(r[0])}, FanDuel from ${esc(r[1])}.`);
+  const on = BOOKS.filter((x) => api.feedState(x) !== 'off');
+  const down = on.filter((x) => api.feedState(x) !== 'live' && api.feedState(x) !== 'connecting');
+  if (down.length && down.length === on.length) return set('lost', '<strong>All books unavailable.</strong> Prices shown may be old; none of them can win.');
+  if (down.length) {
+    const d = listJoin(down.map((x) => api.BOOK[x].label)), ok = listJoin(on.filter((x) => !down.includes(x)).map((x) => api.BOOK[x].label));
+    const what = down.length === 1 ? (api.feedState(down[0]) === 'stale' ? 'stale' : 'reconnecting') : 'unavailable';
+    return set('', `<strong>${d} ${what}.</strong> ${down.length === 1 ? 'Its' : 'Their'} prices may be old. ${ok} ${on.length - down.length === 1 ? 'is' : 'are'} still live; unavailable offers cannot win.`);
+  }
+  const r = on.map((x) => [x, st.sources[x]?.region]).filter(([, v]) => v);
+  if (new Set(r.map(([, v]) => v)).size > 1) return set('', `<strong>Different jurisdictions.</strong> ${r.map(([x, v]) => `${api.BOOK[x].label} prices are from ${esc(v)}`).join(', ')}.`);
   b.hidden = true;
 }
 function renderWire() {
@@ -405,7 +417,7 @@ function tick() {
   for (const n of root.querySelectorAll('[data-age-local]')) n.textContent = api.ago(Number(n.dataset.ageLocal), Date.now());
   for (const n of root.querySelectorAll('[data-fresh]')) { const fr = api.freshness(n.dataset.fresh); n.style.width = `${(fr.fill * 100).toFixed(1)}%`; n.parentElement.setAttribute('aria-valuenow', String(Math.round(fr.fill * 100))); }
   // stale/connection state can change without a data event: refresh banner + feed classes + eligibility once a second
-  const sig = ['draftkings', 'fanduel'].map(api.feedState).join('|') + api.state.connected + api.connectionLost();
+  const sig = BOOKS.map(api.feedState).join('|') + api.state.connected + api.connectionLost();
   if (sig !== tick.sig) { tick.sig = sig; render(); }
 }
 

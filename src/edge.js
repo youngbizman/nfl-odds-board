@@ -14,7 +14,12 @@
 // FanDuel: when the cloud sends {type:'fd-poll'} (half a beat after its own poll), this machine polls the same markets
 // from its own IP and sends back only the markets whose answer changed. The board gets a fresh FanDuel answer every
 // 0.5 s while each IP stays at one request per second. If this process dies, FanDuel falls back to the cloud's 1 s beat.
-// Usage:  CLOUD_URL=https://… INGEST_TOKEN=… node src/edge.js
+//
+// BetMGM (EDGE_MGM=1, temporary fallback): BetMGM's API only answers a real browser page, and the cloud runs one itself.
+// If the cloud's browser session cannot get answers (no Chromium there, or BetMGM refuses its IP), it sends
+// {type:'mgm-need', on:true}; this machine then polls BetMGM through its own headless browser on the same beat and
+// sends {type:'mgm-fixtures', league, data} until the cloud says {on:false}. The goal is cloud-only; this is a bridge.
+// Usage:  CLOUD_URL=https://… INGEST_TOKEN=… [EDGE_MGM=1] node src/edge.js
 import WebSocket from 'ws';
 import { BoardStore } from './store.js';
 import { Metrics } from './metrics.js';
@@ -22,6 +27,7 @@ import { DraftKingsSource } from './sources/draftkings.js';
 import { FanDuelSource, fanduelEndpoints, chunk } from './sources/fanduel.js';
 import { DK_SUBCATS, slimDk } from './extras.js';
 import { dkExtrasUrl, DK_HEADERS } from './sources/draftkings-extras.js';
+import { LEAGUES } from './leagues.js';
 
 const CLOUD = (process.env.CLOUD_URL || '').replace(/\/$/, '');
 const TOKEN = process.env.INGEST_TOKEN || '';
@@ -55,6 +61,31 @@ async function pollFanDuel(msg) {
     if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'fd-prices', t: msg.t, rttMs, markets: changed })); fdSent += changed.length; }
   } catch (e) { if (fdErrors % 20 === 1) log('fd', `interleave poll failed: ${e.message}`); }
   finally { fdBusy = false; }
+}
+
+// ---------- BetMGM fallback: poll only while the cloud asks ----------
+const MGM_ON = process.env.EDGE_MGM === '1';
+const MGM_EVERY = Number(process.env.MGM_POLL_MS || 2000);
+let mgmSession = null, mgmWanted = false, mgmTimer = null, mgmRot = 0, mgmSent = 0, mgmErrors = 0;
+async function pollBetMGM() {
+  if (!mgmWanted) return;
+  const t0 = Date.now();
+  try {
+    if (!mgmSession) { const { BetMGMBrowser } = await import('./sources/betmgm-browser.js'); mgmSession = new BetMGMBrowser({ log }); }
+    const others = Object.values(LEAGUES).filter((l) => l.mgm && l.id !== 'nfl');
+    const leagues = [LEAGUES.nfl, ...(others.length ? [others[mgmRot++ % others.length]] : [])];
+    for (const l of leagues) {
+      const data = await mgmSession.fetchFixtures(l.mgm);
+      if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'mgm-fixtures', league: l.id, t: Date.now(), data })); mgmSent++; }
+    }
+  } catch (e) { mgmErrors++; if (mgmErrors % 10 === 1) log('mgm', `poll failed: ${e.message}`); }
+  if (mgmWanted) mgmTimer = setTimeout(pollBetMGM, Math.max(0, MGM_EVERY - (Date.now() - t0)));
+}
+function setMgmWanted(on, why) {
+  if (!MGM_ON || on === mgmWanted) return;
+  mgmWanted = on; clearTimeout(mgmTimer);
+  log('mgm', on ? `cloud asked for BetMGM (${why || 'no reason given'}) → polling every ${MGM_EVERY} ms` : 'cloud reads BetMGM itself again → stopped');
+  if (on) pollBetMGM(); else { mgmSession?.close(); mgmSession = null; }
 }
 
 // Ontario only (dk.site is always CA-ON-SB): if Ontario refuses this machine too, we send nothing rather than another region.
@@ -95,9 +126,9 @@ function connect() {
   const sock = new WebSocket(`${CLOUD.replace(/^http/, 'ws')}/ingest/ws`, { headers: { authorization: `Bearer ${TOKEN}` }, perMessageDeflate: false, handshakeTimeout: 10_000 });
   ws = sock;
   sock.on('open', () => { backoff = 500; log('relay', 'connected'); sendSnapshot('connected'); ping(); setTimeout(sendAllExtras, 3000); });
-  sock.on('message', (d) => { try { const m = JSON.parse(d); if (m.type === 'pong') rttMs = Date.now() - m.t; if (m.type === 'need-snapshot') sendSnapshot(`cloud asked (${m.why})`); if (m.type === 'fd-poll') pollFanDuel(m); } catch {} });
+  sock.on('message', (d) => { try { const m = JSON.parse(d); if (m.type === 'pong') rttMs = Date.now() - m.t; if (m.type === 'need-snapshot') sendSnapshot(`cloud asked (${m.why})`); if (m.type === 'fd-poll') pollFanDuel(m); if (m.type === 'mgm-need') setMgmWanted(!!m.on, m.why); } catch {} });
   sock.on('error', (e) => log('relay', `error: ${e.message}`));
-  sock.on('close', () => { if (ws === sock) { ws = null; log('relay', `closed; reconnecting in ${backoff} ms`); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 15_000); } });
+  sock.on('close', () => { if (ws === sock) { setMgmWanted(false); ws = null; log('relay', `closed; reconnecting in ${backoff} ms`); setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 15_000); } });
 }
 function ping() { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); }
 
@@ -107,5 +138,6 @@ setInterval(ping, 10_000);
 setInterval(() => sendSnapshot('periodic'), EVERY);
 setInterval(() => sendExtras(), EXTRAS_EVERY / SUBS.length);
 setInterval(() => log('stat', `dk snapshots ok=${sent} failed=${failed} · fd interleave polls=${fdPolls} changed-markets-sent=${fdSent} errors=${fdErrors} · extras sent=${xSent} failed=${xFailed} ${Math.round(xBytes / 1e6)} MB · rtt=${rttMs ?? '—'} ms · site ${site}`), 60_000);
-const shutdown = () => { ws?.close(); process.exit(0); };
+setInterval(() => { if (MGM_ON) log('stat', `betmgm ${mgmWanted ? 'polling for the cloud' : 'idle (cloud reads it itself)'} · sent=${mgmSent} errors=${mgmErrors}`); }, 60_000);
+const shutdown = async () => { ws?.close(); await mgmSession?.close(); process.exit(0); };
 process.on('SIGTERM', shutdown); process.on('SIGINT', shutdown);

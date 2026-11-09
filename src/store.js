@@ -6,7 +6,7 @@ import { BOOKS } from './model.js';
 const HISTORY_KEEP_MS = 8 * 24 * 3600_000; // price history kept per quote (movement charts go back up to a week)
 const HISTORY_MAX = 5000;                   // and at most this many points per quote
 
-const KICKOFF_ORDER = ['draftkings', 'fanduel'];
+const KICKOFF_ORDER = ['draftkings', 'fanduel', 'betmgm'];
 
 export class BoardStore extends EventEmitter {
   constructor() {

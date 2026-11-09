@@ -521,3 +521,23 @@ body, button, input, select, table { font-variant-numeric: tabular-nums; }
 .g-feedt td, .g-feedt th, .g-holdt tbody th, .g-holdt tbody td { padding-top:6px; padding-bottom:6px; }
 .g-holds-more { margin-top:8px; display:inline-block; }
 .g-panel .g-note { margin:0; line-height:1.5; }
+
+/* ================= BetMGM, the third book: gold (apart from DraftKings purple, FanDuel teal and the blue "best") ================= */
+:root { --mgm:#8a6a12; --chart-mgm:#a37400; }
+html[data-scheme=dark] { --mgm:#e0bf5f; --chart-mgm:#f2cc60; }
+.g-grp.g-mgm { border-top-color:var(--mgm); }
+.c-best.win-mgm { background:var(--best) !important; color:var(--best-text); } .c-best.win-mgm .ln { color:var(--best-muted); } .c-best.win-mgm .od { color:var(--best-text); }
+.c-best.win-mgm .bk { box-shadow:inset 2px 0 0 var(--mgm); }
+.g-spark .s-mgm, .s-mgm { stroke:var(--chart-mgm); }
+.g-bk.g-mgm { background:var(--mgm); }
+.bc-now.mgm, .ld-key.mgm, .bh-row.mgm, .bc-lane-name.mgm { color:var(--chart-mgm); }
+.bc-line.mgm, .ld-line.mgm { stroke:var(--chart-mgm); } .ld-pt.mgm { fill:var(--chart-mgm); }
+.bc-dot.mgm, .ld-bar.mgm, .bc-end.mgm, .bh-dot.mgm, .ld-win.mgm, .ld-win-key.mgm { background:var(--chart-mgm); }
+/* a book on another line than the ranked ones: shown, never ranked */
+.c-bk.odd { box-shadow:inset 0 -2px 0 var(--line-strong); } .c-bk.odd .tag { color:var(--muted); }
+.c-best .odd { font:600 9px var(--mono); margin-left:4px; color:var(--best-muted); }
+@media (max-width: 760px) { .g-table[data-view=best] .g-grp.g-mgm { display:none; } }
+/* three books in the "best" view = 12 price columns; keep the page from scrolling sideways on laptops:
+   a narrower 48 h sparkline up to 1600 px, and no Win% column below 1340 px (it is hidden on phones already) */
+@media (max-width:1600px) { .g-table[data-view=best] .g-spark, .g-table[data-view=best] .g-spark-h { width:84px; max-width:84px; } .g-table[data-view=best] .g-spark svg { width:68px; } .g-table[data-view=best] .g-sp-l { display:none; } }
+@media (max-width:1340px) { .g-table[data-view=best] .g-win, .g-table[data-view=best] .g-win-h { display:none; } }

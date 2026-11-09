@@ -11,6 +11,7 @@ import { fixture, waitFor } from './helpers.js';
 const SNAP = fixture('fd-snapshot.json');
 const DK_SNAP = fixture('dk-snapshot.json');
 const PRICES = fixture('fd-prices.json');
+const MGM_NFL = fixture('mgm-nfl.json');
 const TOKEN = 'test-token';
 const GAME = 'BAL@BUF:2026-11-01';
 
@@ -53,7 +54,7 @@ let fake, proc, base, port;
 test.before(async () => {
   fake = await fakeFanDuel(); port = await freePort(); base = `http://127.0.0.1:${port}`;
   const dead = await freePort();
-  proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'draftkings,fanduel', INGEST_TOKEN: TOKEN,
+  proc = spawn(process.execPath, ['src/server.js'], { env: { ...process.env, PORT: String(port), SOURCES: 'draftkings,fanduel,betmgm', MGM_BROWSER: '0', INGEST_TOKEN: TOKEN,
     DK_NASH_BASE: `http://127.0.0.1:${dead}`, DK_WS_URL: `ws://127.0.0.1:${dead}/websocket`,
     FD_SNAPSHOT_URL: `${fake.base}/snapshot`, FD_PRICES_URL: `${fake.base}/prices`, FD_POLL_MS: '100', FD_STALE_MS: '1200', DK_STALE_MS: '1200', EXTRAS: '0', FD_PUSH: '0', DK_HTTP: 'native', LEAGUES: 'nfl' }, stdio: ['ignore', 'pipe', 'pipe'] });
   proc.stdout.resume(); proc.stderr.resume();
@@ -172,4 +173,25 @@ test('one book failing never stops the other, and stale is reported per book', a
   // and recovers by itself
   fake.st.mode = 'ok';
   await waitFor(async () => !(await health()).books.fanduel.stale, 6000);
+});
+
+test('BetMGM without a browser on the server: the edge is asked on connect, its fixtures fill the board, health does not depend on it', async () => {
+  const s = sse(`${base}/api/stream`);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ingest/ws`, { headers: { authorization: `Bearer ${TOKEN}` } });
+  try {
+    const need = new Promise((r) => ws.on('message', (d) => { const m = JSON.parse(d); if (m.type === 'mgm-need') r(m); }));
+    await new Promise((r, j) => { ws.on('open', r); ws.on('error', j); });
+    const m = await need; assert.equal(m.on, true);
+    await waitFor(() => s.events.some((e) => e.ev === 'snapshot'));
+    const snap = s.events.find((e) => e.ev === 'snapshot').data;
+    assert.equal(snap.config.staleMs.betmgm, 15000);
+    assert.ok(snap.sources.betmgm, 'viewers get the BetMGM feed state');
+    ws.send(JSON.stringify({ type: 'mgm-fixtures', league: 'nfl', t: Date.now(), data: MGM_NFL }));
+    const hit = await waitFor(() => s.events.find((e) => e.ev === 'batch' && e.data.quotes.some((q) => q.book === 'betmgm')), 3000);
+    assert.equal(hit.data.quotes.filter((q) => q.book === 'betmgm').length, 90);
+    const h = await (await fetch(`${base}/api/health`)).json();
+    assert.equal(h.books.betmgm.quotes, 90); assert.deepEqual(h.required, ['draftkings', 'fanduel']);
+    const met = await (await fetch(`${base}/api/metrics`)).json();
+    assert.equal(met.betmgm.edgeApplied, 1); assert.equal(met.betmgmSession.via, 'edge');
+  } finally { ws.close(); s.close(); }
 });

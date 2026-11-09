@@ -31,13 +31,19 @@ export class Metrics {
       pushMarkets: 0, pushChanges: 0, pushNoChange: 0, pushLag: new Ring(),
       pollChanges: 0, byLeague: {}, // which channel delivered each FanDuel price change first: { nfl: { push, poll }, … }
     };
+    this.mgm = {
+      // BetMGM is polled through a browser session (its API refuses plain clients); no change timestamps, so cadence only
+      pollDuration: new Ring(), pollInterval: new Ring(), changesPerPoll: new Ring(), bytes: new Ring(),
+      polls: 0, pollErrors: 0, rateLimited: 0, lastStatus: null, pollChanges: 0, unmatched: 0,
+      edgeApplied: 0, edgeIgnored: 0, // fixtures relayed by the edge: applied (own session failing) / ignored (own session works)
+    };
     this.sse = { clients: 0, batchesSent: 0, bytesSent: 0, batchSize: new Ring(), coalesceWait: new Ring() };
     // browser-reported: pushLag = server updatedAt → page received; endToEnd = DK publishedTime → page received;
     // drawn = DK publishedTime → the frame after the page drew it
-    this.browser = { pushLag: { draftkings: new Ring(), fanduel: new Ring() }, endToEnd: { draftkings: { pregame: new Ring(), live: new Ring() } }, drawn: { draftkings: new Ring() }, reports: 0 };
+    this.browser = { pushLag: { draftkings: new Ring(), fanduel: new Ring(), betmgm: new Ring() }, endToEnd: { draftkings: { pregame: new Ring(), live: new Ring() } }, drawn: { draftkings: new Ring() }, reports: 0 };
   }
   toJSON() {
     const r = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v instanceof Ring ? v.stats() : (v && typeof v === 'object' && !Array.isArray(v) ? r(v) : v)]));
-    return { uptimeSec: Math.round((Date.now() - this.startedAt) / 1000), draftkings: r(this.dk), fanduel: r(this.fd), sse: r(this.sse), browser: r(this.browser) };
+    return { uptimeSec: Math.round((Date.now() - this.startedAt) / 1000), draftkings: r(this.dk), fanduel: r(this.fd), betmgm: r(this.mgm), sse: r(this.sse), browser: r(this.browser) };
   }
 }
