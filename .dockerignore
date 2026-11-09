@@ -1,0 +1,6 @@
+*
+!package.json
+!package-lock.json
+!src/**
+!tools/install-transport.mjs
+!tools/probe-mgm.mjs

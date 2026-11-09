@@ -1,0 +1,18 @@
+# Edge worker in Toronto (see Dockerfile). No [http_service]: nothing public, it only connects out to the cloud.
+app = "nfl-odds-edge-yyz"
+primary_region = "yyz"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  CLOUD_URL = "https://nfl-odds-board-hgim.onrender.com"
+  EDGE_MGM = "1"
+
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
