@@ -135,3 +135,79 @@ test('normalizeFixture: a game whose teams do not match the league is skipped, n
   const f = structuredClone(bufMin(NFL)); f.participants[0].name = 'Somewhere Unknowns'; f.participants[1].name = 'Nowhere Nobodies';
   assert.equal(normalizeFixture(f, LEAGUES.nfl), null);
 });
+
+test('an empty answer once keeps the prices (could be a glitch); twice in a row takes the league down', () => {
+  const { store, mgm } = source();
+  mgm.applySnapshot(NFL, 1000, 'nfl');
+  mgm.applySnapshot(CFL, 1000, 'cfl');
+  mgm.applySnapshot({ fixtures: [] }, 2000, 'nfl');
+  assert.equal(quotesOf(store, 'betmgm').filter((x) => !x.gameKey.startsWith('cfl:')).length, 90, 'one empty answer is not trusted');
+  mgm.applySnapshot({ fixtures: [] }, 4000, 'nfl');
+  assert.equal(quotesOf(store, 'betmgm').filter((x) => !x.gameKey.startsWith('cfl:')).length, 0, 'two in a row: nothing up, nothing shown');
+  assert.equal(quotesOf(store, 'betmgm').filter((x) => x.gameKey.startsWith('cfl:')).length, 6, 'other leagues untouched');
+  mgm.applySnapshot(NFL, 5000, 'nfl'); mgm.applySnapshot({ fixtures: [] }, 6000, 'nfl');
+  assert.equal(quotesOf(store, 'betmgm').filter((x) => !x.gameKey.startsWith('cfl:')).length, 90, 'a real answer resets the count');
+});
+
+test('an answer without a fixtures list is a failure, never "no games"', async () => {
+  const { store, metrics, mgm } = source({ fetchFixtures: async () => ({ error: 'changed format' }), pollMs: 30 });
+  mgm.applySnapshot(NFL, Date.now(), 'nfl');
+  await mgm.start();
+  try {
+    await waitFor(() => metrics.mgm.pollErrors >= 1);
+    assert.equal(quotesOf(store, 'betmgm').length, 90, 'prices are not wiped by a broken answer');
+    assert.equal(store.sources.betmgm.state, 'down');
+    assert.ok(mgm.applyEdge('nfl', { nope: 1 }).error, 'the edge cannot send one either');
+  } finally { mgm.stop(); }
+});
+
+test('one healthy league does not keep another league\'s old prices fresh', async () => {
+  let cflOk = true;
+  const fetchFixtures = async (id) => { if (id === '3845' && !cflOk) throw new Error('HTTP 500'); return id === '35' ? NFL : id === '3845' ? CFL : NCAAF; };
+  const { store, mgm } = source({ fetchFixtures, pollMs: 20, staleMs: 250 });
+  await mgm.start();
+  try {
+    await waitFor(() => quotesOf(store, 'betmgm').some((x) => x.gameKey.startsWith('cfl:')));
+    assert.deepEqual(store.sources.betmgm.staleLeagues, []);
+    cflOk = false;
+    await waitFor(() => store.sources.betmgm.staleLeagues?.includes('cfl'), 3000);
+    assert.ok(!store.sources.betmgm.staleLeagues.includes('nfl'), 'the NFL keeps answering');
+    cflOk = true;
+    await waitFor(() => !store.sources.betmgm.staleLeagues.includes('cfl'), 3000);
+  } finally { mgm.stop(); }
+});
+
+test('while the edge delivers, the cadence shown is the edge\'s, not this server\'s failing 30 s backoff', async () => {
+  const fetchFixtures = async () => { const e = new Error('HTTP 403'); e.status = 403; throw e; };
+  const { store, metrics, mgm } = source({ fetchFixtures, pollMs: 50, ownFreshMs: 100 });
+  await mgm.start();
+  try {
+    await waitFor(() => mgm.pollMs >= 200); // own session backing off
+    const t = Date.now();
+    for (let i = 0; i < 4; i++) mgm.applyEdge('nfl', NFL, t + i * 2000);
+    assert.equal(store.sources.betmgm.via, 'edge'); assert.equal(store.sources.betmgm.pollMs, 2000);
+    await new Promise((r) => setTimeout(r, 400)); // more own failures arrive meanwhile
+    assert.equal(store.sources.betmgm.pollMs, 2000, 'own failures do not overwrite the edge cadence');
+    assert.equal(store.sources.betmgm.state, 'polling');
+    assert.equal(metrics.mgm.pollInterval.stats().count, 0, 'failed polls never count as the feed cadence');
+    assert.equal(metrics.mgm.edgeInterval.stats().p50, 2000);
+    assert.match(store.sources.betmgm.ownError, /403/);
+  } finally { mgm.stop(); }
+});
+
+test('the edge drops: BetMGM goes stale after its 15 s limit, and a stale BetMGM price can never win', async () => {
+  const { compare } = await import('../src/model.js');
+  const { store, mgm } = source(); // no browser on this server, as on Render: BetMGM only comes from the edge
+  await mgm.start();
+  try {
+    const T = { draftkings: 75_000, fanduel: 10_000, betmgm: 15_000 }, t = Date.now();
+    mgm.applyEdge('nfl', NFL, t);
+    store.refreshStaleness(T, t + 5_000);
+    assert.equal(store.sources.betmgm.stale, false, 'fresh while the edge sends');
+    store.refreshStaleness(T, t + 16_000); // the edge sent nothing for 16 s
+    assert.equal(store.sources.betmgm.stale, true, 'shown as stale, not fresh');
+    assert.equal(quotesOf(store, 'betmgm').length, 90, 'its last prices stay on screen (greyed), not deleted');
+    const c = compare([{ book: 'draftkings', line: null, odds: -110 }, { book: 'betmgm', line: null, odds: 250, stale: true }]);
+    assert.equal(c.best.book, 'draftkings', 'a stale BetMGM price cannot be best');
+  } finally { mgm.stop(); }
+});

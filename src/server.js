@@ -111,7 +111,10 @@ setInterval(() => { // live latency figures for the feed cards (ride the heartbe
   const fdPush = metrics.fd.pushLag.stats();
   Object.assign(store.sources.fanduel, { pushLagP50Ms: fdPush.p50 ?? null, pushLagCount: fdPush.count, pushLagAt: metrics.fd.lastPushLagAt ?? null });
   // BetMGM sends no change timestamps: what we can say is how often a fresh answer arrives and how long one takes
-  Object.assign(store.sources.betmgm, { freshP50Ms: metrics.mgm.pollInterval.stats().p50 ?? null, requestP50Ms: metrics.mgm.pollDuration.stats().p50 ?? null });
+  // figures from whichever collector is delivering: this server's browser, or the edge (its own cadence; request time unknown)
+  const viaEdge = store.sources.betmgm.via === 'edge';
+  Object.assign(store.sources.betmgm, viaEdge ? { freshP50Ms: metrics.mgm.edgeInterval.stats().p50 ?? null, requestP50Ms: null }
+    : { freshP50Ms: metrics.mgm.pollInterval.stats().p50 ?? null, requestP50Ms: metrics.mgm.pollDuration.stats().p50 ?? null });
 }, 5_000);
 setInterval(() => { // status heartbeat: "data 3 s ago" counters, and keeps proxies from closing idle streams
   const payload = `event: batch\ndata: ${JSON.stringify({ serverTs: Date.now(), quotes: [], games: [], sources: store.sources, version: VERSION })}\n\n`;

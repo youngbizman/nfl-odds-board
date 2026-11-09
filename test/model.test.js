@@ -182,3 +182,10 @@ test('hold and fair line take the third book into account', async () => {
   assert.ok(Math.abs(h.hold - (impliedProb(-105) + impliedProb(100) - 1)) < 1e-9);
   assert.ok(fairProb([[-110, -110], [-120, 100], [-105, -115]]) > 0.5);
 });
+
+test('a tie keeps every other offer, so the page can show the third book under the tied winners', async () => {
+  const { compare } = await import('../src/model.js');
+  const c = compare([{ book: 'draftkings', line: null, odds: 350 }, { book: 'fanduel', line: null, odds: 360 }, { book: 'betmgm', line: null, odds: 360 }]);
+  assert.equal(c.kind, 'tie'); assert.deepEqual(c.books, ['fanduel', 'betmgm']);
+  assert.deepEqual(c.offers.filter((o) => !c.books.includes(o.book)).map((o) => [o.book, o.odds]), [['draftkings', 350]]);
+});

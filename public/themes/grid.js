@@ -136,7 +136,7 @@ function bookCell(g, market, side, book) {
   const { cmp } = api.both(g, market, side); const q = api.quote(g.key, market, side, book);
   const a = tdAttrs(g, market, side, q ? ` data-q="${esc(`${q.gameKey}|${q.market}|${q.side}|${q.book}`)}" data-odds="${q.odds ?? ''}" data-line="${q.line ?? ''}"` : '');
   if (!q) return `<td class="c-bk none" ${a}>—</td>`;
-  const down = api.bookDown(book);
+  const down = api.bookDown(book, g.key);
   const win = view() === 'best' && ((cmp.kind === 'best' && cmp.best.book === book) || (cmp.kind === 'tie' && cmp.books.includes(book)));
   const odd = view() === 'best' && cmp.oddLine?.some((o) => o.book === book);
   const m = moveMark(q);

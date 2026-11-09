@@ -139,7 +139,8 @@ const quote = (gk, m, side, book) => state.quotes.get(`${gk}|${m}|${side}|${book
 // flashing a red "connection lost" for that would cry wolf). Within the grace the page says "connecting", in neutral colours.
 const LOST_GRACE_MS = 4000;
 const connectionLost = () => !state.connected && state.everConnected && !state.switching && state.lostSince != null && Date.now() - state.lostSince > LOST_GRACE_MS;
-const bookDown = (book) => { const s = state.sources[book]; return !s || s.stale || s.state === 'down' || connectionLost(); };
+// gameKey given: also down when the book's feed for that game's league went quiet (BetMGM reads each league separately)
+const bookDown = (book, gameKey) => { const s = state.sources[book]; return !s || s.stale || s.state === 'down' || connectionLost() || (gameKey != null && !!s.staleLeagues?.includes(leagueOfKey(gameKey))); };
 const feedState = (book) => { const s = state.sources[book] || {}; if (s.state === 'off') return 'off'; if (connectionLost()) return 'lost'; if (!state.connected) return 'connecting'; if (s.state === 'down') return 'reconnecting'; if (s.stale) return 'stale'; if (s.state === 'connecting' || !s.lastDataAt) return 'connecting'; return 'live'; };
 
 /** How a quote moved recently: for flashes (≤ 0.7 s) and the struck-through previous value (≤ 8 s). */
@@ -152,7 +153,7 @@ function change(q, now = Date.now()) {
 
 /** Every book's offer for one side of one market: { by: { book: offer|null }, list: [offer|null] in BOOKS order }. */
 function offersFor(g, market, side) {
-  const by = {}; for (const b of BOOKS) { const q = quote(g.key, market, side, b); by[b] = q ? { ...q, book: b, stale: bookDown(b) } : null; }
+  const by = {}; for (const b of BOOKS) { const q = quote(g.key, market, side, b); by[b] = q ? { ...q, book: b, stale: bookDown(b, g.key) } : null; }
   return { by, list: BOOKS.map((b) => by[b]) };
 }
 /** Everything a theme needs to draw one side of one market. */
@@ -309,7 +310,7 @@ function fair(g, market, side) {
   const pair = market === 'spread' ? oppositeLine : (l) => l;
   const pairs = Object.keys(BOOK).map((b) => {
     const a = quote(g.key, market, side, b), o = quote(g.key, market, OTHER[side], b);
-    if (!a || !o || a.suspended || o.suspended || bookDown(b)) return null;
+    if (!a || !o || a.suspended || o.suspended || bookDown(b, g.key)) return null;
     return (a.line ?? null) === (market === 'moneyline' ? null : line) && (o.line ?? null) === (market === 'moneyline' ? null : pair(line)) ? [a.odds, o.odds] : null;
   }).filter(Boolean);
   const p = fairProb(pairs);
@@ -319,7 +320,7 @@ function fair(g, market, side) {
 function phaseOf(g) { return g.status === 'live' ? 'live' : 'pregame'; }
 /** Lowest hold per market for one game: best open price on each side from any book, matching lines only. */
 function holds(g) {
-  const offers = (market, side) => Object.keys(BOOK).map((b) => { const q = quote(g.key, market, side, b); return q ? { ...q, book: b, stale: bookDown(b) } : null; }).filter(Boolean);
+  const offers = (market, side) => Object.keys(BOOK).map((b) => { const q = quote(g.key, market, side, b); return q ? { ...q, book: b, stale: bookDown(b, g.key) } : null; }).filter(Boolean);
   return {
     spread: bestHold(offers('spread', 'away'), offers('spread', 'home'), oppositeLine),
     total: bestHold(offers('total', 'over'), offers('total', 'under')),
@@ -427,7 +428,11 @@ function latencyText(book) {
   const lines = [];
   if (L.server) lines.push(`${B} → our server ${fig(L.server)}`);
   else if (book === 'draftkings' || L.push) lines.push(`${B} → our server: no samples yet`);
-  if (book === 'betmgm') lines.push(`polled every ${secs(L.beatMs)}${L.via === 'edge' ? ' by the edge machine (fallback)' : ' through a browser session'}; a change reaches our server within ~${secs(L.serverMaxAgeMs)}`);
+  if (book === 'betmgm') {
+    lines.push(`polled every ${secs(L.beatMs)}${L.via === 'edge' ? ' by the edge machine (fallback)' : ' through a browser session'}; a change reaches our server within ~${secs(L.serverMaxAgeMs)}`);
+    const quiet = (state.sources.betmgm?.staleLeagues || []).filter((id) => state.leagues.some((l) => l.id === id && l.games));
+    if (quiet.length) lines.push(`no fresh answer for ${quiet.map((id) => state.leagues.find((l) => l.id === id)?.title || id).join(', ')}: those prices are greyed and cannot win`);
+  }
   if (L.page) lines.push(`${B} → this page ${fig(L.page)}`);
   else if (L.hop) lines.push(`our server → this page ${fig(L.hop)}`);
   else lines.push('this page: measured on the next price move');

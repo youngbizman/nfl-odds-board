@@ -132,7 +132,11 @@ export class BetMGMSource {
     this.onNeedEdge = opts.onNeedEdge || null;             // (on, why) → ask the edge to start / stop sending BetMGM
     this.ownFreshMs = Number(opts.ownFreshMs || 20_000);   // own answers newer than this = the edge is not needed
     this.rot = 0; this.stopped = false; this.inFlight = false; this.lastPollAt = null;
-    this.lastOwnOkAt = 0; this.edgeWanted = false; this.edgeLastAt = 0;
+    this.lastOwnOkAt = 0; this.edgeWanted = false; this.edgeLastAt = 0; this.lastOwnBeatAt = 0; this.edgeNflAt = 0;
+    // Per league: when it last had a good answer (one healthy league must not keep another's old prices "fresh"),
+    // and how many empty answers in a row it got (one empty answer is not trusted to wipe a league; two are).
+    this.staleMs = Number(opts.staleMs || process.env.MGM_STALE_MS || 15_000);
+    this.leagueOkAt = new Map(); this.emptyRuns = new Map(); this.staleLeagues = [];
   }
 
   async start() {
@@ -166,9 +170,20 @@ export class BetMGMSource {
     const msg = `${where}: ${e?.message || e}`;
     this.log('mgm', msg); this.metrics.mgm.pollErrors++;
     if (!this.ownWorking()) this.needEdge(true, msg);
+    // while the edge is delivering, this server's own failures must not overwrite the feed's state or its cadence
     const viaEdge = Date.now() - this.edgeLastAt < 3 * this.basePollMs + 5000;
-    this.store.setSource(BOOK, { lastError: msg, pollMs: this.pollMs, ...(viaEdge ? {} : { state: 'down' }) });
+    this.store.setSource(BOOK, viaEdge ? { ownError: msg } : { lastError: msg, ownError: msg, pollMs: this.pollMs, state: 'down' });
+    this.markLeagues();
   }
+
+  /** Leagues whose last good answer is older than the stale limit: their prices are shown greyed and can never win. */
+  markLeagues(now = Date.now()) {
+    const stale = this.leagues.filter((l) => now - (this.leagueOkAt.get(l.id) ?? -Infinity) > this.staleMs).map((l) => l.id);
+    if (stale.join() !== this.staleLeagues.join()) { this.staleLeagues = stale; this.store.setSource(BOOK, { staleLeagues: stale }); }
+  }
+
+  /** A usable answer has a fixtures list; anything else (an error page, a changed format) is a failure, not "no games". */
+  static usable(d) { return !!d && Array.isArray(d.fixtures); }
 
   loop(delay = this.pollMs) {
     if (this.stopped) return;
@@ -192,41 +207,52 @@ export class BetMGMSource {
     if (this.inFlight || !this.fetchFixtures) return;
     this.inFlight = true;
     const t0 = Date.now(); const m = this.metrics.mgm;
-    if (this.lastPollAt) m.pollInterval.push(t0 - this.lastPollAt);
     this.lastPollAt = t0;
     try {
       const leagues = this.beatLeagues();
       const results = await Promise.allSettled(leagues.map((l) => this.fetchFixtures(l.mgm)));
       const now = Date.now();
       let games = 0, changes = 0;
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'fulfilled' && !BetMGMSource.usable(results[i].value)) results[i] = { status: 'rejected', reason: new Error('answer without a fixtures list') };
+      }
       results.forEach((r, i) => {
         if (r.status === 'rejected') { if (i > 0) this.log('mgm', `${leagues[i].id} failed: ${r.reason?.message}`); return; }
         const n = this.applySnapshot(r.value, now, leagues[i].id); games += n.games; changes += n.changes;
       });
-      m.pollDuration.push(now - t0); m.polls++;
+      m.polls++;
       if (results[0].status === 'rejected') {
         const e = results[0].reason; m.lastStatus = e?.status ?? null;
         if (e?.status === 429 || e?.status === 403) m.rateLimited++;
         this.pollMs = Math.min(Math.max(this.pollMs * 2, e?.retryAfterMs || 0), this.maxPollMs);
         throw new Error(`${e?.message || e} → polling every ${this.pollMs} ms`);
       }
+      // timing figures come only from good answers (a failing session's 30 s backoff is not this feed's cadence)
+      m.pollDuration.push(now - t0); if (this.lastOwnBeatAt) m.pollInterval.push(t0 - this.lastOwnBeatAt); this.lastOwnBeatAt = t0;
       m.lastStatus = 200; m.changesPerPoll.push(changes); m.pollChanges += changes;
       if (this.session) m.bytes.push(this.session.stats.lastBytes ?? 0);
       this.pollMs = Math.max(this.basePollMs, Math.round(this.pollMs * 0.7));
       this.lastOwnOkAt = now; this.needEdge(false);
-      this.store.setSource(BOOK, { state: 'polling', via: 'browser', lastDataAt: now, lastError: null, polls: m.polls, pollMs: this.pollMs, lastPollMs: now - t0,
+      this.markLeagues(now);
+      this.store.setSource(BOOK, { state: 'polling', via: 'browser', lastDataAt: now, lastError: null, ownError: null, polls: m.polls, pollMs: this.pollMs, lastPollMs: now - t0,
         detail: `${leagues.map((l) => l.label).join(' + ')}: ${games} games in ${now - t0} ms, every ${this.pollMs} ms (browser session)` });
-    } catch (e) { this.fail('poll', e); }
+    } catch (e) { this.lastOwnBeatAt = 0; this.fail('poll', e); }
     finally { this.inFlight = false; }
   }
 
   /** Fixtures polled by the edge (another machine). Applied only while our own session has no fresh answers. */
   applyEdge(leagueId, data, now = Date.now()) {
-    if (!LEAGUES[leagueId]?.mgm || !data?.fixtures) return { error: 'bad message' };
+    if (!LEAGUES[leagueId]?.mgm || !BetMGMSource.usable(data)) return { error: 'bad message' };
     if (this.ownWorking(now)) { this.metrics.mgm.edgeIgnored++; return { ignored: 'this server polls BetMGM itself' }; }
+    const m = this.metrics.mgm;
     const n = this.applySnapshot(data, now, leagueId);
-    this.metrics.mgm.edgeApplied++; this.edgeLastAt = now;
-    this.store.setSource(BOOK, { state: 'polling', via: 'edge', lastDataAt: now, lastError: null, detail: `${LEAGUES[leagueId].label}: ${n.games} games via the edge` });
+    m.edgeApplied++; this.edgeLastAt = now;
+    // the edge sends the NFL on every beat: the gap between two NFL answers is the cadence viewers actually get
+    if (leagueId === 'nfl') { if (this.edgeNflAt && now - this.edgeNflAt < 60_000) m.edgeInterval.push(now - this.edgeNflAt); this.edgeNflAt = now; }
+    this.markLeagues(now);
+    const beat = m.edgeInterval.stats().p50;
+    this.store.setSource(BOOK, { state: 'polling', via: 'edge', lastDataAt: now, lastError: null, pollMs: beat ? Math.round(beat) : this.basePollMs, lastPollMs: null,
+      detail: `${LEAGUES[leagueId].label}: ${n.games} games via the edge` });
     return n;
   }
 
@@ -235,7 +261,13 @@ export class BetMGMSource {
     const league = LEAGUES[leagueId] || LEAGUES.nfl;
     let games = 0, prices = 0, changes = 0, unmatched = 0;
     const seen = new Set();
-    for (const f of data?.fixtures || []) {
+    const list = data?.fixtures || [];
+    this.leagueOkAt.set(league.id, now);
+    // An empty list: once may be a glitch (keep the prices); twice in a row means the league really has nothing up,
+    // so its prices are taken down instead of staying on the board as if they could still be bet.
+    const empties = list.length ? 0 : (this.emptyRuns.get(league.id) || 0) + 1;
+    this.emptyRuns.set(league.id, empties);
+    for (const f of list) {
       // (no competition check: the request already asks for one league, and BetMGM tags NFL games 103489 although the
       //  page asks for competition 35)
       const g = normalizeFixture(f, league);
@@ -253,7 +285,7 @@ export class BetMGMSource {
       }
     }
     // a market BetMGM stopped listing must not keep showing an old price
-    if (games) for (const q of [...this.store.quotes.values()]) {
+    if (games || empties >= 2) for (const q of [...this.store.quotes.values()]) {
       if (q.book === BOOK && leagueOf(q.gameKey) === league.id && !seen.has(`${q.gameKey}|${q.market}|${q.side}`)) this.store.removeQuotes(BOOK, q.gameKey, q.market);
     }
     this.metrics.mgm.unmatched = unmatched;

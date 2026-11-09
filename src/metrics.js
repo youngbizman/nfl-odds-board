@@ -35,7 +35,7 @@ export class Metrics {
       // BetMGM is polled through a browser session (its API refuses plain clients); no change timestamps, so cadence only
       pollDuration: new Ring(), pollInterval: new Ring(), changesPerPoll: new Ring(), bytes: new Ring(),
       polls: 0, pollErrors: 0, rateLimited: 0, lastStatus: null, pollChanges: 0, unmatched: 0,
-      edgeApplied: 0, edgeIgnored: 0, // fixtures relayed by the edge: applied (own session failing) / ignored (own session works)
+      edgeApplied: 0, edgeIgnored: 0, edgeInterval: new Ring(), // edgeInterval: time between two NFL answers from the edge // fixtures relayed by the edge: applied (own session failing) / ignored (own session works)
     };
     this.sse = { clients: 0, batchesSent: 0, bytesSent: 0, batchSize: new Ring(), coalesceWait: new Ring() };
     // browser-reported: pushLag = server updatedAt → page received; endToEnd = DK publishedTime → page received;

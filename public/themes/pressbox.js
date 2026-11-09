@@ -150,7 +150,7 @@ function priceCell(g, market, side, idx) {
     const q = cmp.best; const ch = api.change(q);
     if (cmp.kind === 'tie') {
       return `${head(`is-tie ${stateClass(ch)}`, q)}<div class="quote">${lineHtml(q)}<strong class="odds">${esc(api.fmtOdds(q.odds))}</strong><span class="badge">Tie</span></div>
-        <div class="compare">${cmp.books.map((b) => `<span class="book ${B[b].cls}">${B[b].label}</span>`).join(' + ')}</div>${oddHtml}${lineNotice(q, ch)}</div>`;
+        <div class="compare">${cmp.books.map((b) => `<span class="book ${B[b].cls}">${B[b].label}</span>`).join(' + ')}${cmp.offers.filter((o) => !cmp.books.includes(o.book)).map((o) => `<span class="separator">·</span><span class="other"><span class="book ${B[o.book].cls}">${B[o.book].short}</span> ${esc(api.fmtOdds(o.odds))}</span>`).join('')}</div>${oddHtml}${lineNotice(q, ch)}</div>`;
     }
     const other = cmp.offers.find((o) => o.book !== q.book);
     const edge = api.edge(q.odds, other.odds);
